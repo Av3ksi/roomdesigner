@@ -1,0 +1,62 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  @apply bg-ink text-cream antialiased font-body;
+  background-image:
+    radial-gradient(1200px 600px at 80% -10%, rgba(200, 169, 110, 0.06), transparent 60%),
+    radial-gradient(900px 500px at -10% 30%, rgba(138, 155, 132, 0.04), transparent 60%);
+}
+
+::selection {
+  background: rgba(200, 169, 110, 0.35);
+  color: #f1ece1;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+}
+::-webkit-scrollbar-track {
+  background: #0b0b0e;
+}
+::-webkit-scrollbar-thumb {
+  background: #26262f;
+  border-radius: 8px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #3a3a46;
+}
+
+@layer components {
+  .container-page {
+    @apply mx-auto w-full max-w-7xl px-5 sm:px-8;
+  }
+  .eyebrow {
+    @apply text-[11px] font-semibold uppercase tracking-[0.22em] text-brass;
+  }
+  .card {
+    @apply rounded-2xl border border-ink-line bg-ink-panel;
+  }
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-full bg-brass px-6 py-3 text-sm font-semibold text-ink transition hover:bg-brass-bright focus:outline-none focus:ring-2 focus:ring-brass/60 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-2 rounded-full border border-ink-line px-6 py-3 text-sm font-semibold text-cream transition hover:border-brass/60 hover:text-brass-bright focus:outline-none focus:ring-2 focus:ring-brass/40;
+  }
+  .chip {
+    @apply inline-flex items-center gap-1.5 rounded-full border border-ink-line bg-ink-soft px-3 py-1 text-xs text-cream-dim;
+  }
+}
+
+.text-balance {
+  text-wrap: balance;
+}
