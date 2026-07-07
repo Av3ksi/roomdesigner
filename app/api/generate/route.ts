@@ -19,8 +19,8 @@ function templateNarrative(
 ): string {
   const light = analysis
     ? `${analysis.windows.orientation.toLowerCase()}-facing light`
-    : "your room's natural light";
-  const floor = analysis ? analysis.flooring.material.toLowerCase() : "existing flooring";
+    : "available natural light";
+  const floor = analysis ? analysis.flooring.material.toLowerCase() : "existing floor";
   return `A ${style} scheme composed around the ${light} and the ${floor}. ${variantNote}`;
 }
 
