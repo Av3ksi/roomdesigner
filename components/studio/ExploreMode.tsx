@@ -2,6 +2,7 @@
 
 import { Moon, Plus, ShoppingBag, Sun, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import ProductGlyph from "@/components/room/ProductGlyph";
 import RoomScene from "@/components/room/RoomScene";
 import { formatPrice } from "@/lib/products";
@@ -94,7 +95,9 @@ export default function ExploreMode({
   const active = spotProducts.find((s) => s.category === activeSpot);
   const total = products.reduce((n, p) => n + p.price, 0);
 
-  return (
+  // Portal to <body>: ancestors carry transforms (entry animations) which
+  // would otherwise become the containing block for this fixed overlay.
+  return createPortal(
     <div className="fixed inset-0 z-[60] flex flex-col bg-ink">
       {/* Header */}
       <div className="flex items-center justify-between border-b border-ink-line/70 px-5 py-3.5">
@@ -132,9 +135,10 @@ export default function ExploreMode({
         style={{ perspective: "1400px" }}
       >
         <div
-          className="relative aspect-[3/2] w-full max-w-6xl"
+          className="relative aspect-[3/2] max-h-full max-w-full"
           style={{
-            transform: `rotateX(${tilt.rx}deg) rotateY(${tilt.ry}deg) scale(1.12)`,
+            height: "min(100%, 76vh)",
+            transform: `rotateX(${tilt.rx}deg) rotateY(${tilt.ry}deg) scale(1.08)`,
             transition: "transform 0.18s ease-out",
             transformStyle: "preserve-3d",
           }}
@@ -217,6 +221,7 @@ export default function ExploreMode({
           <ShoppingBag size={15} /> Buy the complete room
         </button>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
