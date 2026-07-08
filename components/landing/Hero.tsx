@@ -20,21 +20,21 @@ export default function Hero() {
             AI spatial intelligence · 8 signature styles · shoppable results
           </div>
           <h1 className="font-display text-5xl leading-[1.05] tracking-tight text-balance sm:text-6xl lg:text-7xl">
-            Your room.
+            Upload your room.
             <br />
-            <em className="text-brass-bright">Redesigned</em> before
+            <em className="text-brass-bright">AI redesigns it.</em>
             <br />
-            the kettle boils.
+            Buy everything.
           </h1>
           <p className="mt-6 max-w-lg text-lg leading-relaxed text-cream-dim">
-            Photograph any room. Maison reads the architecture, the light and
-            what you own — then hands you three designer-grade concepts you
-            can compare, customize and buy. A professional interior designer,
-            available instantly.
+            One photo. Maison reads the architecture, the light and what you
+            own — then hands you designer-grade concepts you can step inside,
+            customize and buy down to the last cushion. A professional
+            interior designer, available instantly.
           </p>
           <div className="mt-8 flex flex-wrap items-center gap-4">
             <Link href="/studio" className="btn-primary !px-8 !py-3.5 !text-base">
-              Design my room <ArrowRight size={17} />
+              Upload my room <ArrowRight size={17} />
             </Link>
             <Link href="/styles" className="btn-ghost !px-8 !py-3.5 !text-base">
               Browse the styles

@@ -119,6 +119,24 @@ export interface GenerateResponse {
   concepts: DesignConcept[];
 }
 
+export type BudgetTier = "essential" | "signature" | "luxe";
+
+/** Preferences collected before generation — steers products, palette and narrative. */
+export interface DesignBrief {
+  budget: BudgetTier;
+  accent: string | null;
+  lifestyle: string[];
+  brands: string[];
+}
+
+export type UploadKind = "photo" | "floorplan";
+
+export interface AnalyzeImagePayload {
+  base64: string;
+  mediaType: string;
+  kind: UploadKind;
+}
+
 export interface SampleRoom {
   id: string;
   name: string;

@@ -1,15 +1,21 @@
 import { NextResponse } from "next/server";
-import { analyzeRoomImage, aiEnabled } from "@/lib/ai/claude";
+import { aiEnabled, analyzeRoomImage, type VisionImage } from "@/lib/ai/claude";
 import { demoAnalysisForUpload } from "@/lib/analysis";
 import { SAMPLE_ROOM_MAP } from "@/lib/rooms";
+import type { AnalyzeImagePayload } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
 
 const MEDIA_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
+const MAX_IMAGES = 5;
+const MAX_B64_PER_IMAGE = 14_000_000; // client downscales; hard server ceiling
 
 interface AnalyzeBody {
   sampleRoomId?: string;
+  /** Multi-angle upload payload (photos + optional floor plan). */
+  images?: AnalyzeImagePayload[];
+  /** Legacy single-image field, still accepted. */
   imageBase64?: string;
   mediaType?: string;
   seedKey?: string;
@@ -32,27 +38,40 @@ export async function POST(req: Request) {
     return NextResponse.json({ analysis: room.analysis, aiEnabled: aiEnabled() });
   }
 
-  if (!body.imageBase64) {
+  // Normalize legacy single-image bodies into the images[] shape.
+  const rawImages: AnalyzeImagePayload[] = body.images?.length
+    ? body.images
+    : body.imageBase64
+      ? [{ base64: body.imageBase64, mediaType: body.mediaType ?? "image/jpeg", kind: "photo" }]
+      : [];
+
+  if (rawImages.length === 0) {
     return NextResponse.json(
-      { error: "Provide imageBase64 or sampleRoomId" },
+      { error: "Provide images[] or sampleRoomId" },
       { status: 400 },
     );
   }
-  const mediaType = body.mediaType && MEDIA_TYPES.has(body.mediaType)
-    ? (body.mediaType as "image/jpeg" | "image/png" | "image/webp")
-    : "image/jpeg";
 
-  // ~10MB of base64 keeps us well inside API limits (client downscales first).
-  if (body.imageBase64.length > 14_000_000) {
-    return NextResponse.json({ error: "Image too large" }, { status: 413 });
+  const images: VisionImage[] = [];
+  for (const img of rawImages.slice(0, MAX_IMAGES)) {
+    if (!img.base64 || img.base64.length > MAX_B64_PER_IMAGE) {
+      return NextResponse.json({ error: "Image missing or too large" }, { status: 413 });
+    }
+    images.push({
+      base64: img.base64,
+      mediaType: MEDIA_TYPES.has(img.mediaType)
+        ? (img.mediaType as VisionImage["mediaType"])
+        : "image/jpeg",
+      kind: img.kind === "floorplan" ? "floorplan" : "photo",
+    });
   }
 
-  const claudeAnalysis = await analyzeRoomImage(body.imageBase64, mediaType);
+  const claudeAnalysis = await analyzeRoomImage(images);
   if (claudeAnalysis) {
     return NextResponse.json({ analysis: claudeAnalysis, aiEnabled: true });
   }
 
-  const seed = body.seedKey ?? body.imageBase64.slice(0, 512);
+  const seed = body.seedKey ?? images[0].base64.slice(0, 512);
   return NextResponse.json({
     analysis: demoAnalysisForUpload(seed),
     aiEnabled: aiEnabled(),

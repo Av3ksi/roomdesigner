@@ -82,19 +82,39 @@ const CONCEPT_CATEGORIES: ProductCategory[] = [
   "decor",
 ];
 
+export const BRANDS = Array.from(new Set(PRODUCTS.map((p) => p.brand))).sort();
+
 /**
- * Deterministically assembles a shopping list for a style + variant by
- * walking the catalog per category. Variants rotate through alternates so
- * each concept proposes a genuinely different basket.
+ * Deterministically assembles a shopping list for a style + variant.
+ * Budget tier steers price point (essential → value picks, luxe → premium),
+ * brand preferences narrow the pool when a match exists, and variants rotate
+ * alternates so each concept proposes a genuinely different basket.
  */
-export function buildConceptProducts(styleId: string, variant: number): Product[] {
+export function buildConceptProducts(
+  styleId: string,
+  variant: number,
+  budget: "essential" | "signature" | "luxe" = "signature",
+  brands: string[] = [],
+): Product[] {
   const picks: Product[] = [];
   for (const cat of CONCEPT_CATEGORIES) {
-    const candidates = PRODUCTS.filter(
+    const pool = PRODUCTS.filter(
       (p) => p.category === cat && p.styles.includes(styleId),
     );
-    if (candidates.length === 0) continue;
-    picks.push(candidates[variant % candidates.length]);
+    if (pool.length === 0) continue;
+    const branded = brands.length ? pool.filter((p) => brands.includes(p.brand)) : pool;
+    const candidates = branded.length ? branded : pool;
+    if (budget === "signature") {
+      picks.push(candidates[variant % candidates.length]);
+      continue;
+    }
+    const byPrice = [...candidates].sort((a, b) => a.price - b.price);
+    const span = Math.min(2, byPrice.length);
+    const idx =
+      budget === "essential"
+        ? variant % span
+        : byPrice.length - 1 - (variant % span);
+    picks.push(byPrice[idx]);
   }
   return picks;
 }

@@ -182,12 +182,38 @@ function firstText(content: Anthropic.ContentBlock[]): string | null {
   return null;
 }
 
+export interface VisionImage {
+  base64: string;
+  mediaType: "image/jpeg" | "image/png" | "image/webp";
+  kind: "photo" | "floorplan";
+}
+
 export async function analyzeRoomImage(
-  imageBase64: string,
-  mediaType: "image/jpeg" | "image/png" | "image/webp",
+  images: VisionImage[],
 ): Promise<RoomAnalysis | null> {
-  if (!aiEnabled()) return null;
+  if (!aiEnabled() || images.length === 0) return null;
   try {
+    const photos = images.filter((i) => i.kind === "photo");
+    const plans = images.filter((i) => i.kind === "floorplan");
+    const content: Anthropic.ContentBlockParam[] = [];
+    images.forEach((img, i) => {
+      content.push({
+        type: "text",
+        text:
+          img.kind === "floorplan"
+            ? `Image ${i + 1}: the room's floor plan — use it to sharpen dimension and layout estimates.`
+            : `Image ${i + 1}: room photograph${photos.length > 1 ? ` (angle ${photos.indexOf(img) + 1} of ${photos.length})` : ""}.`,
+      });
+      content.push({
+        type: "image",
+        source: { type: "base64", media_type: img.mediaType, data: img.base64 },
+      });
+    });
+    content.push({
+      type: "text",
+      text: `Analyze this room completely from ${images.length > 1 ? "all provided images (cross-reference the angles" + (plans.length ? " and the floor plan" : "") + " for accuracy)" : "the photograph"}: type, dimensions, walls, windows, doors, flooring, lighting, color palette, materials, existing furniture (with keep/replace verdicts), localized detections (bounding boxes relative to the FIRST photograph), design opportunities, and style affinity.`,
+    });
+
     const response = await client().messages.create({
       model: MODEL,
       max_tokens: 16000,
@@ -199,21 +225,7 @@ export async function analyzeRoomImage(
           schema: ANALYSIS_SCHEMA as unknown as Record<string, unknown>,
         },
       },
-      messages: [
-        {
-          role: "user",
-          content: [
-            {
-              type: "image",
-              source: { type: "base64", media_type: mediaType, data: imageBase64 },
-            },
-            {
-              type: "text",
-              text: "Analyze this room photograph completely: type, dimensions, walls, windows, doors, flooring, lighting, color palette, materials, existing furniture (with keep/replace verdicts), localized detections, design opportunities, and style affinity.",
-            },
-          ],
-        },
-      ],
+      messages: [{ role: "user", content }],
     });
 
     if (response.stop_reason === "refusal") return null;

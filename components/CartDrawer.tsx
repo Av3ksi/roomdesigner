@@ -1,6 +1,7 @@
 "use client";
 
 import { Minus, Plus, ShoppingBag, Trash2, X } from "lucide-react";
+import { useRouter } from "next/navigation";
 import ProductGlyph from "@/components/room/ProductGlyph";
 import { formatPrice } from "@/lib/products";
 import { cartTotal, useMaisonStore } from "@/lib/store";
@@ -9,6 +10,7 @@ export default function CartDrawer() {
   const { cart, cartOpen, setCartOpen, setQty, removeFromCart, clearCart } =
     useMaisonStore();
   const total = cartTotal(cart);
+  const router = useRouter();
 
   if (!cartOpen) return null;
 
@@ -104,7 +106,10 @@ export default function CartDrawer() {
             </p>
             <button
               className="btn-primary w-full"
-              onClick={() => alert("Checkout is a demo stub — payment rails land in the next sprint.")}
+              onClick={() => {
+                setCartOpen(false);
+                router.push("/checkout");
+              }}
             >
               Checkout
             </button>
