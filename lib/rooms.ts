@@ -113,8 +113,8 @@ export const SAMPLE_ROOMS: SampleRoom[] = [
       styleAffinity: [
         { styleId: "scandinavian", score: 94 },
         { styleId: "japandi", score: 91 },
-        { styleId: "midcentury", score: 86 },
-        { styleId: "coastal", score: 78 },
+        { styleId: "organicmodern", score: 86 },
+        { styleId: "cozy", score: 78 },
       ],
     },
   },
@@ -161,7 +161,7 @@ export const SAMPLE_ROOMS: SampleRoom[] = [
       styleAffinity: [
         { styleId: "japandi", score: 92 },
         { styleId: "scandinavian", score: 90 },
-        { styleId: "bohemian", score: 84 },
+        { styleId: "cozy", score: 84 },
         { styleId: "minimalist", score: 80 },
       ],
     },
@@ -209,10 +209,10 @@ export const SAMPLE_ROOMS: SampleRoom[] = [
         "Sheer + blackout layering will tame afternoon glare",
       ],
       styleAffinity: [
-        { styleId: "artdeco", score: 93 },
-        { styleId: "midcentury", score: 90 },
+        { styleId: "darkluxury", score: 93 },
+        { styleId: "classic", score: 90 },
         { styleId: "industrial", score: 85 },
-        { styleId: "bohemian", score: 81 },
+        { styleId: "mediterranean", score: 81 },
       ],
     },
   },

@@ -42,7 +42,7 @@ export function demoAnalysisForUpload(seedKey: string): RoomAnalysis {
   const orientation = ORIENTATIONS[Math.floor(rand() * ORIENTATIONS.length)];
   const floor = FLOORS[Math.floor(rand() * FLOORS.length)];
   const naturalScore = Math.round(45 + rand() * 45);
-  const styles = ["scandinavian", "japandi", "midcentury", "minimalist", "industrial", "bohemian", "artdeco", "coastal"];
+  const styles = ["scandinavian", "japandi", "modernluxury", "minimalist", "industrial", "organicmodern", "mediterranean", "darkluxury", "cozy", "classic"];
   const affinity = styles
     .map((styleId) => ({ styleId, score: Math.round(62 + rand() * 34) }))
     .sort((a, b) => b.score - a.score)

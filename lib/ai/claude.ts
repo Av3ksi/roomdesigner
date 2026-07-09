@@ -239,6 +239,109 @@ export async function analyzeRoomImage(
   }
 }
 
+/* ————— AI designer assistant ————— */
+
+const ASSISTANT_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["reply", "actions"],
+  properties: {
+    reply: { type: "string" },
+    actions: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["type", "delta", "hex", "tier", "category", "direction", "brands"],
+        properties: {
+          type: {
+            type: "string",
+            enum: [
+              "adjust_warmth",
+              "set_accent",
+              "set_budget",
+              "swap_product",
+              "restrict_brands",
+              "child_friendly",
+            ],
+          },
+          delta: { type: ["number", "null"] },
+          hex: { type: ["string", "null"] },
+          tier: { type: ["string", "null"], enum: ["essential", "signature", "luxe", null] },
+          category: {
+            type: ["string", "null"],
+            enum: [
+              "sofa", "chair", "table", "lighting", "rug",
+              "art", "plant", "storage", "decor", "textile", null,
+            ],
+          },
+          direction: { type: ["string", "null"], enum: ["cheaper", "premium", "different", null] },
+          brands: { type: ["array", "null"], items: { type: "string" } },
+        },
+      },
+    },
+  },
+} as const;
+
+export interface RawAssistantAction {
+  type: string;
+  delta: number | null;
+  hex: string | null;
+  tier: string | null;
+  category: string | null;
+  direction: string | null;
+  brands: string[] | null;
+}
+
+/**
+ * Interprets a free-text designer request ("make it warmer", "use only Swiss
+ * stores") into a short reply plus structured room actions. Null when AI is
+ * disabled — callers fall back to the keyword engine.
+ */
+export async function interpretAssistantMessage(
+  message: string,
+  context: string,
+): Promise<{ reply: string; actions: RawAssistantAction[] } | null> {
+  if (!aiEnabled()) return null;
+  try {
+    const response = await client().messages.create({
+      model: MODEL,
+      max_tokens: 4096,
+      thinking: { type: "adaptive" },
+      system: `You are Maison's AI interior designer, chatting with a client inside their generated room design. Interpret their request into (1) a warm, specific 1–2 sentence reply in the language they wrote in, and (2) structured actions the app applies instantly.
+
+Available actions:
+- adjust_warmth (delta -0.4..0.4): warmer/cozier lighting vs cooler/brighter
+- set_accent (hex): change the accent color woven through cushions, rug and art
+- set_budget (tier essential|signature|luxe): cheaper ↔ more luxurious product specification
+- swap_product (category + direction cheaper|premium|different): replace one piece
+- restrict_brands (brands array): limit to specific retail partners — resolve country requests using the provided brand→country list
+- child_friendly: rounded edges, robust materials, no fragile decor
+
+Prefer 1–2 precise actions over many. If the request is out of scope, reply helpfully with zero actions.`,
+      output_config: {
+        format: {
+          type: "json_schema",
+          schema: ASSISTANT_SCHEMA as unknown as Record<string, unknown>,
+        },
+      },
+      messages: [
+        {
+          role: "user",
+          content: `Current room context:\n${context}\n\nClient message: "${message}"`,
+        },
+      ],
+    });
+    if (response.stop_reason === "refusal") return null;
+    const text = firstText(response.content);
+    if (!text) return null;
+    return JSON.parse(text) as { reply: string; actions: RawAssistantAction[] };
+  } catch (err) {
+    console.error("[maison] Claude assistant failed, falling back to demo:", err);
+    return null;
+  }
+}
+
 const NARRATIVE_SCHEMA = {
   type: "object",
   additionalProperties: false,

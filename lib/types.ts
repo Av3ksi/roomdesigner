@@ -127,6 +127,33 @@ export interface DesignBrief {
   accent: string | null;
   lifestyle: string[];
   brands: string[];
+  /** Hard ceiling for the room total; the AI re-specifies pieces to fit. */
+  maxBudget: number | null;
+}
+
+/* ————— AI designer assistant ————— */
+
+export type AssistantAction =
+  | { type: "adjust_warmth"; delta: number }
+  | { type: "set_accent"; hex: string | null }
+  | { type: "set_budget"; tier: BudgetTier }
+  | { type: "swap_product"; category: ProductCategory; direction: "cheaper" | "premium" | "different" }
+  | { type: "restrict_brands"; brands: string[] }
+  | { type: "child_friendly" };
+
+export interface AssistantResponse {
+  engine: "claude" | "demo";
+  reply: string;
+  actions: AssistantAction[];
+}
+
+export interface AssistantContext {
+  styleId: string;
+  styleName: string;
+  budget: BudgetTier;
+  total: number;
+  productSummary: string;
+  roomSummary: string;
 }
 
 export type UploadKind = "photo" | "floorplan";
