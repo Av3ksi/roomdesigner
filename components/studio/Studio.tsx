@@ -8,10 +8,12 @@ import {
   ImagePlus,
   Loader2,
   Map,
+  MessageCircle,
   Orbit,
   RefreshCcw,
   RotateCcw,
   ScanLine,
+  Send,
   ShieldCheck,
   ShoppingBag,
   Sparkles,
@@ -25,15 +27,26 @@ import BeforeAfterSlider from "@/components/BeforeAfterSlider";
 import ProductGlyph from "@/components/room/ProductGlyph";
 import RoomScene from "@/components/room/RoomScene";
 import ExploreMode from "@/components/studio/ExploreMode";
-import { BRANDS, formatPrice, PRODUCT_MAP } from "@/lib/products";
+import {
+  BRANDS,
+  buildConceptProducts,
+  formatPrice,
+  matchingAccessories,
+  PRODUCT_MAP,
+  resolveSwap,
+} from "@/lib/products";
 import { SAMPLE_ROOMS } from "@/lib/rooms";
 import { STYLE_MAP, STYLES } from "@/lib/styles";
 import { useMaisonStore } from "@/lib/store";
 import type {
+  AssistantAction,
+  AssistantContext,
+  AssistantResponse,
   BudgetTier,
   DesignBrief,
   DesignConcept,
   Product,
+  ProductCategory,
   RoomAnalysis,
   RoomStyleSpec,
   SampleRoom,
@@ -304,6 +317,7 @@ export default function Studio() {
     accent: null,
     lifestyle: [],
     brands: [],
+    maxBudget: null,
   });
   const [error, setError] = useState<string | null>(null);
   const [busyDone, setBusyDone] = useState(false);
@@ -724,6 +738,32 @@ export default function Studio() {
                   </button>
                 ))}
               </div>
+              <div className="mt-3 flex items-center gap-2.5">
+                <label htmlFor="maxBudget" className="text-[11px] uppercase tracking-wider text-cream-faint">
+                  Max total
+                </label>
+                <div className="flex items-center gap-1 rounded-full border border-ink-line bg-ink-soft px-3 py-1.5">
+                  <span className="text-xs text-cream-faint">$</span>
+                  <input
+                    id="maxBudget"
+                    type="number"
+                    min={500}
+                    step={100}
+                    placeholder="no limit"
+                    value={brief.maxBudget ?? ""}
+                    onChange={(e) =>
+                      setBrief({
+                        ...brief,
+                        maxBudget: e.target.value ? Math.max(0, Number(e.target.value)) : null,
+                      })
+                    }
+                    className="w-24 bg-transparent text-xs text-cream outline-none placeholder:text-cream-faint/60"
+                  />
+                </div>
+                <span className="hidden text-[10px] text-cream-faint sm:block">
+                  Budget AI re-specifies pieces to fit
+                </span>
+              </div>
               <div className="mt-4">
                 <div className="mb-2 text-[11px] uppercase tracking-wider text-cream-faint">Accent color</div>
                 <div className="flex flex-wrap gap-2">
@@ -887,7 +927,7 @@ export default function Studio() {
           analysis={analysis}
           concepts={concepts}
           styleId={chosenStyleId}
-          initialAccent={brief.accent}
+          brief={brief}
           onOtherStyle={() => setStep("styles")}
           onRestart={reset}
         />
@@ -1035,14 +1075,154 @@ function AnalysisView({
   );
 }
 
+
 /* ————————————————————————————————— result view ————————————————————————————————— */
+
+/** Live modifications the AI designer applies on top of a generated concept. */
+interface Adjustments {
+  warmthDelta: number;
+  budget: BudgetTier | null;
+  brandFilter: string[] | null;
+  swaps: Partial<Record<ProductCategory, string>>;
+  childFriendly: boolean;
+}
+
+const NO_ADJUSTMENTS: Adjustments = {
+  warmthDelta: 0,
+  budget: null,
+  brandFilter: null,
+  swaps: {},
+  childFriendly: false,
+};
+
+const SUGGESTIONS = [
+  "Make it warmer.",
+  "Replace the sofa.",
+  "Make it cheaper.",
+  "Use only Swiss stores.",
+  "Make it more luxurious.",
+  "Create a child-friendly version.",
+];
+
+function DesignerChat({
+  getContext,
+  onActions,
+}: {
+  getContext: () => AssistantContext;
+  onActions: (actions: AssistantAction[]) => void;
+}) {
+  const [messages, setMessages] = useState<{ role: "user" | "ai"; text: string }[]>([
+    {
+      role: "ai",
+      text: "I'm your Maison designer — tell me what to change and I'll update the room instantly.",
+    },
+  ]);
+  const [input, setInput] = useState("");
+  const [busy, setBusy] = useState(false);
+  const listRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: "smooth" });
+  }, [messages, busy]);
+
+  const send = async (raw: string) => {
+    const text = raw.trim();
+    if (!text || busy) return;
+    setInput("");
+    setMessages((m) => [...m, { role: "user", text }]);
+    setBusy(true);
+    try {
+      const res = await fetch("/api/assistant", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: text, context: getContext() }),
+      });
+      const data = (await res.json()) as AssistantResponse & { error?: string };
+      if (!res.ok) throw new Error(data.error ?? "Assistant unavailable");
+      if (data.actions.length) onActions(data.actions);
+      setMessages((m) => [...m, { role: "ai", text: data.reply }]);
+    } catch {
+      setMessages((m) => [
+        ...m,
+        { role: "ai", text: "I couldn't reach the design engine just now — try again in a moment." },
+      ]);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="card mt-4 overflow-hidden">
+      <div className="flex items-center gap-2 border-b border-ink-line px-4 py-3">
+        <MessageCircle size={15} className="text-brass" />
+        <span className="text-sm font-semibold">Your AI designer</span>
+        <span className="ml-auto text-[10px] uppercase tracking-widest text-cream-faint">
+          Live edits
+        </span>
+      </div>
+      <div ref={listRef} className="max-h-56 space-y-2.5 overflow-y-auto px-4 py-3">
+        {messages.map((msg, i) => (
+          <div
+            key={i}
+            className={`max-w-[85%] rounded-2xl px-3.5 py-2 text-sm leading-relaxed ${
+              msg.role === "user"
+                ? "ml-auto bg-brass/15 text-cream"
+                : "bg-ink-soft text-cream-dim"
+            }`}
+          >
+            {msg.text}
+          </div>
+        ))}
+        {busy && (
+          <div className="flex items-center gap-2 text-xs text-cream-faint">
+            <Loader2 size={13} className="animate-spin text-brass" /> Adjusting the room…
+          </div>
+        )}
+      </div>
+      <div className="flex flex-wrap gap-1.5 px-4 pb-2">
+        {SUGGESTIONS.map((s) => (
+          <button
+            key={s}
+            onClick={() => void send(s)}
+            disabled={busy}
+            className="rounded-full border border-ink-line px-2.5 py-1 text-[11px] text-cream-faint transition hover:border-brass/50 hover:text-brass-bright disabled:opacity-40"
+          >
+            {s}
+          </button>
+        ))}
+      </div>
+      <form
+        className="flex items-center gap-2 border-t border-ink-line px-3 py-2.5"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void send(input);
+        }}
+      >
+        <input
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          placeholder='Try "make it warmer" or "replace the sofa"…'
+          className="flex-1 bg-transparent px-1 text-sm text-cream outline-none placeholder:text-cream-faint/60"
+        />
+        <button
+          type="submit"
+          disabled={busy || !input.trim()}
+          className="rounded-full bg-brass p-2 text-ink transition hover:bg-brass-bright disabled:opacity-40"
+          aria-label="Send to designer"
+        >
+          <Send size={13} />
+        </button>
+      </form>
+    </div>
+  );
+}
 
 function ResultView({
   source,
   analysis,
   concepts,
   styleId,
-  initialAccent,
+  brief,
   onOtherStyle,
   onRestart,
 }: {
@@ -1050,37 +1230,118 @@ function ResultView({
   analysis: RoomAnalysis;
   concepts: DesignConcept[];
   styleId: string;
-  initialAccent: string | null;
+  brief: DesignBrief;
   onOtherStyle: () => void;
   onRestart: () => void;
 }) {
   const style = STYLE_MAP[styleId];
   const [active, setActive] = useState(0);
-  const [accent, setAccent] = useState<string | null>(initialAccent);
+  const [accent, setAccent] = useState<string | null>(brief.accent);
   const [excluded, setExcluded] = useState<Set<string>>(new Set());
   const [exploring, setExploring] = useState(false);
+  const [adjustments, setAdjustments] = useState<Adjustments>(NO_ADJUSTMENTS);
   const addManyToCart = useMaisonStore((s) => s.addManyToCart);
   const addToCart = useMaisonStore((s) => s.addToCart);
 
   const concept = concepts[active];
-  const spec = useMemo(() => applyAccent(concept.spec, accent), [concept, accent]);
-  const products = useMemo(
-    () =>
-      concept.productIds
-        .map((id) => PRODUCT_MAP[id])
-        .filter((p): p is Product => Boolean(p)),
-    [concept],
-  );
+
+  /** Product list = concept basket → AI adjustments (budget, brands, swaps, child-safe). */
+  const products = useMemo(() => {
+    let list: Product[] =
+      adjustments.budget !== null
+        ? buildConceptProducts(styleId, concept.variant, adjustments.budget, brief.brands)
+        : concept.productIds
+            .map((id) => PRODUCT_MAP[id])
+            .filter((p): p is Product => Boolean(p));
+    if (adjustments.brandFilter) {
+      list = list.filter((p) => adjustments.brandFilter!.includes(p.brand));
+    }
+    list = list.map((p) => {
+      const swapId = adjustments.swaps[p.category];
+      const swap = swapId ? PRODUCT_MAP[swapId] : undefined;
+      if (!swap) return p;
+      if (adjustments.brandFilter && !adjustments.brandFilter.includes(swap.brand)) return p;
+      return swap;
+    });
+    if (adjustments.childFriendly) {
+      list = list
+        .filter((p) => p.category !== "decor")
+        .map((p) => {
+          if (p.category === "table" && ["table-noir", "table-girder", "table-carrara"].includes(p.id)) {
+            const lumi = PRODUCT_MAP["table-lumi"];
+            const jura = PRODUCT_MAP["table-jura"];
+            return lumi.styles.includes(styleId) ? lumi : jura;
+          }
+          return p;
+        });
+    }
+    const seen = new Set<string>();
+    return list.filter((p) => (seen.has(p.id) ? false : (seen.add(p.id), true)));
+  }, [adjustments, concept, styleId, brief.brands]);
+
+  const spec = useMemo(() => {
+    const s = applyAccent(concept.spec, accent);
+    return { ...s, warmth: Math.max(0, Math.min(1, s.warmth + adjustments.warmthDelta)) };
+  }, [concept, accent, adjustments.warmthDelta]);
+
   const included = products.filter((p) => !excluded.has(p.id));
   const total = included.reduce((n, p) => n + p.price, 0);
+  const accessories = matchingAccessories(styleId, products.map((p) => p.id));
 
-  const toggleProduct = (id: string) =>
-    setExcluded((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
+  const applyActions = (actions: AssistantAction[]) => {
+    for (const a of actions) {
+      if (a.type === "set_accent") setAccent(a.hex);
+    }
+    setAdjustments((prev) => {
+      const next: Adjustments = { ...prev, swaps: { ...prev.swaps } };
+      for (const a of actions) {
+        switch (a.type) {
+          case "adjust_warmth":
+            next.warmthDelta = Math.max(-0.6, Math.min(0.6, next.warmthDelta + a.delta));
+            break;
+          case "set_budget":
+            next.budget = a.tier;
+            next.swaps = {};
+            break;
+          case "restrict_brands":
+            next.brandFilter = a.brands;
+            break;
+          case "child_friendly":
+            next.childFriendly = true;
+            break;
+          case "swap_product": {
+            const current = products.find((p) => p.category === a.category);
+            if (current) {
+              const swap = resolveSwap(current, styleId, a.direction, prev.brandFilter ?? []);
+              if (swap) next.swaps[a.category] = swap.id;
+            }
+            break;
+          }
+        }
+      }
       return next;
     });
+    setExcluded(new Set());
+  };
+
+  const getContext = (): AssistantContext => ({
+    styleId,
+    styleName: style.name,
+    budget: adjustments.budget ?? brief.budget,
+    total,
+    productSummary: products.map((p) => `${p.category}: ${p.name} ($${p.price}, ${p.brand})`).join("; "),
+    roomSummary: analysis.summary.slice(0, 300),
+  });
+
+  const adjustmentChips: string[] = [
+    adjustments.budget ? `Budget → ${adjustments.budget}` : "",
+    adjustments.brandFilter ? `Brands: ${adjustments.brandFilter.join(" · ")}` : "",
+    adjustments.childFriendly ? "Child-friendly" : "",
+    adjustments.warmthDelta > 0 ? "Warmer light" : adjustments.warmthDelta < 0 ? "Cooler light" : "",
+    Object.keys(adjustments.swaps).length
+      ? `${Object.keys(adjustments.swaps).length} piece${Object.keys(adjustments.swaps).length === 1 ? "" : "s"} swapped`
+      : "",
+  ].filter(Boolean);
 
   return (
     <div className="animate-fade-up">
@@ -1102,13 +1363,14 @@ function ResultView({
       </div>
 
       {/* Concept tabs */}
-      <div className="mt-6 flex flex-wrap gap-2">
+      <div className="mt-6 flex flex-wrap items-center gap-2">
         {concepts.map((c, i) => (
           <button
             key={c.id}
             onClick={() => {
               setActive(i);
               setExcluded(new Set());
+              setAdjustments(NO_ADJUSTMENTS);
             }}
             className={`rounded-full border px-4 py-2 text-sm font-semibold transition ${
               i === active
@@ -1119,6 +1381,24 @@ function ResultView({
             Concept {i + 1} · {c.name}
           </button>
         ))}
+        {adjustmentChips.length > 0 && (
+          <div className="ml-auto flex flex-wrap items-center gap-1.5">
+            {adjustmentChips.map((chip) => (
+              <span key={chip} className="chip !border-brass/40 !text-brass-bright">
+                <Sparkles size={10} /> {chip}
+              </span>
+            ))}
+            <button
+              onClick={() => {
+                setAdjustments(NO_ADJUSTMENTS);
+                setAccent(brief.accent);
+              }}
+              className="text-[11px] text-cream-faint underline-offset-2 hover:text-cream hover:underline"
+            >
+              reset
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="mt-5 grid gap-8 lg:grid-cols-[1.5fr_1fr]">
@@ -1139,6 +1419,8 @@ function ResultView({
             <span className="font-semibold text-brass-bright">Concept note — </span>
             {concept.narrative}
           </p>
+
+          <DesignerChat getContext={getContext} onActions={applyActions} />
 
           {/* Customize */}
           <div className="card mt-4 p-4">
@@ -1181,13 +1463,20 @@ function ResultView({
                 <div className="text-[10px] uppercase tracking-wider text-cream-faint">Full room</div>
               </div>
             </div>
-            <ul className="max-h-[430px] divide-y divide-ink-line/60 overflow-y-auto">
+            <ul className="max-h-[380px] divide-y divide-ink-line/60 overflow-y-auto">
               {products.map((p) => {
                 const on = !excluded.has(p.id);
                 return (
                   <li key={p.id} className={`flex items-center gap-3 px-4 py-3 ${on ? "" : "opacity-45"}`}>
                     <button
-                      onClick={() => toggleProduct(p.id)}
+                      onClick={() =>
+                        setExcluded((prev) => {
+                          const next = new Set(prev);
+                          if (next.has(p.id)) next.delete(p.id);
+                          else next.add(p.id);
+                          return next;
+                        })
+                      }
                       className={`flex h-5 w-5 shrink-0 items-center justify-center rounded border transition ${
                         on ? "border-brass bg-brass text-ink" : "border-ink-line"
                       }`}
@@ -1203,6 +1492,12 @@ function ResultView({
                       <div className="text-xs text-cream-faint">
                         {p.brand} · ★ {p.rating}
                       </div>
+                      <button
+                        onClick={() => applyActions([{ type: "swap_product", category: p.category, direction: "different" }])}
+                        className="mt-0.5 flex items-center gap-1 text-[10px] text-cream-faint transition hover:text-brass-bright"
+                      >
+                        <RefreshCcw size={9} /> Swap alternative
+                      </button>
                     </div>
                     <div className="flex shrink-0 flex-col items-end gap-1">
                       <span className="text-sm font-semibold">{formatPrice(p.price)}</span>
@@ -1229,6 +1524,31 @@ function ResultView({
               <TrustRow className="mt-3" />
             </div>
           </div>
+
+          {/* Shopping AI: matching accessories */}
+          {accessories.length > 0 && (
+            <div className="card mt-4 p-4">
+              <div className="mb-3 text-[11px] uppercase tracking-wider text-cream-faint">
+                Complete the look — AI picks
+              </div>
+              <ul className="space-y-2.5">
+                {accessories.map((p) => (
+                  <li key={p.id} className="flex items-center gap-3">
+                    <div className="h-11 w-14 shrink-0 overflow-hidden rounded-md">
+                      <ProductGlyph product={p} className="h-full w-full" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-sm">{p.name}</div>
+                      <div className="text-[11px] text-cream-faint">{formatPrice(p.price)}</div>
+                    </div>
+                    <button onClick={() => addToCart(p)} className="btn-ghost !px-3 !py-1.5 text-[11px]">
+                      Add
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </div>
       </div>
 
@@ -1238,6 +1558,9 @@ function ResultView({
           variant={concept.variant}
           styleName={style.name}
           products={products}
+          onSwap={(category, direction) =>
+            applyActions([{ type: "swap_product", category, direction }])
+          }
           onClose={() => setExploring(false)}
         />
       )}

@@ -14,6 +14,7 @@ interface ExploreModeProps {
   variant: number;
   styleName: string;
   products: Product[];
+  onSwap?: (category: ProductCategory, direction: "cheaper" | "premium" | "different") => void;
   onClose: () => void;
 }
 
@@ -44,6 +45,7 @@ export default function ExploreMode({
   variant,
   styleName,
   products,
+  onSwap,
   onClose,
 }: ExploreModeProps) {
   const [tilt, setTilt] = useState({ rx: 0, ry: 0 });
@@ -195,6 +197,19 @@ export default function ExploreMode({
                     </div>
                   </div>
                 </div>
+                {onSwap && (
+                  <div className="grid grid-cols-3 divide-x divide-ink-line border-t border-ink-line">
+                    {(["cheaper", "different", "premium"] as const).map((dir) => (
+                      <button
+                        key={dir}
+                        onClick={() => onSwap(active.category, dir)}
+                        className="py-2 text-[10px] font-semibold uppercase tracking-wider text-cream-faint transition hover:bg-ink-panel hover:text-brass-bright"
+                      >
+                        {dir === "different" ? "Similar" : dir}
+                      </button>
+                    ))}
+                  </div>
+                )}
                 <button
                   onClick={() => {
                     addToCart(active.product);

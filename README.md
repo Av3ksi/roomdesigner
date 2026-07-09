@@ -35,6 +35,29 @@ products you can buy in one click.
    include/exclude with a live room total.
 6. **Buy the room** — one click adds the whole look to the cart.
 
+## The AI intelligence layer
+
+Maison behaves like a professional interior designer, in five systems:
+
+1. **Room understanding** — vision analysis of architecture, dimensions,
+   furniture placement, lighting, materials and colors (multi-angle photos +
+   floor plan cross-referencing).
+2. **Style generation** — ten complete design languages: Scandinavian,
+   Japandi, Modern Luxury, Minimalist, Industrial, Organic Modern,
+   Mediterranean, Dark Luxury, Cozy, Classic — each with 3 concept variants.
+3. **AI conversation** (`/api/assistant`) — a designer chat inside the result
+   view. "Make it warmer", "Replace the sofa", "Make it cheaper", "Use only
+   Swiss stores", "Make it more luxurious", "Create a child-friendly
+   version" — free text is interpreted into structured room actions (Claude
+   structured outputs; keyword engine in demo mode) and applied instantly:
+   lighting, accents, budget tier, product swaps, brand/country restrictions.
+4. **Budget AI** — max budget, preferred brands and quality tier steer
+   specification; `fitToBudget` greedily re-specifies the priciest pieces
+   until the room lands under the ceiling.
+5. **Shopping AI** — every rendered object maps to a purchasable product,
+   with similar / cheaper / premium alternatives one tap away (hotspot
+   popovers + list swaps) and AI-picked matching accessories.
+
 ## AI architecture
 
 ```

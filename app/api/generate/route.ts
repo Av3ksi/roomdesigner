@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { aiEnabled, generateNarratives } from "@/lib/ai/claude";
-import { buildConceptProducts } from "@/lib/products";
+import { buildConceptProducts, fitToBudget, formatPrice } from "@/lib/products";
 import { makeVariantSpec, STYLE_MAP, VARIANT_NAMES, VARIANT_NOTES } from "@/lib/styles";
 import type {
   DesignBrief,
@@ -86,15 +86,23 @@ export async function POST(req: Request) {
   }
 
   const concepts: DesignConcept[] = [0, 1, 2].map((variant) => {
-    const products = buildConceptProducts(style.id, variant, budget, brands);
+    let products = buildConceptProducts(style.id, variant, budget, brands);
+    let budgetNote = "";
+    if (brief.maxBudget && brief.maxBudget > 0) {
+      const fitted = fitToBudget(products, style.id, brief.maxBudget);
+      if (fitted.changed > 0) {
+        products = fitted.products;
+        budgetNote = ` Budget AI re-specified ${fitted.changed} piece${fitted.changed === 1 ? "" : "s"} to land under ${formatPrice(brief.maxBudget)}.`;
+      }
+    }
     return {
       id: `${style.id}-v${variant}-${budget}`,
       styleId: style.id,
       variant,
       name: VARIANT_NAMES[variant],
       narrative:
-        narratives?.[variant] ??
-        templateNarrative(style.name, VARIANT_NOTES[variant], analysis, brief),
+        (narratives?.[variant] ??
+          templateNarrative(style.name, VARIANT_NOTES[variant], analysis, brief)) + budgetNote,
       spec: makeVariantSpec(style.spec, variant),
       productIds: products.map((p) => p.id),
     };
