@@ -26,7 +26,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import BeforeAfterSlider from "@/components/BeforeAfterSlider";
 import ProductGlyph from "@/components/room/ProductGlyph";
 import RoomScene from "@/components/room/RoomScene";
-import ExploreMode from "@/components/studio/ExploreMode";
+import Immersive3D from "@/components/studio/Immersive3D";
 import {
   BRANDS,
   buildConceptProducts,
@@ -123,6 +123,45 @@ function applyAccent(spec: RoomStyleSpec, accent: string | null): RoomStyleSpec 
     rugAccent: accent,
     cushions: [accent, ...spec.cushions.slice(1)],
     artColors: [accent, ...spec.artColors.slice(1)],
+  };
+}
+
+function darken(hex: string, f: number): string {
+  const n = parseInt(hex.replace("#", ""), 16);
+  const ch = (v: number) => Math.max(0, Math.min(255, Math.round(v * f)));
+  return `#${((ch((n >> 16) & 255) << 16) | (ch((n >> 8) & 255) << 8) | ch(n & 255)).toString(16).padStart(6, "0")}`;
+}
+
+/**
+ * Schematic 3D reconstruction of an uploaded room: the analysis palette
+ * drives the "before" world's walls, floor and furniture tones.
+ */
+function datedSpecFromAnalysis(analysis: RoomAnalysis): RoomStyleSpec {
+  const c = (i: number, fb: string) => analysis.colorPalette[i]?.hex ?? fb;
+  const wall = c(0, "#CFC5AE");
+  const sofa = c(1, "#6B5138");
+  const floor = c(2, "#A5794A");
+  const rug = c(3, "#8F7B5E");
+  return {
+    wall,
+    wallAccent: darken(wall, 0.94),
+    panel: "none",
+    floor,
+    floorSeam: darken(floor, 0.8),
+    rug,
+    rugAccent: darken(rug, 0.85),
+    sofa,
+    sofaShadow: darken(sofa, 0.75),
+    cushions: [rug, darken(sofa, 0.75), darken(wall, 0.85)],
+    wood: darken(floor, 0.7),
+    metal: "#55524A",
+    lampGlow: "#F5E1B8",
+    windowLight: "#DDE3E0",
+    art: "none",
+    artColors: [rug],
+    plant: false,
+    pendant: false,
+    warmth: 0.3,
   };
 }
 
@@ -1412,7 +1451,7 @@ function ResultView({
           />
 
           <button onClick={() => setExploring(true)} className="btn-primary mt-4 w-full">
-            <Orbit size={16} /> Step inside — explore & shop the room
+            <Orbit size={16} /> Enter your room — live 3D before & after
           </button>
 
           <p className="mt-4 rounded-xl border border-ink-line bg-ink-soft p-4 text-sm leading-relaxed text-cream-dim">
@@ -1553,14 +1592,18 @@ function ResultView({
       </div>
 
       {exploring && (
-        <ExploreMode
-          spec={spec}
+        <Immersive3D
+          beforeSpec={source.kind === "sample" ? source.room.spec : datedSpecFromAnalysis(analysis)}
+          afterSpec={spec}
           variant={concept.variant}
           styleName={style.name}
+          beforeLabel="Your room"
           products={products}
           onSwap={(category, direction) =>
             applyActions([{ type: "swap_product", category, direction }])
           }
+          onAddProduct={addToCart}
+          onBuyAll={() => addManyToCart(products)}
           onClose={() => setExploring(false)}
         />
       )}
