@@ -1,6 +1,6 @@
 "use client";
 
-import { Aperture, Footprints, Moon, Orbit as OrbitIcon, Plus, ShoppingBag, Sun, Sunrise, Sunset, X } from "lucide-react";
+import { Aperture, Footprints, Moon, Orbit as OrbitIcon, ShoppingBag, Sun, Sunrise, Sunset, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import * as THREE from "three";
@@ -10,6 +10,7 @@ import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { BokehPass } from "three/examples/jsm/postprocessing/BokehPass.js";
 import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
+import ProductDetailPanel from "@/components/ProductDetailPanel";
 import { buildRoom, ROOM, type RoomHandles } from "@/lib/three/roomBuilder";
 import { formatPrice } from "@/lib/products";
 import type { Product, ProductCategory, RoomStyleSpec } from "@/lib/types";
@@ -18,10 +19,11 @@ interface Immersive3DProps {
   beforeSpec: RoomStyleSpec;
   afterSpec: RoomStyleSpec;
   variant: number;
+  styleId: string;
   styleName: string;
   beforeLabel: string;
   products: Product[];
-  onSwap?: (category: ProductCategory, direction: "cheaper" | "premium" | "different") => void;
+  onReplaceProduct?: (product: Product) => void;
   onAddProduct: (p: Product) => void;
   onBuyAll: () => void;
   onClose: () => void;
@@ -32,8 +34,6 @@ interface HoverInfo {
   x: number;
   y: number;
 }
-
-const SWATCHES = ["#C0603A", "#5A7058", "#2B3A4A", "#C8A96E", "#6E3B33", "#E4DECF"];
 
 const SPLIT_MIN = -2.75;
 const SPLIT_MAX = 2.75;
@@ -434,10 +434,11 @@ export default function Immersive3D({
   beforeSpec,
   afterSpec,
   variant,
+  styleId,
   styleName,
   beforeLabel,
   products,
-  onSwap,
+  onReplaceProduct,
   onAddProduct,
   onBuyAll,
   onClose,
@@ -531,6 +532,11 @@ export default function Immersive3D({
     if (selected) appRef.current?.recolor(selected, hex);
   };
 
+  const handleReplace = (product: Product) => {
+    onReplaceProduct?.(product);
+    setSelected(null);
+  };
+
   const TIME_PRESETS = [
     { t: 0.08, label: "Dawn", icon: Sunrise },
     { t: 0.32, label: "Noon", icon: Sun },
@@ -616,58 +622,6 @@ export default function Immersive3D({
           );
         })()}
 
-        {/* Selection / customization panel */}
-        {selectedProduct && (
-          <div className="absolute right-4 top-16 z-20 w-72 animate-fade-in">
-            <div className="card overflow-hidden border-brass/40 bg-ink-soft/95 shadow-2xl backdrop-blur">
-              <div className="flex items-start justify-between gap-2 border-b border-ink-line px-4 py-3">
-                <div>
-                  <div className="text-sm font-semibold">{selectedProduct.name}</div>
-                  <div className="text-xs text-cream-faint">
-                    {selectedProduct.brand} · ★ {selectedProduct.rating} ·{" "}
-                    <span className="font-semibold text-brass-bright">{formatPrice(selectedProduct.price)}</span>
-                  </div>
-                </div>
-                <button onClick={() => setSelected(null)} className="text-cream-faint hover:text-cream" aria-label="Close product panel">
-                  <X size={14} />
-                </button>
-              </div>
-              <div className="px-4 py-3">
-                <div className="mb-2 text-[10px] uppercase tracking-widest text-cream-faint">Instant fabric / finish</div>
-                <div className="flex gap-2">
-                  {SWATCHES.map((hex) => (
-                    <button
-                      key={hex}
-                      onClick={() => recolorSelected(hex)}
-                      className="h-7 w-7 rounded-full border border-black/40 transition hover:scale-110"
-                      style={{ background: hex }}
-                      aria-label={`Recolor ${selectedProduct.name}`}
-                    />
-                  ))}
-                </div>
-              </div>
-              {onSwap && (
-                <div className="grid grid-cols-3 divide-x divide-ink-line border-t border-ink-line">
-                  {(["cheaper", "different", "premium"] as const).map((dir) => (
-                    <button
-                      key={dir}
-                      onClick={() => onSwap(selectedProduct.category, dir)}
-                      className="py-2 text-[10px] font-semibold uppercase tracking-wider text-cream-faint transition hover:bg-ink-panel hover:text-brass-bright"
-                    >
-                      {dir === "different" ? "Similar" : dir}
-                    </button>
-                  ))}
-                </div>
-              )}
-              <button
-                onClick={() => onAddProduct(selectedProduct)}
-                className="flex w-full items-center justify-center gap-2 border-t border-ink-line bg-brass/10 py-2.5 text-xs font-semibold text-brass-bright transition hover:bg-brass hover:text-ink"
-              >
-                <Plus size={13} /> Add to room list
-              </button>
-            </div>
-          </div>
-        )}
       </div>
 
       {/* Footer controls */}
@@ -711,6 +665,16 @@ export default function Immersive3D({
           <ShoppingBag size={14} /> Buy the room · {formatPrice(total)}
         </button>
       </div>
+
+      {selectedProduct && (
+        <ProductDetailPanel
+          product={selectedProduct}
+          styleId={styleId}
+          onClose={() => setSelected(null)}
+          onReplace={handleReplace}
+          onRecolor={recolorSelected}
+        />
+      )}
     </div>,
     document.body,
   );

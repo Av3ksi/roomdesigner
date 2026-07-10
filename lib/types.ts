@@ -171,3 +171,24 @@ export interface SampleRoom {
   spec: RoomStyleSpec;
   analysis: RoomAnalysis;
 }
+
+/* ————— Shopping: saved rooms, wishlist, share ————— */
+
+export type StockStatus = "in_stock" | "low_stock" | "made_to_order";
+
+/**
+ * A fully-resolved room, snapshotted for persistence (Saved Designs) or
+ * transport (Share links). Captures the exact spec and product basket the
+ * user was looking at — including any AI edits, swaps or colorway tints —
+ * so re-opening it is pixel-identical to the moment it was saved.
+ */
+export interface RoomSnapshot {
+  id: string;
+  name: string;
+  styleId: string;
+  styleName: string;
+  variant: number;
+  spec: RoomStyleSpec;
+  products: Product[];
+  createdAt: number;
+}

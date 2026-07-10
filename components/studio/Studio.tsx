@@ -5,7 +5,10 @@ import {
   ArrowRight,
   Camera,
   Check,
+  Columns3,
+  Heart,
   ImagePlus,
+  Link2,
   Loader2,
   Map,
   MessageCircle,
@@ -22,8 +25,11 @@ import {
   Wand2,
   X,
 } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import BeforeAfterSlider from "@/components/BeforeAfterSlider";
+import PricingPanel from "@/components/PricingPanel";
+import ProductDetailPanel from "@/components/ProductDetailPanel";
 import ProductGlyph from "@/components/room/ProductGlyph";
 import RoomScene from "@/components/room/RoomScene";
 import Immersive3D from "@/components/studio/Immersive3D";
@@ -36,6 +42,7 @@ import {
   resolveSwap,
 } from "@/lib/products";
 import { SAMPLE_ROOMS } from "@/lib/rooms";
+import { shareUrlFor } from "@/lib/share";
 import { STYLE_MAP, STYLES } from "@/lib/styles";
 import { useMaisonStore } from "@/lib/store";
 import type {
@@ -1122,7 +1129,7 @@ interface Adjustments {
   warmthDelta: number;
   budget: BudgetTier | null;
   brandFilter: string[] | null;
-  swaps: Partial<Record<ProductCategory, string>>;
+  swaps: Partial<Record<ProductCategory, Product>>;
   childFriendly: boolean;
 }
 
@@ -1274,13 +1281,22 @@ function ResultView({
   onRestart: () => void;
 }) {
   const style = STYLE_MAP[styleId];
+  const router = useRouter();
   const [active, setActive] = useState(0);
   const [accent, setAccent] = useState<string | null>(brief.accent);
   const [excluded, setExcluded] = useState<Set<string>>(new Set());
   const [exploring, setExploring] = useState(false);
   const [adjustments, setAdjustments] = useState<Adjustments>(NO_ADJUSTMENTS);
+  const [detailProduct, setDetailProduct] = useState<Product | null>(null);
+  const [compareOpen, setCompareOpen] = useState(false);
+  const [shareCopied, setShareCopied] = useState(false);
+  const [saveFeedback, setSaveFeedback] = useState(false);
+  const shopListRef = useRef<HTMLDivElement>(null);
   const addManyToCart = useMaisonStore((s) => s.addManyToCart);
   const addToCart = useMaisonStore((s) => s.addToCart);
+  const toggleWishlist = useMaisonStore((s) => s.toggleWishlist);
+  const isWishlisted = useMaisonStore((s) => s.isWishlisted);
+  const saveDesign = useMaisonStore((s) => s.saveDesign);
 
   const concept = concepts[active];
 
@@ -1296,8 +1312,7 @@ function ResultView({
       list = list.filter((p) => adjustments.brandFilter!.includes(p.brand));
     }
     list = list.map((p) => {
-      const swapId = adjustments.swaps[p.category];
-      const swap = swapId ? PRODUCT_MAP[swapId] : undefined;
+      const swap = adjustments.swaps[p.category];
       if (!swap) return p;
       if (adjustments.brandFilter && !adjustments.brandFilter.includes(swap.brand)) return p;
       return swap;
@@ -1352,7 +1367,7 @@ function ResultView({
             const current = products.find((p) => p.category === a.category);
             if (current) {
               const swap = resolveSwap(current, styleId, a.direction, prev.brandFilter ?? []);
-              if (swap) next.swaps[a.category] = swap.id;
+              if (swap) next.swaps[a.category] = swap;
             }
             break;
           }
@@ -1361,6 +1376,21 @@ function ResultView({
       return next;
     });
     setExcluded(new Set());
+  };
+
+  /** Replace a product's slot in the room with a specific product — used by
+   *  ProductDetailPanel (tier compare, alternatives) and 3D hotspots. */
+  const applyReplace = (product: Product) => {
+    setAdjustments((prev) => ({
+      ...prev,
+      swaps: { ...prev.swaps, [product.category]: product },
+    }));
+    setExcluded((prev) => {
+      if (!prev.has(product.id)) return prev;
+      const next = new Set(prev);
+      next.delete(product.id);
+      return next;
+    });
   };
 
   const getContext = (): AssistantContext => ({
@@ -1382,6 +1412,52 @@ function ResultView({
       : "",
   ].filter(Boolean);
 
+  const handleBuyComplete = () => {
+    addManyToCart(included);
+    router.push("/checkout");
+  };
+
+  const handleCustomize = () => {
+    shopListRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
+  const handleSaveDesign = () => {
+    saveDesign({
+      name: `${style.name} — ${analysis.roomType}`,
+      styleId,
+      styleName: style.name,
+      variant: concept.variant,
+      spec,
+      products,
+    });
+    setSaveFeedback(true);
+    setTimeout(() => setSaveFeedback(false), 2200);
+  };
+
+  const handleShare = async () => {
+    const url = shareUrlFor({
+      id: "",
+      name: `${style.name} — ${analysis.roomType}`,
+      styleId,
+      styleName: style.name,
+      variant: concept.variant,
+      spec,
+      products,
+      createdAt: Date.now(),
+    });
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: `Maison — ${style.name} redesign`, url });
+        return;
+      }
+    } catch {
+      // fall through to clipboard
+    }
+    await navigator.clipboard.writeText(url);
+    setShareCopied(true);
+    setTimeout(() => setShareCopied(false), 2200);
+  };
+
   return (
     <div className="animate-fade-up">
       <div className="flex flex-wrap items-end justify-between gap-4">
@@ -1391,7 +1467,19 @@ function ResultView({
             {analysis.roomType}, reimagined.
           </h2>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          <button onClick={handleSaveDesign} className="btn-ghost !px-4 !py-2 text-xs">
+            <Heart size={13} /> {saveFeedback ? "Saved!" : "Save design"}
+          </button>
+          <button onClick={() => void handleShare()} className="btn-ghost !px-4 !py-2 text-xs">
+            <Link2 size={13} /> {shareCopied ? "Link copied!" : "Share"}
+          </button>
+          <button
+            onClick={() => setCompareOpen((v) => !v)}
+            className={`btn-ghost !px-4 !py-2 text-xs ${compareOpen ? "!border-brass/50 !text-brass-bright" : ""}`}
+          >
+            <Columns3 size={13} /> Compare concepts
+          </button>
           <button onClick={onOtherStyle} className="btn-ghost !px-4 !py-2 text-xs">
             <ArrowLeft size={13} /> Try another style
           </button>
@@ -1400,6 +1488,45 @@ function ResultView({
           </button>
         </div>
       </div>
+
+      {compareOpen && (
+        <div className="mt-6 grid animate-fade-in gap-4 sm:grid-cols-3">
+          {concepts.map((c, i) => {
+            const cProducts = c.productIds.map((id) => PRODUCT_MAP[id]).filter((p): p is Product => Boolean(p));
+            const cTotal = cProducts.reduce((n, p) => n + p.price, 0);
+            return (
+              <div key={c.id} className={`card overflow-hidden ${i === active ? "border-brass/60" : ""}`}>
+                <div className="aspect-[3/2] overflow-hidden">
+                  <RoomScene spec={applyAccent(c.spec, brief.accent)} variant={c.variant} className="h-full w-full" />
+                </div>
+                <div className="p-3.5">
+                  <div className="font-semibold">
+                    Concept {i + 1} · {c.name}
+                  </div>
+                  <div className="mt-0.5 text-xs text-cream-faint">
+                    {cProducts.length} pieces · {formatPrice(cTotal)}
+                  </div>
+                  <button
+                    onClick={() => {
+                      setActive(i);
+                      setExcluded(new Set());
+                      setAdjustments(NO_ADJUSTMENTS);
+                      setCompareOpen(false);
+                    }}
+                    className={`mt-3 w-full rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+                      i === active
+                        ? "border-brass bg-brass/10 text-brass-bright"
+                        : "border-ink-line text-cream-dim hover:border-brass/40"
+                    }`}
+                  >
+                    {i === active ? "Currently viewing" : "Choose this"}
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {/* Concept tabs */}
       <div className="mt-6 flex flex-wrap items-center gap-2">
@@ -1489,12 +1616,14 @@ function ResultView({
 
         {/* Shop the look */}
         <div>
-          <div className="card overflow-hidden">
+          <PricingPanel products={included} onBuyComplete={handleBuyComplete} onCustomize={handleCustomize} />
+
+          <div ref={shopListRef} className="card mt-4 overflow-hidden">
             <div className="flex items-center justify-between border-b border-ink-line px-5 py-4">
               <div>
                 <div className="font-semibold">Shop this look</div>
                 <div className="text-xs text-cream-faint">
-                  {included.length} of {products.length} pieces selected
+                  {included.length} of {products.length} pieces selected — click any piece for full details
                 </div>
               </div>
               <div className="text-right">
@@ -1508,14 +1637,15 @@ function ResultView({
                 return (
                   <li key={p.id} className={`flex items-center gap-3 px-4 py-3 ${on ? "" : "opacity-45"}`}>
                     <button
-                      onClick={() =>
+                      onClick={(e) => {
+                        e.stopPropagation();
                         setExcluded((prev) => {
                           const next = new Set(prev);
                           if (next.has(p.id)) next.delete(p.id);
                           else next.add(p.id);
                           return next;
-                        })
-                      }
+                        });
+                      }}
                       className={`flex h-5 w-5 shrink-0 items-center justify-center rounded border transition ${
                         on ? "border-brass bg-brass text-ink" : "border-ink-line"
                       }`}
@@ -1523,28 +1653,34 @@ function ResultView({
                     >
                       {on && <Check size={12} strokeWidth={3} />}
                     </button>
-                    <div className="h-14 w-[70px] shrink-0 overflow-hidden rounded-md">
-                      <ProductGlyph product={p} className="h-full w-full" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate text-sm font-medium">{p.name}</div>
-                      <div className="text-xs text-cream-faint">
-                        {p.brand} · ★ {p.rating}
+                    <button
+                      onClick={() => setDetailProduct(p)}
+                      className="flex min-w-0 flex-1 items-center gap-3 text-left"
+                    >
+                      <div className="h-14 w-[70px] shrink-0 overflow-hidden rounded-md">
+                        <ProductGlyph product={p} className="h-full w-full" />
                       </div>
-                      <button
-                        onClick={() => applyActions([{ type: "swap_product", category: p.category, direction: "different" }])}
-                        className="mt-0.5 flex items-center gap-1 text-[10px] text-cream-faint transition hover:text-brass-bright"
-                      >
-                        <RefreshCcw size={9} /> Swap alternative
-                      </button>
-                    </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-sm font-medium">{p.name}</div>
+                        <div className="text-xs text-cream-faint">
+                          {p.brand} · ★ {p.rating}
+                        </div>
+                        <span className="mt-0.5 flex items-center gap-1 text-[10px] text-cream-faint transition group-hover:text-brass-bright">
+                          <RefreshCcw size={9} /> View & swap
+                        </span>
+                      </div>
+                    </button>
                     <div className="flex shrink-0 flex-col items-end gap-1">
                       <span className="text-sm font-semibold">{formatPrice(p.price)}</span>
                       <button
-                        onClick={() => addToCart(p)}
-                        className="text-[11px] text-brass transition hover:text-brass-bright"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleWishlist(p);
+                        }}
+                        className={`transition ${isWishlisted(p.id) ? "text-red-400" : "text-cream-faint hover:text-red-400"}`}
+                        aria-label={isWishlisted(p.id) ? "Remove from wishlist" : "Add to wishlist"}
                       >
-                        Add
+                        <Heart size={13} className={isWishlisted(p.id) ? "fill-current" : ""} />
                       </button>
                     </div>
                   </li>
@@ -1596,15 +1732,26 @@ function ResultView({
           beforeSpec={source.kind === "sample" ? source.room.spec : datedSpecFromAnalysis(analysis)}
           afterSpec={spec}
           variant={concept.variant}
+          styleId={styleId}
           styleName={style.name}
           beforeLabel="Your room"
           products={products}
-          onSwap={(category, direction) =>
-            applyActions([{ type: "swap_product", category, direction }])
-          }
+          onReplaceProduct={applyReplace}
           onAddProduct={addToCart}
           onBuyAll={() => addManyToCart(products)}
           onClose={() => setExploring(false)}
+        />
+      )}
+
+      {detailProduct && (
+        <ProductDetailPanel
+          product={detailProduct}
+          styleId={styleId}
+          onClose={() => setDetailProduct(null)}
+          onReplace={(product) => {
+            applyReplace(product);
+            setDetailProduct(null);
+          }}
         />
       )}
     </div>

@@ -2,7 +2,7 @@
 
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import type { Product } from "./types";
+import type { Product, RoomSnapshot } from "./types";
 
 export interface CartItem {
   product: Product;
@@ -18,11 +18,21 @@ interface MaisonStore {
   setQty: (productId: string, qty: number) => void;
   clearCart: () => void;
   setCartOpen: (open: boolean) => void;
+
+  wishlist: Product[];
+  toggleWishlist: (product: Product) => void;
+  isWishlisted: (productId: string) => boolean;
+  clearWishlist: () => void;
+
+  savedDesigns: RoomSnapshot[];
+  saveDesign: (design: Omit<RoomSnapshot, "id" | "createdAt">) => RoomSnapshot;
+  removeDesign: (id: string) => void;
+  renameDesign: (id: string, name: string) => void;
 }
 
 export const useMaisonStore = create<MaisonStore>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       cart: [],
       cartOpen: false,
       addToCart: (product) =>
@@ -58,10 +68,40 @@ export const useMaisonStore = create<MaisonStore>()(
         })),
       clearCart: () => set({ cart: [] }),
       setCartOpen: (cartOpen) => set({ cartOpen }),
+
+      wishlist: [],
+      toggleWishlist: (product) =>
+        set((s) => {
+          const on = s.wishlist.some((p) => p.id === product.id);
+          return {
+            wishlist: on
+              ? s.wishlist.filter((p) => p.id !== product.id)
+              : [...s.wishlist, product],
+          };
+        }),
+      isWishlisted: (productId) => get().wishlist.some((p) => p.id === productId),
+      clearWishlist: () => set({ wishlist: [] }),
+
+      savedDesigns: [],
+      saveDesign: (design) => {
+        const snapshot: RoomSnapshot = {
+          ...design,
+          id: `design-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          createdAt: Date.now(),
+        };
+        set((s) => ({ savedDesigns: [snapshot, ...s.savedDesigns] }));
+        return snapshot;
+      },
+      removeDesign: (id) =>
+        set((s) => ({ savedDesigns: s.savedDesigns.filter((d) => d.id !== id) })),
+      renameDesign: (id, name) =>
+        set((s) => ({
+          savedDesigns: s.savedDesigns.map((d) => (d.id === id ? { ...d, name } : d)),
+        })),
     }),
     {
-      name: "maison-cart",
-      partialize: (s) => ({ cart: s.cart }),
+      name: "maison-store",
+      partialize: (s) => ({ cart: s.cart, wishlist: s.wishlist, savedDesigns: s.savedDesigns }),
     },
   ),
 );
