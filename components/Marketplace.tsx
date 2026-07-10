@@ -1,12 +1,13 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Plus, Star } from "lucide-react";
+import { Heart, Plus, Star } from "lucide-react";
+import ProductDetailPanel from "@/components/ProductDetailPanel";
 import ProductGlyph from "@/components/room/ProductGlyph";
 import { formatPrice, PRODUCTS } from "@/lib/products";
 import { STYLES } from "@/lib/styles";
 import { useMaisonStore } from "@/lib/store";
-import type { ProductCategory } from "@/lib/types";
+import type { Product, ProductCategory } from "@/lib/types";
 
 const CATEGORIES: { id: ProductCategory | "all"; label: string }[] = [
   { id: "all", label: "All" },
@@ -25,7 +26,10 @@ const CATEGORIES: { id: ProductCategory | "all"; label: string }[] = [
 export default function Marketplace() {
   const [category, setCategory] = useState<ProductCategory | "all">("all");
   const [styleId, setStyleId] = useState<string>("all");
+  const [detailProduct, setDetailProduct] = useState<Product | null>(null);
   const addToCart = useMaisonStore((s) => s.addToCart);
+  const toggleWishlist = useMaisonStore((s) => s.toggleWishlist);
+  const isWishlisted = useMaisonStore((s) => s.isWishlisted);
 
   const filtered = useMemo(
     () =>
@@ -86,25 +90,47 @@ export default function Marketplace() {
       <div className="mt-8 grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         {filtered.map((p) => (
           <div key={p.id} className="card group overflow-hidden transition hover:border-brass/50">
-            <div className="aspect-[5/4] overflow-hidden">
+            <div
+              role="button"
+              tabIndex={0}
+              onClick={() => setDetailProduct(p)}
+              onKeyDown={(e) => e.key === "Enter" && setDetailProduct(p)}
+              className="relative block aspect-[5/4] w-full cursor-pointer overflow-hidden text-left"
+            >
               <ProductGlyph product={p} className="h-full w-full transition duration-500 group-hover:scale-105" />
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggleWishlist(p);
+                }}
+                aria-label={isWishlisted(p.id) ? "Remove from wishlist" : "Add to wishlist"}
+                className={`absolute right-2.5 top-2.5 rounded-full border p-2 backdrop-blur transition ${
+                  isWishlisted(p.id)
+                    ? "border-red-400/50 bg-ink/80 text-red-400"
+                    : "border-ink-line bg-ink/70 text-cream-dim hover:text-red-400"
+                }`}
+              >
+                <Heart size={14} className={isWishlisted(p.id) ? "fill-current" : ""} />
+              </button>
             </div>
             <div className="p-4">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="truncate font-semibold">{p.name}</div>
-                  <div className="text-xs text-cream-faint">{p.brand}</div>
-                </div>
-                <div className="shrink-0 text-right">
-                  <div className="font-semibold text-brass-bright">{formatPrice(p.price)}</div>
-                  <div className="flex items-center justify-end gap-1 text-[11px] text-cream-faint">
-                    <Star size={10} className="fill-brass text-brass" /> {p.rating} ({p.reviews})
+              <button onClick={() => setDetailProduct(p)} className="block w-full text-left">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="truncate font-semibold">{p.name}</div>
+                    <div className="text-xs text-cream-faint">{p.brand}</div>
+                  </div>
+                  <div className="shrink-0 text-right">
+                    <div className="font-semibold text-brass-bright">{formatPrice(p.price)}</div>
+                    <div className="flex items-center justify-end gap-1 text-[11px] text-cream-faint">
+                      <Star size={10} className="fill-brass text-brass" /> {p.rating} ({p.reviews})
+                    </div>
                   </div>
                 </div>
-              </div>
-              <p className="mt-2 line-clamp-2 text-xs leading-relaxed text-cream-faint">
-                {p.blurb}
-              </p>
+                <p className="mt-2 line-clamp-2 text-xs leading-relaxed text-cream-faint">
+                  {p.blurb}
+                </p>
+              </button>
               <button onClick={() => addToCart(p)} className="btn-ghost mt-4 w-full !py-2 text-xs">
                 <Plus size={13} /> Add to room list
               </button>
@@ -112,6 +138,14 @@ export default function Marketplace() {
           </div>
         ))}
       </div>
+
+      {detailProduct && (
+        <ProductDetailPanel
+          product={detailProduct}
+          styleId={detailProduct.styles[0] ?? "scandinavian"}
+          onClose={() => setDetailProduct(null)}
+        />
+      )}
     </div>
   );
 }

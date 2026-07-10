@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Menu, ShoppingBag, Sparkles, X } from "lucide-react";
+import { Heart, Menu, ShoppingBag, Sparkles, X } from "lucide-react";
 import { useState } from "react";
 import { cartCount, useMaisonStore } from "@/lib/store";
 
@@ -11,12 +11,14 @@ const LINKS = [
   { href: "/styles", label: "Styles" },
   { href: "/marketplace", label: "Marketplace" },
   { href: "/pricing", label: "Pricing" },
+  { href: "/designs", label: "My Designs" },
 ];
 
 export default function Nav() {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const cart = useMaisonStore((s) => s.cart);
+  const wishlist = useMaisonStore((s) => s.wishlist);
   const setCartOpen = useMaisonStore((s) => s.setCartOpen);
   const count = cartCount(cart);
 
@@ -49,6 +51,18 @@ export default function Nav() {
         </nav>
 
         <div className="flex items-center gap-3">
+          <Link
+            href="/wishlist"
+            className="relative rounded-full border border-ink-line p-2.5 text-cream-dim transition hover:border-brass/50 hover:text-brass-bright"
+            aria-label="Open wishlist"
+          >
+            <Heart size={17} />
+            {wishlist.length > 0 && (
+              <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-brass px-1 text-[10px] font-bold text-ink">
+                {wishlist.length}
+              </span>
+            )}
+          </Link>
           <button
             onClick={() => setCartOpen(true)}
             className="relative rounded-full border border-ink-line p-2.5 text-cream-dim transition hover:border-brass/50 hover:text-brass-bright"

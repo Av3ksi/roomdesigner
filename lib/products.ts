@@ -1,4 +1,4 @@
-import type { Product, ProductCategory } from "./types";
+import type { BudgetTier, Product, ProductCategory } from "./types";
 
 /**
  * Curated marketplace catalog. In production this is fed by retail partner
@@ -100,6 +100,57 @@ export const BRANDS = Array.from(new Set(PRODUCTS.map((p) => p.brand))).sort();
 
 export const brandsFromCountry = (country: string) =>
   BRANDS.filter((b) => BRAND_COUNTRY[b] === country);
+
+/** Storefront a brand's products are fulfilled through — distinct from the brand itself. */
+export const BRAND_RETAILER: Record<string, string> = {
+  Nordhem: "Nordic Living Co.",
+  Mokuzai: "Mokuzai Studio",
+  Ferndale: "Ferndale & Co.",
+  "Iron & Hide": "Forge District",
+  "Élan Paris": "Maison Élan",
+  Saltair: "Saltair Home",
+  "Alpina Haus": "Alpina Haus Direct",
+  "Harlow House": "Harlow House Interiors",
+  "Terra Verde": "Terra Verde Living",
+  Lumafabrik: "Lumafabrik Lighting",
+  Væv: "Væv Textiles",
+  "Atlas Loom": "Atlas Loom Rugs",
+  "Galerie M": "Galerie M Editions",
+  Verdant: "Verdant Botanicals",
+  "Studio Ilta": "Studio Ilta Ceramics",
+  "Zürich Atelier": "Zürich Atelier Direct",
+};
+
+/**
+ * Classifies a product's price tier relative to its own category — the
+ * bottom third of a category is "essential", the top third "luxe". Powers
+ * the Essential/Signature/Luxe badge and the compare-versions panel.
+ */
+export function tierOf(product: Product): BudgetTier {
+  const peers = [...PRODUCTS.filter((p) => p.category === product.category)].sort(
+    (a, b) => a.price - b.price,
+  );
+  const idx = peers.findIndex((p) => p.id === product.id);
+  if (idx === -1) return "signature";
+  const frac = idx / Math.max(1, peers.length - 1);
+  return frac < 0.34 ? "essential" : frac < 0.67 ? "signature" : "luxe";
+}
+
+/** One representative product per budget tier, for a given category + style. */
+export function tierOptions(
+  category: ProductCategory,
+  styleId: string,
+): Partial<Record<BudgetTier, Product>> {
+  const pool = [...PRODUCTS.filter((p) => p.category === category && p.styles.includes(styleId))].sort(
+    (a, b) => a.price - b.price,
+  );
+  if (pool.length === 0) return {};
+  return {
+    essential: pool[0],
+    signature: pool[Math.floor((pool.length - 1) / 2)],
+    luxe: pool[pool.length - 1],
+  };
+}
 
 const CONCEPT_CATEGORIES: ProductCategory[] = [
   "sofa",
@@ -263,3 +314,51 @@ export function conceptTotal(products: Product[]): number {
 
 export const formatPrice = (n: number) =>
   n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+
+/* ————————————————————————— Pricing panel ————————————————————————— */
+
+const FURNITURE_CATS: ProductCategory[] = ["sofa", "chair", "table", "storage"];
+const DECOR_CATS: ProductCategory[] = ["rug", "art", "plant", "decor", "textile"];
+
+export interface PricingBreakdown {
+  furniture: number;
+  lighting: number;
+  decoration: number;
+  installation: number;
+  delivery: number;
+  total: number;
+  monthly: number;
+}
+
+/** Estimated white-glove assembly cost, scaled by furniture piece count. */
+function estimateInstallation(products: Product[]): number {
+  const furniturePieces = products.filter((p) => FURNITURE_CATS.includes(p.category)).length;
+  if (furniturePieces === 0) return 0;
+  return Math.round(129 + furniturePieces * 42);
+}
+
+/** Estimated delivery cost, scaled by total item count. */
+function estimateDelivery(products: Product[]): number {
+  if (products.length === 0) return 0;
+  return Math.min(249, Math.round(59 + products.length * 11));
+}
+
+/**
+ * Category-grouped pricing for the premium pricing panel. Installation and
+ * delivery are previews — the real chooser lives at checkout.
+ */
+export function pricingBreakdown(products: Product[]): PricingBreakdown {
+  const furniture = products
+    .filter((p) => FURNITURE_CATS.includes(p.category))
+    .reduce((n, p) => n + p.price, 0);
+  const lighting = products
+    .filter((p) => p.category === "lighting")
+    .reduce((n, p) => n + p.price, 0);
+  const decoration = products
+    .filter((p) => DECOR_CATS.includes(p.category))
+    .reduce((n, p) => n + p.price, 0);
+  const installation = estimateInstallation(products);
+  const delivery = estimateDelivery(products);
+  const total = furniture + lighting + decoration + installation + delivery;
+  return { furniture, lighting, decoration, installation, delivery, total, monthly: Math.ceil(total / 12) };
+}
