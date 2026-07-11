@@ -35,13 +35,25 @@ const TIER_LABEL: Record<BudgetTier, string> = {
   luxe: "Luxe",
 };
 
-function tint(product: Product, hex: string, colorName: string): Product {
-  if (hex === product.color) return product;
+/**
+ * Builds the configured variant of a product — color and/or material — as a
+ * distinct SKU (own id) so cart lines, wishlist entries and room swaps stay
+ * unambiguous about exactly what was chosen.
+ */
+function configureVariant(
+  product: Product,
+  colorway: { name: string; hex: string } | null,
+  material: string | null,
+): Product {
+  const parts: string[] = [];
+  if (colorway && colorway.hex !== product.color) parts.push(colorway.name);
+  if (material) parts.push(material);
+  if (parts.length === 0) return product;
   return {
     ...product,
-    id: `${product.id}::${colorName}`,
-    name: `${product.name.split(" — ")[0]} — ${colorName}`,
-    color: hex,
+    id: `${product.id}::${parts.join("::")}`,
+    name: `${product.name.split(" — ")[0]} — ${parts.join(" · ")}`,
+    color: colorway?.hex ?? product.color,
   };
 }
 
@@ -74,6 +86,7 @@ export default function ProductDetailPanel({
   const [colorName, setColorName] = useState<string>(
     product.name.includes(" — ") ? product.name.split(" — ")[1] : "As shown",
   );
+  const [material, setMaterial] = useState<string | null>(null);
   const addToCart = useMaisonStore((s) => s.addToCart);
   const toggleWishlist = useMaisonStore((s) => s.toggleWishlist);
   const isWishlisted = useMaisonStore((s) => s.isWishlisted(product.id));
@@ -84,9 +97,13 @@ export default function ProductDetailPanel({
   const myTier = tierOf(product);
 
   const displayProduct = useMemo(() => {
-    const active = details.colorways.find((c) => c.name === colorName);
-    return active ? tint(product, active.hex, active.name) : product;
-  }, [product, details.colorways, colorName]);
+    const active = details.colorways.find((c) => c.name === colorName) ?? null;
+    return configureVariant(product, active, material);
+  }, [product, details.colorways, colorName, material]);
+
+  const displayMaterials = material
+    ? [material, ...details.materials.slice(1)]
+    : details.materials;
 
   const pickColorway = (name: string, hex: string) => {
     setColorName(name);
@@ -180,6 +197,32 @@ export default function ProductDetailPanel({
             </div>
           </div>
 
+          {/* Material & finish */}
+          <div className="mt-5">
+            <div className="mb-2 text-[11px] uppercase tracking-wider text-cream-faint">Material & finish</div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => setMaterial(null)}
+                className={`rounded-full border px-2.5 py-1.5 text-[11px] transition ${
+                  material === null ? "border-brass text-brass-bright" : "border-ink-line text-cream-dim hover:border-brass/40"
+                }`}
+              >
+                As specified
+              </button>
+              {details.materialOptions.map((m) => (
+                <button
+                  key={m}
+                  onClick={() => setMaterial(m)}
+                  className={`rounded-full border px-2.5 py-1.5 text-[11px] transition ${
+                    material === m ? "border-brass text-brass-bright" : "border-ink-line text-cream-dim hover:border-brass/40"
+                  }`}
+                >
+                  {m}
+                </button>
+              ))}
+            </div>
+          </div>
+
           {/* Dimensions */}
           <div className="mt-5 grid grid-cols-2 gap-3">
             <div className="card p-3.5">
@@ -195,7 +238,7 @@ export default function ProductDetailPanel({
               <div className="mb-1.5 flex items-center gap-1.5 text-[11px] uppercase tracking-wider text-cream-faint">
                 <Package size={12} className="text-brass" /> Materials
               </div>
-              <div className="text-sm leading-snug">{details.materials.join(", ")}</div>
+              <div className="text-sm leading-snug">{displayMaterials.join(", ")}</div>
             </div>
           </div>
 

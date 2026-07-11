@@ -4,7 +4,7 @@ import { Check } from "lucide-react";
 export const PLANS = [
   {
     name: "Atelier Free",
-    price: "$0",
+    price: "CHF 0",
     period: "forever",
     blurb: "Feel the magic on your own room.",
     features: [
@@ -18,7 +18,7 @@ export const PLANS = [
   },
   {
     name: "Maison Plus",
-    price: "$19",
+    price: "CHF 19",
     period: "per month",
     blurb: "For a whole home, room by room.",
     features: [
@@ -33,7 +33,7 @@ export const PLANS = [
   },
   {
     name: "Maison Pro",
-    price: "$79",
+    price: "CHF 79",
     period: "per month",
     blurb: "For designers, stagers and realtors.",
     features: [

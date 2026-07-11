@@ -13,7 +13,7 @@ const QUOTES = [
   },
   {
     quote:
-      "We'd been quoted $4,000 for a design consult. Maison gave us three concepts over coffee and we bought the whole living room the same afternoon.",
+      "We'd been quoted CHF 4,000 for a design consult. Maison gave us three concepts over coffee and we bought the whole living room the same afternoon.",
     name: "Dana & Marc R.",
     role: "Family den, Portland",
   },

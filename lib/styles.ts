@@ -9,7 +9,7 @@ export const STYLES: DesignStyle[] = [
       "Pale oak, soft whites and functional silhouettes. A room that breathes — built around daylight and quiet texture.",
     tags: ["Airy", "Pale oak", "Soft neutrals"],
     palette: ["#EDEAE2", "#D8CFC0", "#B9A98C", "#3D3A34"],
-    budgetBand: "$3.2k – $6.8k",
+    budgetBand: "CHF 3.2k – 6.8k",
     spec: {
       wall: "#E9E5DC",
       wallAccent: "#DFD9CC",
@@ -40,7 +40,7 @@ export const STYLES: DesignStyle[] = [
       "Low-slung forms, slatted wood and tea-stained neutrals. Every object earns its place; nothing shouts.",
     tags: ["Low profile", "Slatted wood", "Tea tones"],
     palette: ["#E4DCCB", "#B49B72", "#6E5B44", "#2E2A25"],
-    budgetBand: "$4.1k – $8.5k",
+    budgetBand: "CHF 4.1k – 8.5k",
     spec: {
       wall: "#E2DACA",
       wallAccent: "#D3C6AE",
@@ -71,7 +71,7 @@ export const STYLES: DesignStyle[] = [
       "Hotel-suite serenity: sculptural cream upholstery, fluted walls, stone and warm metal. Quiet money, loud comfort.",
     tags: ["Bouclé", "Travertine", "Warm brass"],
     palette: ["#E8E2D6", "#DCCFB8", "#C8A96E", "#2E2B27"],
-    budgetBand: "$7.5k – $16k",
+    budgetBand: "CHF 7.5k – 16k",
     spec: {
       wall: "#E8E2D6",
       wallAccent: "#DCD2C0",
@@ -102,7 +102,7 @@ export const STYLES: DesignStyle[] = [
       "A near-monochrome envelope where proportion does the talking. Storage disappears; light and shadow furnish the room.",
     tags: ["Monochrome", "Hidden storage", "Negative space"],
     palette: ["#F2F1EE", "#DBD9D4", "#9E9C96", "#2B2B29"],
-    budgetBand: "$2.9k – $6.2k",
+    budgetBand: "CHF 2.9k – 6.2k",
     spec: {
       wall: "#F0EEE9",
       wallAccent: "#E6E4DE",
@@ -133,7 +133,7 @@ export const STYLES: DesignStyle[] = [
       "Exposed brick and blackened steel softened with saddle leather and wool. Raw shell, warm heart.",
     tags: ["Exposed brick", "Black steel", "Leather"],
     palette: ["#4A3A33", "#9C5B3C", "#22211F", "#C9BFAF"],
-    budgetBand: "$4.4k – $9.1k",
+    budgetBand: "CHF 4.4k – 9.1k",
     spec: {
       wall: "#CFC7B8",
       wallAccent: "#8A5843",
@@ -164,7 +164,7 @@ export const STYLES: DesignStyle[] = [
       "Soft arcs, oat and sage, raw timber and clay. Nature's palette drawn with a modernist's pencil.",
     tags: ["Curved forms", "Oat & sage", "Raw timber"],
     palette: ["#EAE4D8", "#C8AF8A", "#8A9B84", "#4E4A40"],
-    budgetBand: "$3.8k – $7.9k",
+    budgetBand: "CHF 3.8k – 7.9k",
     spec: {
       wall: "#EAE4D8",
       wallAccent: "#E0D8C6",
@@ -195,7 +195,7 @@ export const STYLES: DesignStyle[] = [
       "Sun-baked plaster, terracotta and olive branches under a bright coastal sky. Holiday, made permanent.",
     tags: ["Whitewash", "Terracotta", "Olive"],
     palette: ["#F0E9DA", "#C0603A", "#7E9BA3", "#5A4632"],
-    budgetBand: "$3.5k – $7.4k",
+    budgetBand: "CHF 3.5k – 7.4k",
     spec: {
       wall: "#F0E9DA",
       wallAccent: "#E6D9BE",
@@ -226,7 +226,7 @@ export const STYLES: DesignStyle[] = [
       "Deep lacquered green, fluted detail and unapologetic brass. Evening-first rooms with cinema in their veins.",
     tags: ["Velvet", "Brass", "Lacquered green"],
     palette: ["#1F3B33", "#2E5347", "#C8A96E", "#12211D"],
-    budgetBand: "$6.2k – $14k",
+    budgetBand: "CHF 6.2k – 14k",
     spec: {
       wall: "#26443A",
       wallAccent: "#1D362E",
@@ -257,7 +257,7 @@ export const STYLES: DesignStyle[] = [
       "Rust and oat wool, low amber light, more textiles than strictly necessary. The room equivalent of a wood fire.",
     tags: ["Layered wool", "Rust & oat", "Amber light"],
     palette: ["#E5D9C6", "#C89B6E", "#A35E3B", "#6E5B44"],
-    budgetBand: "$3.1k – $6.6k",
+    budgetBand: "CHF 3.1k – 6.6k",
     spec: {
       wall: "#E5D9C6",
       wallAccent: "#D9C9AE",
@@ -288,7 +288,7 @@ export const STYLES: DesignStyle[] = [
       "Wainscoted walls, deep navy upholstery and polished walnut. Rooms your grandchildren will still find correct.",
     tags: ["Wainscot", "Navy", "Walnut"],
     palette: ["#E9E2D2", "#46586E", "#C8A96E", "#5E4025"],
-    budgetBand: "$5.2k – $11k",
+    budgetBand: "CHF 5.2k – 11k",
     spec: {
       wall: "#E9E2D2",
       wallAccent: "#D8CDB4",

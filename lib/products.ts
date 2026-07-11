@@ -313,7 +313,7 @@ export function conceptTotal(products: Product[]): number {
 }
 
 export const formatPrice = (n: number) =>
-  n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  n.toLocaleString("en-US", { style: "currency", currency: "CHF", maximumFractionDigits: 0 });
 
 /* ————————————————————————— Pricing panel ————————————————————————— */
 
