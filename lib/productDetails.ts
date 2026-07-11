@@ -28,6 +28,8 @@ export interface ProductDetails {
   retailer: string;
   dimensions: { w: number; d: number; h: number }; // cm
   materials: string[];
+  /** Alternate primary-material finishes the piece can be ordered in. */
+  materialOptions: string[];
   colorways: ProductColorway[];
   stock: StockStatus;
   deliveryDays: [number, number];
@@ -58,6 +60,20 @@ const MATERIAL_DEFAULTS: Record<ProductCategory, string[]> = {
   storage: ["Solid wood", "Metal hardware"],
   decor: ["Mixed materials"],
   textile: ["Woven fabric"],
+};
+
+/** Orderable primary-material alternatives per category — the "Adjust materials" options. */
+const MATERIAL_OPTION_POOLS: Record<ProductCategory, string[]> = {
+  sofa: ["Bouclé", "Belgian linen", "Cotton velvet", "Full-grain leather", "Wool twill"],
+  chair: ["Bouclé", "Linen weave", "Saddle leather", "Cane & oak", "Velvet"],
+  table: ["Oiled oak", "Walnut", "Smoked ash", "Honed marble", "Travertine"],
+  lighting: ["Brushed brass", "Blackened steel", "Washi paper", "Linen shade"],
+  rug: ["New Zealand wool", "Jute blend", "Wool-silk", "Undyed flatweave"],
+  art: ["Oak float frame", "Walnut frame", "Brass frame", "Museum glass"],
+  plant: ["Terracotta pot", "Glazed stoneware", "Concrete planter", "Rattan basket"],
+  storage: ["Oak veneer", "Walnut", "Reeded glass", "Powder-coated steel"],
+  decor: ["Stoneware", "Hand-blown glass", "Forged steel", "Travertine"],
+  textile: ["Baby alpaca", "Merino wool", "Washed linen", "Organic cotton"],
 };
 
 const MATERIAL_KEYWORDS = [
@@ -144,6 +160,13 @@ export function getProductDetails(product: Product): ProductDetails {
     colorways.push({ name, hex: hslToHex(profile.h, s, l) });
   }
 
+  const optionPool = [...MATERIAL_OPTION_POOLS[product.category]];
+  const materialOptions: string[] = [];
+  for (let i = 0; i < 3 && optionPool.length > 0; i++) {
+    const idx = Math.floor(rand() * optionPool.length);
+    materialOptions.push(optionPool.splice(idx, 1)[0]);
+  }
+
   const stockRoll = rand();
   const stock: StockStatus = stockRoll < 0.68 ? "in_stock" : stockRoll < 0.9 ? "low_stock" : "made_to_order";
   const deliveryDays: [number, number] =
@@ -167,6 +190,7 @@ export function getProductDetails(product: Product): ProductDetails {
     retailer: BRAND_RETAILER[product.brand] ?? `${product.brand} Direct`,
     dimensions: { w: pick(range.w), d: pick(range.d), h: pick(range.h) },
     materials: finalMaterials,
+    materialOptions,
     colorways,
     stock,
     deliveryDays,

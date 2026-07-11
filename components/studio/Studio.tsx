@@ -789,7 +789,7 @@ export default function Studio() {
                   Max total
                 </label>
                 <div className="flex items-center gap-1 rounded-full border border-ink-line bg-ink-soft px-3 py-1.5">
-                  <span className="text-xs text-cream-faint">$</span>
+                  <span className="text-xs text-cream-faint">CHF</span>
                   <input
                     id="maxBudget"
                     type="number"
@@ -1398,7 +1398,7 @@ function ResultView({
     styleName: style.name,
     budget: adjustments.budget ?? brief.budget,
     total,
-    productSummary: products.map((p) => `${p.category}: ${p.name} ($${p.price}, ${p.brand})`).join("; "),
+    productSummary: products.map((p) => `${p.category}: ${p.name} (CHF ${p.price}, ${p.brand})`).join("; "),
     roomSummary: analysis.summary.slice(0, 300),
   });
 

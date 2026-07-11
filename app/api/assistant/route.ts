@@ -159,7 +159,7 @@ export async function POST(req: Request) {
   const ctx = body.context;
   const contextText = [
     ctx ? `Style: ${ctx.styleName} (${ctx.styleId})` : "",
-    ctx ? `Budget tier: ${ctx.budget}; current room total: $${ctx.total}` : "",
+    ctx ? `Budget tier: ${ctx.budget}; current room total: CHF ${ctx.total}` : "",
     ctx ? `Pieces: ${ctx.productSummary}` : "",
     ctx ? `Room: ${ctx.roomSummary}` : "",
     `Retail partners (brand — country): ${BRANDS.map((b) => `${b} — ${BRAND_COUNTRY[b] ?? "?"}`).join("; ")}`,
