@@ -10,6 +10,7 @@ import {
   Sofa,
   SwatchBook,
 } from "lucide-react";
+import Reveal from "@/components/landing/Reveal";
 import RoomScene from "@/components/room/RoomScene";
 import { SAMPLE_ROOMS } from "@/lib/rooms";
 
@@ -31,7 +32,7 @@ export default function Intelligence() {
   return (
     <section className="container-page py-20">
       <div className="grid items-center gap-12 lg:grid-cols-2">
-        <div>
+        <Reveal>
           <div className="eyebrow mb-3">Spatial intelligence</div>
           <h2 className="font-display text-4xl leading-tight sm:text-5xl">
             It doesn&apos;t guess your room.
@@ -54,9 +55,9 @@ export default function Intelligence() {
               </div>
             ))}
           </div>
-        </div>
+        </Reveal>
 
-        <div className="relative">
+        <Reveal delay={120} className="relative">
           <div className="relative aspect-[4/3] overflow-hidden rounded-2xl border border-ink-line shadow-2xl shadow-black/50">
             <RoomScene spec={room.spec} dated className="h-full w-full" />
             {room.analysis.detections.map(
@@ -93,7 +94,7 @@ export default function Intelligence() {
               {(room.analysis.confidence * 100).toFixed(0)}%
             </div>
           </div>
-        </div>
+        </Reveal>
       </div>
     </section>
   );

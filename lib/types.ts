@@ -131,6 +131,15 @@ export interface DesignBrief {
   maxBudget: number | null;
 }
 
+/** Live modifications the AI designer (or the user directly) applies on top of a generated concept. */
+export interface Adjustments {
+  warmthDelta: number;
+  budget: BudgetTier | null;
+  brandFilter: string[] | null;
+  swaps: Partial<Record<ProductCategory, Product>>;
+  childFriendly: boolean;
+}
+
 /* ————— AI designer assistant ————— */
 
 export type AssistantAction =

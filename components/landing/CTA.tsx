@@ -1,10 +1,11 @@
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
+import Reveal from "@/components/landing/Reveal";
 
 export default function CTA() {
   return (
     <section className="container-page py-24">
-      <div className="relative overflow-hidden rounded-3xl border border-brass/30 bg-gradient-to-br from-ink-panel via-ink-soft to-ink px-8 py-16 text-center sm:px-16">
+      <Reveal className="relative overflow-hidden rounded-3xl border border-brass/30 bg-gradient-to-br from-ink-panel via-ink-soft to-ink px-8 py-16 text-center sm:px-16">
         <div
           className="pointer-events-none absolute inset-0"
           style={{
@@ -25,7 +26,7 @@ export default function CTA() {
             Open the Studio <ArrowRight size={17} />
           </Link>
         </div>
-      </div>
+      </Reveal>
     </section>
   );
 }

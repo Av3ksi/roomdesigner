@@ -7,6 +7,7 @@ import {
   Check,
   Columns3,
   Heart,
+  History,
   ImagePlus,
   Link2,
   Loader2,
@@ -33,6 +34,8 @@ import ProductDetailPanel from "@/components/ProductDetailPanel";
 import ProductGlyph from "@/components/room/ProductGlyph";
 import RoomScene from "@/components/room/RoomScene";
 import Immersive3D from "@/components/studio/Immersive3D";
+import RoomHistoryPanel from "@/components/studio/RoomHistoryPanel";
+import RoomIntelligencePanel from "@/components/studio/RoomIntelligencePanel";
 import {
   BRANDS,
   buildConceptProducts,
@@ -41,11 +44,14 @@ import {
   PRODUCT_MAP,
   resolveSwap,
 } from "@/lib/products";
+import { bestMoodMatch, matchMood } from "@/lib/mood";
 import { SAMPLE_ROOMS } from "@/lib/rooms";
+import type { RoomHistoryEntry } from "@/lib/roomHistory";
 import { shareUrlFor } from "@/lib/share";
 import { STYLE_MAP, STYLES } from "@/lib/styles";
 import { useMaisonStore } from "@/lib/store";
 import type {
+  Adjustments,
   AssistantAction,
   AssistantContext,
   AssistantResponse,
@@ -367,6 +373,7 @@ export default function Studio() {
   });
   const [error, setError] = useState<string | null>(null);
   const [busyDone, setBusyDone] = useState(false);
+  const [moodText, setMoodText] = useState("");
   const photoRef = useRef<HTMLInputElement>(null);
   const cameraRef = useRef<HTMLInputElement>(null);
   const planRef = useRef<HTMLInputElement>(null);
@@ -762,6 +769,39 @@ export default function Studio() {
             </button>
           </div>
 
+          {/* Mood-based generation */}
+          <div className="card mt-7 flex flex-col gap-3 border-brass/25 bg-brass/5 p-5 sm:flex-row sm:items-center">
+            <div className="flex-1">
+              <div className="flex items-center gap-1.5 text-[11px] uppercase tracking-wider text-brass">
+                <Wand2 size={12} /> Or describe a mood
+              </div>
+              <p className="mt-1 text-sm text-cream-dim">
+                &ldquo;A calm morning retreat&rdquo;, &ldquo;moody dinner-party energy&rdquo;, &ldquo;sunny coastal
+                weekend&rdquo; — Maison maps the feeling to a style and palette instantly.
+              </p>
+            </div>
+            <form
+              className="flex w-full gap-2 sm:w-auto"
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (!moodText.trim()) return;
+                const match = bestMoodMatch(moodText);
+                setBrief((prev) => ({ ...prev, accent: match.accent ?? prev.accent }));
+                void startGeneration(match.styleId);
+              }}
+            >
+              <input
+                value={moodText}
+                onChange={(e) => setMoodText(e.target.value)}
+                placeholder="Describe the feeling…"
+                className="w-full min-w-0 flex-1 rounded-full border border-ink-line bg-ink-soft px-4 py-2.5 text-sm text-cream outline-none placeholder:text-cream-faint/60 focus:border-brass/50 sm:w-64"
+              />
+              <button type="submit" disabled={!moodText.trim()} className="btn-primary shrink-0 !px-5 !py-2.5 text-xs disabled:opacity-40">
+                Generate
+              </button>
+            </form>
+          </div>
+
           {/* Design brief */}
           <div className="card mt-7 grid gap-6 p-5 lg:grid-cols-[1.2fr_1fr_1fr]">
             <div>
@@ -895,12 +935,19 @@ export default function Studio() {
           <div className="mt-8 grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {[...STYLES]
               .sort((a, b) => {
+                if (moodText.trim()) {
+                  const moodRanked = matchMood(moodText);
+                  const ma = moodRanked.find((x) => x.styleId === a.id)?.score ?? 0;
+                  const mb = moodRanked.find((x) => x.styleId === b.id)?.score ?? 0;
+                  if (ma !== mb) return mb - ma;
+                }
                 const sa = analysis.styleAffinity.find((x) => x.styleId === a.id)?.score ?? 0;
                 const sb = analysis.styleAffinity.find((x) => x.styleId === b.id)?.score ?? 0;
                 return sb - sa;
               })
               .map((style) => {
                 const match = analysis.styleAffinity.find((x) => x.styleId === style.id)?.score;
+                const moodHit = moodText.trim() && matchMood(moodText).find((x) => x.styleId === style.id)?.score;
                 return (
                   <button
                     key={style.id}
@@ -909,10 +956,16 @@ export default function Studio() {
                   >
                     <div className="relative aspect-[3/2] overflow-hidden">
                       <RoomScene spec={style.spec} className="h-full w-full transition duration-500 group-hover:scale-105" />
-                      {match !== undefined && (
-                        <span className="absolute right-2.5 top-2.5 rounded-full bg-ink/85 px-2.5 py-1 text-[11px] font-bold text-brass-bright backdrop-blur">
-                          {match}% match
+                      {moodHit ? (
+                        <span className="absolute right-2.5 top-2.5 flex items-center gap-1 rounded-full bg-brass px-2.5 py-1 text-[11px] font-bold text-ink backdrop-blur">
+                          <Wand2 size={10} /> Mood match
                         </span>
+                      ) : (
+                        match !== undefined && (
+                          <span className="absolute right-2.5 top-2.5 rounded-full bg-ink/85 px-2.5 py-1 text-[11px] font-bold text-brass-bright backdrop-blur">
+                            {match}% match
+                          </span>
+                        )
                       )}
                       <span className="absolute inset-x-0 bottom-0 flex items-center justify-center gap-1.5 bg-gradient-to-t from-ink/90 to-transparent py-2 text-xs font-semibold text-brass-bright opacity-0 transition group-hover:opacity-100">
                         <Wand2 size={12} /> Generate my designs
@@ -1125,14 +1178,6 @@ function AnalysisView({
 /* ————————————————————————————————— result view ————————————————————————————————— */
 
 /** Live modifications the AI designer applies on top of a generated concept. */
-interface Adjustments {
-  warmthDelta: number;
-  budget: BudgetTier | null;
-  brandFilter: string[] | null;
-  swaps: Partial<Record<ProductCategory, Product>>;
-  childFriendly: boolean;
-}
-
 const NO_ADJUSTMENTS: Adjustments = {
   warmthDelta: 0,
   budget: null,
@@ -1291,6 +1336,9 @@ function ResultView({
   const [compareOpen, setCompareOpen] = useState(false);
   const [shareCopied, setShareCopied] = useState(false);
   const [saveFeedback, setSaveFeedback] = useState(false);
+  const [history, setHistory] = useState<RoomHistoryEntry[]>([]);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const pendingLabelRef = useRef("Original concept");
   const shopListRef = useRef<HTMLDivElement>(null);
   const addManyToCart = useMaisonStore((s) => s.addManyToCart);
   const addToCart = useMaisonStore((s) => s.addToCart);
@@ -1342,7 +1390,77 @@ function ResultView({
   const total = included.reduce((n, p) => n + p.price, 0);
   const accessories = matchingAccessories(styleId, products.map((p) => p.id));
 
+  /**
+   * Every meaningful edit lands here as a new timeline entry — action
+   * handlers set pendingLabelRef right before triggering the state change
+   * that recomputes spec/products, so the label always describes what just
+   * happened rather than a generic "updated".
+   */
+  useEffect(() => {
+    setHistory((prev) => {
+      const entry: RoomHistoryEntry = {
+        id: `v-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        label: pendingLabelRef.current || "Updated",
+        timestamp: Date.now(),
+        activeIdx: active,
+        variant: concept.variant,
+        accent,
+        adjustments,
+        spec,
+        products,
+      };
+      pendingLabelRef.current = "";
+      return [entry, ...prev].slice(0, 24);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [spec, products]);
+
+  const currentHistoryId = history[0]?.id ?? "";
+
+  const restoreHistoryEntry = (entry: RoomHistoryEntry) => {
+    pendingLabelRef.current = `Restored "${entry.label}"`;
+    setActive(entry.activeIdx);
+    setAccent(entry.accent);
+    setAdjustments(entry.adjustments);
+    setExcluded(new Set());
+    setHistoryOpen(false);
+  };
+
+  const saveHistoryEntry = (entry: RoomHistoryEntry) => {
+    saveDesign({
+      name: `${style.name} — ${analysis.roomType} (${entry.label})`,
+      styleId,
+      styleName: style.name,
+      variant: entry.variant,
+      spec: entry.spec,
+      products: entry.products,
+    });
+    setSaveFeedback(true);
+    setTimeout(() => setSaveFeedback(false), 2200);
+  };
+
+  const labelForActions = (actions: AssistantAction[]): string => {
+    const parts = actions.map((a) => {
+      switch (a.type) {
+        case "adjust_warmth":
+          return a.delta > 0 ? "Made it warmer" : "Made it cooler";
+        case "set_accent":
+          return "Changed accent color";
+        case "set_budget":
+          return `Budget → ${a.tier}`;
+        case "restrict_brands":
+          return `Restricted to ${a.brands.join(", ")}`;
+        case "child_friendly":
+          return "Made it child-friendly";
+        case "swap_product":
+          return `Swapped ${a.category}`;
+      }
+    });
+    return parts.slice(0, 2).join(" + ") + (parts.length > 2 ? ` + ${parts.length - 2} more` : "");
+  };
+
   const applyActions = (actions: AssistantAction[]) => {
+    pendingLabelRef.current = labelForActions(actions);
     for (const a of actions) {
       if (a.type === "set_accent") setAccent(a.hex);
     }
@@ -1381,6 +1499,7 @@ function ResultView({
   /** Replace a product's slot in the room with a specific product — used by
    *  ProductDetailPanel (tier compare, alternatives) and 3D hotspots. */
   const applyReplace = (product: Product) => {
+    pendingLabelRef.current = `Replaced with ${product.name}`;
     setAdjustments((prev) => ({
       ...prev,
       swaps: { ...prev.swaps, [product.category]: product },
@@ -1475,6 +1594,17 @@ function ResultView({
             <Link2 size={13} /> {shareCopied ? "Link copied!" : "Share"}
           </button>
           <button
+            onClick={() => setHistoryOpen(true)}
+            className="btn-ghost !px-4 !py-2 text-xs"
+          >
+            <History size={13} /> History
+            {history.length > 1 && (
+              <span className="ml-0.5 rounded-full bg-brass/20 px-1.5 text-[10px] text-brass-bright">
+                {history.length}
+              </span>
+            )}
+          </button>
+          <button
             onClick={() => setCompareOpen((v) => !v)}
             className={`btn-ghost !px-4 !py-2 text-xs ${compareOpen ? "!border-brass/50 !text-brass-bright" : ""}`}
           >
@@ -1508,6 +1638,7 @@ function ResultView({
                   </div>
                   <button
                     onClick={() => {
+                      pendingLabelRef.current = `Switched to Concept ${i + 1} · ${c.name}`;
                       setActive(i);
                       setExcluded(new Set());
                       setAdjustments(NO_ADJUSTMENTS);
@@ -1534,6 +1665,7 @@ function ResultView({
           <button
             key={c.id}
             onClick={() => {
+              pendingLabelRef.current = `Switched to Concept ${i + 1} · ${c.name}`;
               setActive(i);
               setExcluded(new Set());
               setAdjustments(NO_ADJUSTMENTS);
@@ -1556,6 +1688,7 @@ function ResultView({
             ))}
             <button
               onClick={() => {
+                pendingLabelRef.current = "Reset to original concept";
                 setAdjustments(NO_ADJUSTMENTS);
                 setAccent(brief.accent);
               }}
@@ -1597,7 +1730,10 @@ function ResultView({
               {ACCENTS.map((a) => (
                 <button
                   key={a.name}
-                  onClick={() => setAccent(a.hex)}
+                  onClick={() => {
+                    pendingLabelRef.current = `Accent → ${a.name}`;
+                    setAccent(a.hex);
+                  }}
                   className={`flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs transition ${
                     accent === a.hex
                       ? "border-brass text-brass-bright"
@@ -1612,6 +1748,8 @@ function ResultView({
               ))}
             </div>
           </div>
+
+          <RoomIntelligencePanel products={products} analysis={analysis} styleId={styleId} />
         </div>
 
         {/* Shop the look */}
@@ -1752,6 +1890,16 @@ function ResultView({
             applyReplace(product);
             setDetailProduct(null);
           }}
+        />
+      )}
+
+      {historyOpen && (
+        <RoomHistoryPanel
+          history={history}
+          currentId={currentHistoryId}
+          onRestore={restoreHistoryEntry}
+          onSave={saveHistoryEntry}
+          onClose={() => setHistoryOpen(false)}
         />
       )}
     </div>
