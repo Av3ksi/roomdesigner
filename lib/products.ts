@@ -252,12 +252,14 @@ export function resolveSwap(
 /** Matching accessories (decor, textiles, plants, art) for a style not already owned. */
 export function matchingAccessories(styleId: string, ownedIds: string[]): Product[] {
   const owned = new Set(ownedIds);
-  return PRODUCTS.filter(
-    (p) =>
-      !owned.has(p.id) &&
-      p.styles.includes(styleId) &&
-      ["decor", "textile", "plant", "art"].includes(p.category),
-  ).slice(0, 3);
+  const inCategory = (p: Product) => !owned.has(p.id) && ["decor", "textile", "plant", "art"].includes(p.category);
+  // Most style tags only carry one product per accessory category, so once
+  // the base concept owns it, nothing in-style is left — fall back to the
+  // closest unowned accessory of any style rather than showing nothing.
+  const inStyle = PRODUCTS.filter((p) => inCategory(p) && p.styles.includes(styleId));
+  if (inStyle.length >= 3) return inStyle.slice(0, 3);
+  const rest = PRODUCTS.filter((p) => inCategory(p) && !inStyle.includes(p));
+  return [...inStyle, ...rest].slice(0, 3);
 }
 
 /**

@@ -12,6 +12,7 @@ const LINKS = [
   { href: "/marketplace", label: "Marketplace" },
   { href: "/pricing", label: "Pricing" },
   { href: "/designs", label: "My Designs" },
+  { href: "/boards", label: "Boards" },
 ];
 
 export default function Nav() {

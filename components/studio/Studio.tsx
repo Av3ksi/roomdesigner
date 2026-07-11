@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  AlertTriangle,
   ArrowLeft,
   ArrowRight,
   Camera,
@@ -9,6 +10,7 @@ import {
   Heart,
   History,
   ImagePlus,
+  Leaf,
   Link2,
   Loader2,
   Map,
@@ -20,12 +22,17 @@ import {
   Send,
   ShieldCheck,
   ShoppingBag,
+  Snowflake,
   Sparkles,
+  Sprout,
+  Sun,
   Truck,
   Upload,
+  Users2,
   Wand2,
   X,
 } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import BeforeAfterSlider from "@/components/BeforeAfterSlider";
@@ -36,6 +43,7 @@ import RoomScene from "@/components/room/RoomScene";
 import Immersive3D from "@/components/studio/Immersive3D";
 import RoomHistoryPanel from "@/components/studio/RoomHistoryPanel";
 import RoomIntelligencePanel from "@/components/studio/RoomIntelligencePanel";
+import ShoppingBundles from "@/components/studio/ShoppingBundles";
 import {
   BRANDS,
   buildConceptProducts,
@@ -45,6 +53,7 @@ import {
   resolveSwap,
 } from "@/lib/products";
 import { bestMoodMatch, matchMood } from "@/lib/mood";
+import { validateMeasurements } from "@/lib/measurementValidation";
 import { SAMPLE_ROOMS } from "@/lib/rooms";
 import type { RoomHistoryEntry } from "@/lib/roomHistory";
 import { shareUrlFor } from "@/lib/share";
@@ -127,6 +136,13 @@ const LIFESTYLES = [
   { id: "pets", label: "Pets" },
   { id: "office", label: "Work from home" },
   { id: "hosting", label: "Loves hosting" },
+];
+
+const SEASONS: { id: string; label: string; icon: typeof Sprout; warmthDelta: number; accent: string }[] = [
+  { id: "spring", label: "Spring", icon: Sprout, warmthDelta: 0.05, accent: "#5A7058" },
+  { id: "summer", label: "Summer", icon: Sun, warmthDelta: 0.2, accent: "#C0603A" },
+  { id: "autumn", label: "Autumn", icon: Leaf, warmthDelta: 0.1, accent: "#6E3B33" },
+  { id: "winter", label: "Winter", icon: Snowflake, warmthDelta: -0.2, accent: "#2B3A4A" },
 ];
 
 function applyAccent(spec: RoomStyleSpec, accent: string | null): RoomStyleSpec {
@@ -1059,6 +1075,7 @@ function AnalysisView({
   onRestart: () => void;
 }) {
   const a = analysis;
+  const measurementFlags = validateMeasurements(a);
   return (
     <div className="animate-fade-up">
       <div className="flex flex-wrap items-end justify-between gap-4">
@@ -1086,6 +1103,19 @@ function AnalysisView({
             <span className="font-semibold text-brass-bright">Designer&apos;s read — </span>
             {a.summary}
           </p>
+          {measurementFlags.length > 0 && (
+            <div className="mt-3 space-y-2">
+              {measurementFlags.map((f) => (
+                <div key={f.message} className="flex gap-2.5 rounded-xl border border-brass/30 bg-brass/5 p-3.5 text-xs leading-relaxed">
+                  <AlertTriangle size={14} className="mt-0.5 shrink-0 text-brass" />
+                  <div>
+                    <div className="text-cream-dim">{f.message}</div>
+                    <div className="mt-0.5 text-cream-faint">{f.suggestion}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
           {a.engine === "demo" && source.kind === "upload" && (
             <p className="mt-3 text-xs text-cream-faint">
               Demo engine: this analysis is simulated. Set{" "}
@@ -1338,6 +1368,7 @@ function ResultView({
   const [saveFeedback, setSaveFeedback] = useState(false);
   const [history, setHistory] = useState<RoomHistoryEntry[]>([]);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [season, setSeason] = useState<string | null>(null);
   const pendingLabelRef = useRef("Original concept");
   const shopListRef = useRef<HTMLDivElement>(null);
   const addManyToCart = useMaisonStore((s) => s.addManyToCart);
@@ -1512,6 +1543,19 @@ function ResultView({
     });
   };
 
+  const setBudgetTier = (tier: BudgetTier) => {
+    pendingLabelRef.current = `Budget → ${tier}`;
+    setAdjustments((prev) => ({ ...prev, budget: tier, swaps: {} }));
+    setExcluded(new Set());
+  };
+
+  const applySeason = (s: (typeof SEASONS)[number]) => {
+    pendingLabelRef.current = `Season → ${s.label}`;
+    setSeason(s.id);
+    setAdjustments((prev) => ({ ...prev, warmthDelta: s.warmthDelta }));
+    setAccent(s.accent);
+  };
+
   const getContext = (): AssistantContext => ({
     styleId,
     styleName: style.name,
@@ -1563,6 +1607,7 @@ function ResultView({
       spec,
       products,
       createdAt: Date.now(),
+      sharedWith: [],
     });
     try {
       if (navigator.share) {
@@ -1642,6 +1687,7 @@ function ResultView({
                       setActive(i);
                       setExcluded(new Set());
                       setAdjustments(NO_ADJUSTMENTS);
+                      setSeason(null);
                       setCompareOpen(false);
                     }}
                     className={`mt-3 w-full rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
@@ -1669,6 +1715,7 @@ function ResultView({
               setActive(i);
               setExcluded(new Set());
               setAdjustments(NO_ADJUSTMENTS);
+              setSeason(null);
             }}
             className={`rounded-full border px-4 py-2 text-sm font-semibold transition ${
               i === active
@@ -1691,6 +1738,7 @@ function ResultView({
                 pendingLabelRef.current = "Reset to original concept";
                 setAdjustments(NO_ADJUSTMENTS);
                 setAccent(brief.accent);
+                setSeason(null);
               }}
               className="text-[11px] text-cream-faint underline-offset-2 hover:text-cream hover:underline"
             >
@@ -1721,6 +1769,16 @@ function ResultView({
 
           <DesignerChat getContext={getContext} onActions={applyActions} />
 
+          <Link
+            href="/consultation"
+            className="mt-3 flex items-center justify-between rounded-xl border border-ink-line px-4 py-3 text-xs text-cream-dim transition hover:border-brass/40 hover:text-brass-bright"
+          >
+            <span className="flex items-center gap-2">
+              <Users2 size={14} className="text-brass" /> Prefer a human touch? Book a design consultation.
+            </span>
+            <ArrowRight size={13} />
+          </Link>
+
           {/* Customize */}
           <div className="card mt-4 p-4">
             <div className="mb-3 text-[11px] uppercase tracking-wider text-cream-faint">
@@ -1749,12 +1807,54 @@ function ResultView({
             </div>
           </div>
 
+          {/* Global shopping mode + seasonal redesign */}
+          <div className="card mt-4 grid gap-4 p-4 sm:grid-cols-2">
+            <div>
+              <div className="mb-2.5 text-[11px] uppercase tracking-wider text-cream-faint">Shopping mode</div>
+              <div className="grid grid-cols-3 gap-1.5">
+                {BUDGETS.map((b) => {
+                  const on = (adjustments.budget ?? brief.budget) === b.id;
+                  return (
+                    <button
+                      key={b.id}
+                      onClick={() => setBudgetTier(b.id)}
+                      className={`rounded-lg border px-2 py-1.5 text-[11px] font-semibold transition ${
+                        on ? "border-brass bg-brass/10 text-brass-bright" : "border-ink-line text-cream-dim hover:border-brass/40"
+                      }`}
+                    >
+                      {b.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+            <div>
+              <div className="mb-2.5 text-[11px] uppercase tracking-wider text-cream-faint">Seasonal redesign</div>
+              <div className="grid grid-cols-4 gap-1.5">
+                {SEASONS.map((s) => (
+                  <button
+                    key={s.id}
+                    onClick={() => applySeason(s)}
+                    className={`flex flex-col items-center gap-1 rounded-lg border px-2 py-1.5 transition ${
+                      season === s.id ? "border-brass bg-brass/10 text-brass-bright" : "border-ink-line text-cream-dim hover:border-brass/40"
+                    }`}
+                    aria-label={s.label}
+                    title={s.label}
+                  >
+                    <s.icon size={13} />
+                    <span className="text-[9px] font-semibold">{s.label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
           <RoomIntelligencePanel products={products} analysis={analysis} styleId={styleId} />
         </div>
 
         {/* Shop the look */}
         <div>
-          <PricingPanel products={included} onBuyComplete={handleBuyComplete} onCustomize={handleCustomize} />
+          <PricingPanel products={included} analysis={analysis} onBuyComplete={handleBuyComplete} onCustomize={handleCustomize} />
 
           <div ref={shopListRef} className="card mt-4 overflow-hidden">
             <div className="flex items-center justify-between border-b border-ink-line px-5 py-4">
@@ -1841,8 +1941,8 @@ function ResultView({
           {/* Shopping AI: matching accessories */}
           {accessories.length > 0 && (
             <div className="card mt-4 p-4">
-              <div className="mb-3 text-[11px] uppercase tracking-wider text-cream-faint">
-                Complete the look — AI picks
+              <div className="mb-3 flex items-center gap-1.5 text-[11px] uppercase tracking-wider text-cream-faint">
+                <Sparkles size={12} className="text-brass" /> Smart recommendations
               </div>
               <ul className="space-y-2.5">
                 {accessories.map((p) => (
@@ -1852,7 +1952,9 @@ function ResultView({
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="truncate text-sm">{p.name}</div>
-                      <div className="text-[11px] text-cream-faint">{formatPrice(p.price)}</div>
+                      <div className="text-[11px] text-cream-faint">
+                        {formatPrice(p.price)} · completes the {style.name.toLowerCase()} palette
+                      </div>
                     </div>
                     <button onClick={() => addToCart(p)} className="btn-ghost !px-3 !py-1.5 text-[11px]">
                       Add
@@ -1862,6 +1964,12 @@ function ResultView({
               </ul>
             </div>
           )}
+
+          <ShoppingBundles
+            styleId={styleId}
+            ownedIds={products.map((p) => p.id)}
+            onAddBundle={(bundleProducts) => addManyToCart(bundleProducts)}
+          />
         </div>
       </div>
 

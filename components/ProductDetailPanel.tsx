@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { createPortal } from "react-dom";
+import BoardSaveButton from "@/components/BoardSaveButton";
 import ProductGlyph from "@/components/room/ProductGlyph";
 import { alternativesFor, formatPrice, tierOf, tierOptions } from "@/lib/products";
 import { getProductDetails, STOCK_LABEL } from "@/lib/productDetails";
@@ -156,15 +157,18 @@ export default function ProductDetailPanel({
                 </span>
               </div>
             </div>
-            <button
-              onClick={() => toggleWishlist(product)}
-              className={`shrink-0 rounded-full border p-2.5 transition ${
-                isWishlisted ? "border-red-400/50 bg-red-500/10 text-red-400" : "border-ink-line text-cream-dim hover:border-red-400/40 hover:text-red-400"
-              }`}
-              aria-label={isWishlisted ? "Remove from wishlist" : "Add to wishlist"}
-            >
-              <Heart size={16} className={isWishlisted ? "fill-current" : ""} />
-            </button>
+            <div className="flex shrink-0 items-start gap-2">
+              <button
+                onClick={() => toggleWishlist(product)}
+                className={`rounded-full border p-2.5 transition ${
+                  isWishlisted ? "border-red-400/50 bg-red-500/10 text-red-400" : "border-ink-line text-cream-dim hover:border-red-400/40 hover:text-red-400"
+                }`}
+                aria-label={isWishlisted ? "Remove from wishlist" : "Add to wishlist"}
+              >
+                <Heart size={16} className={isWishlisted ? "fill-current" : ""} />
+              </button>
+              <BoardSaveButton product={product} />
+            </div>
           </div>
 
           <div className="mt-3 font-display text-3xl text-brass-bright">{formatPrice(product.price)}</div>

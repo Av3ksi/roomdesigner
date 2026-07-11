@@ -10,6 +10,8 @@ import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { BokehPass } from "three/examples/jsm/postprocessing/BokehPass.js";
 import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
+import { ARButton } from "three/examples/jsm/webxr/ARButton.js";
+import { VRButton } from "three/examples/jsm/webxr/VRButton.js";
 import ProductDetailPanel from "@/components/ProductDetailPanel";
 import { buildRoom, ROOM, type RoomHandles } from "@/lib/three/roomBuilder";
 import { formatPrice } from "@/lib/products";
@@ -47,7 +49,6 @@ class RoomApp {
   private composer: EffectComposer;
   private bokeh: BokehPass;
   private clock = new THREE.Clock();
-  private raf = 0;
   private before: RoomHandles | null = null;
   private after: RoomHandles | null = null;
   private beforePlane = new THREE.Plane(new THREE.Vector3(-1, 0, 0), 0.2);
@@ -79,13 +80,15 @@ class RoomApp {
       onHover: (h: HoverInfo | null) => void;
       onSelect: (c: ProductCategory | null) => void;
       onSplit: (s: number) => void;
+      onXRSession: (active: boolean) => void;
     },
   ) {
-    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.xr.enabled = true;
     this.renderer.toneMappingExposure = 1.05;
     this.renderer.localClippingEnabled = true;
     this.renderer.setClearColor("#0B0B0E");
@@ -187,7 +190,29 @@ class RoomApp {
     window.addEventListener("keydown", this.onKeyDown);
     window.addEventListener("keyup", this.onKeyUp);
 
-    this.loop();
+    // AR needs a transparent canvas so the device camera passthrough shows
+    // through; VR and the normal desktop view stay opaque.
+    this.renderer.xr.addEventListener("sessionstart", () => {
+      const blendMode = this.renderer.xr.getSession()?.environmentBlendMode;
+      this.renderer.setClearAlpha(blendMode && blendMode !== "opaque" ? 0 : 1);
+      this.controls.enabled = false;
+      this.cbs.onXRSession(true);
+    });
+    this.renderer.xr.addEventListener("sessionend", () => {
+      this.renderer.setClearAlpha(1);
+      this.controls.enabled = this.mode === "orbit";
+      this.cbs.onXRSession(false);
+    });
+
+    this.renderer.setAnimationLoop(this.loop);
+  }
+
+  /** Buttons are created lazily once mounted, since VRButton/ARButton probe
+   *  navigator.xr support at call time (real feature detection, never fake). */
+  createXRButtons(): { vr: HTMLElement; ar: HTMLElement } {
+    const vr = VRButton.createButton(this.renderer);
+    const ar = ARButton.createButton(this.renderer, { optionalFeatures: ["local-floor"] });
+    return { vr, ar };
   }
 
   /* ——— rooms ——— */
@@ -375,11 +400,16 @@ class RoomApp {
   /* ——— frame loop ——— */
   private loop = () => {
     if (this.disposed) return;
-    this.raf = requestAnimationFrame(this.loop);
     const dt = Math.min(this.clock.getDelta(), 0.05);
     const t = this.clock.elapsedTime;
     this.before?.animate(t, dt);
     this.after?.animate(t, dt);
+
+    if (this.renderer.xr.isPresenting) {
+      // Headset pose drives the camera; post-processing is bypassed for XR.
+      this.renderer.render(this.scene, this.camera);
+      return;
+    }
 
     if (this.mode === "walk") {
       const speed = 1.9 * dt;
@@ -409,7 +439,7 @@ class RoomApp {
 
   dispose() {
     this.disposed = true;
-    cancelAnimationFrame(this.raf);
+    this.renderer.setAnimationLoop(null);
     this.canvas.removeEventListener("pointerdown", this.onPointerDown);
     this.canvas.removeEventListener("pointermove", this.onPointerMove);
     window.removeEventListener("pointerup", this.onPointerUp);
@@ -445,6 +475,7 @@ export default function Immersive3D({
 }: Immersive3DProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const frameRef = useRef<HTMLDivElement>(null);
+  const xrButtonsRef = useRef<HTMLDivElement>(null);
   const appRef = useRef<RoomApp | null>(null);
   const prevProducts = useRef<Product[]>(products);
   const [hover, setHover] = useState<HoverInfo | null>(null);
@@ -454,6 +485,7 @@ export default function Immersive3D({
   const [mode, setMode] = useState<"orbit" | "walk">("orbit");
   const [dof, setDof] = useState(true);
   const [webglFailed, setWebglFailed] = useState(false);
+  const [xrActive, setXrActive] = useState(false);
 
   const total = products.reduce((n, p) => n + p.price, 0);
   const selectedProduct = selected ? products.find((p) => p.category === selected) : undefined;
@@ -469,6 +501,7 @@ export default function Immersive3D({
         onHover: setHover,
         onSelect: (c) => setSelected(c),
         onSplit: setSplit,
+        onXRSession: setXrActive,
       });
     } catch (err) {
       console.error("[maison] WebGL unavailable:", err);
@@ -482,6 +515,15 @@ export default function Immersive3D({
     ro.observe(frame);
     app.resize(frame.clientWidth, frame.clientHeight);
 
+    // VRButton/ARButton feature-detect navigator.xr themselves — on a
+    // browser/device without WebXR support they render disabled with their
+    // own "not supported" label, never a fake/dead control.
+    const { vr, ar } = app.createXRButtons();
+    vr.style.position = "static";
+    ar.style.position = "static";
+    xrButtonsRef.current?.appendChild(vr);
+    xrButtonsRef.current?.appendChild(ar);
+
     const prevOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     const onKey = (e: KeyboardEvent) => {
@@ -492,6 +534,8 @@ export default function Immersive3D({
       ro.disconnect();
       window.removeEventListener("keydown", onKey);
       document.body.style.overflow = prevOverflow;
+      vr.remove();
+      ar.remove();
       app.dispose();
       appRef.current = null;
     };
@@ -549,7 +593,12 @@ export default function Immersive3D({
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-ink-line/70 px-5 py-3">
         <div>
-          <div className="eyebrow">Immersive room · {styleName}</div>
+          <div className="eyebrow flex items-center gap-2">
+            Immersive room · {styleName}
+            {xrActive && (
+              <span className="chip !border-brass/50 !text-brass-bright">Headset session active</span>
+            )}
+          </div>
           <div className="text-xs text-cream-faint">
             {mode === "orbit"
               ? "Drag to orbit · scroll to zoom · drag the golden divider to morph between worlds · click any object to shop it"
@@ -578,6 +627,7 @@ export default function Immersive3D({
           >
             <Aperture size={13} /> DoF
           </button>
+          <div ref={xrButtonsRef} className="flex items-center gap-2 [&_button]:!static [&_button]:!m-0 [&_button]:!rounded-full [&_button]:!border [&_button]:!border-ink-line [&_button]:!bg-transparent [&_button]:!px-3.5 [&_button]:!py-2 [&_button]:!text-xs [&_button]:!font-semibold [&_button]:!text-cream-dim" />
           <button
             onClick={onClose}
             className="rounded-full border border-ink-line p-2.5 text-cream-dim transition hover:border-brass/50 hover:text-cream"
