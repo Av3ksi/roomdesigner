@@ -2,7 +2,7 @@
 
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import type { Product, RoomSnapshot } from "./types";
+import type { ConsultationRequest, InspirationBoard, Product, RoomSnapshot } from "./types";
 
 export interface CartItem {
   product: Product;
@@ -25,9 +25,25 @@ interface MaisonStore {
   clearWishlist: () => void;
 
   savedDesigns: RoomSnapshot[];
-  saveDesign: (design: Omit<RoomSnapshot, "id" | "createdAt">) => RoomSnapshot;
+  saveDesign: (design: Omit<RoomSnapshot, "id" | "createdAt" | "sharedWith">) => RoomSnapshot;
   removeDesign: (id: string) => void;
   renameDesign: (id: string, name: string) => void;
+  addCollaborator: (designId: string, nameOrEmail: string) => void;
+  removeCollaborator: (designId: string, nameOrEmail: string) => void;
+
+  boards: InspirationBoard[];
+  createBoard: (name: string) => InspirationBoard;
+  deleteBoard: (id: string) => void;
+  renameBoard: (id: string, name: string) => void;
+  addToBoard: (boardId: string, product: Product) => void;
+  removeFromBoard: (boardId: string, productId: string) => void;
+
+  /** Remembered from the last completed order — powers one-click checkout. */
+  checkoutDefaults: { delivery: string; installation: string } | null;
+  setCheckoutDefaults: (prefs: { delivery: string; installation: string }) => void;
+
+  consultations: ConsultationRequest[];
+  requestConsultation: (req: Omit<ConsultationRequest, "id" | "createdAt">) => ConsultationRequest;
 }
 
 export const useMaisonStore = create<MaisonStore>()(
@@ -88,6 +104,7 @@ export const useMaisonStore = create<MaisonStore>()(
           ...design,
           id: `design-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
           createdAt: Date.now(),
+          sharedWith: [],
         };
         set((s) => ({ savedDesigns: [snapshot, ...s.savedDesigns] }));
         return snapshot;
@@ -98,10 +115,74 @@ export const useMaisonStore = create<MaisonStore>()(
         set((s) => ({
           savedDesigns: s.savedDesigns.map((d) => (d.id === id ? { ...d, name } : d)),
         })),
+      addCollaborator: (designId, nameOrEmail) =>
+        set((s) => ({
+          savedDesigns: s.savedDesigns.map((d) =>
+            d.id === designId && !d.sharedWith.includes(nameOrEmail)
+              ? { ...d, sharedWith: [...d.sharedWith, nameOrEmail] }
+              : d,
+          ),
+        })),
+      removeCollaborator: (designId, nameOrEmail) =>
+        set((s) => ({
+          savedDesigns: s.savedDesigns.map((d) =>
+            d.id === designId ? { ...d, sharedWith: d.sharedWith.filter((n) => n !== nameOrEmail) } : d,
+          ),
+        })),
+
+      boards: [],
+      createBoard: (name) => {
+        const board: InspirationBoard = {
+          id: `board-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          name,
+          createdAt: Date.now(),
+          products: [],
+        };
+        set((s) => ({ boards: [board, ...s.boards] }));
+        return board;
+      },
+      deleteBoard: (id) => set((s) => ({ boards: s.boards.filter((b) => b.id !== id) })),
+      renameBoard: (id, name) =>
+        set((s) => ({ boards: s.boards.map((b) => (b.id === id ? { ...b, name } : b)) })),
+      addToBoard: (boardId, product) =>
+        set((s) => ({
+          boards: s.boards.map((b) =>
+            b.id === boardId && !b.products.some((p) => p.id === product.id)
+              ? { ...b, products: [...b.products, product] }
+              : b,
+          ),
+        })),
+      removeFromBoard: (boardId, productId) =>
+        set((s) => ({
+          boards: s.boards.map((b) =>
+            b.id === boardId ? { ...b, products: b.products.filter((p) => p.id !== productId) } : b,
+          ),
+        })),
+
+      checkoutDefaults: null,
+      setCheckoutDefaults: (prefs) => set({ checkoutDefaults: prefs }),
+
+      consultations: [],
+      requestConsultation: (req) => {
+        const request: ConsultationRequest = {
+          ...req,
+          id: `consult-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          createdAt: Date.now(),
+        };
+        set((s) => ({ consultations: [request, ...s.consultations] }));
+        return request;
+      },
     }),
     {
       name: "maison-store",
-      partialize: (s) => ({ cart: s.cart, wishlist: s.wishlist, savedDesigns: s.savedDesigns }),
+      partialize: (s) => ({
+        cart: s.cart,
+        wishlist: s.wishlist,
+        savedDesigns: s.savedDesigns,
+        boards: s.boards,
+        checkoutDefaults: s.checkoutDefaults,
+        consultations: s.consultations,
+      }),
     },
   ),
 );

@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, Columns3, ExternalLink, Layers, Link2, Pencil, Trash2 } from "lucide-react";
+import { Check, Columns3, ExternalLink, Layers, Link2, Pencil, Trash2, UserPlus, X } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import RoomScene from "@/components/room/RoomScene";
@@ -22,8 +22,13 @@ function DesignCard({
 }) {
   const removeDesign = useMaisonStore((s) => s.removeDesign);
   const renameDesign = useMaisonStore((s) => s.renameDesign);
+  const addCollaborator = useMaisonStore((s) => s.addCollaborator);
+  const removeCollaborator = useMaisonStore((s) => s.removeCollaborator);
   const [copied, setCopied] = useState(false);
+  const [inviting, setInviting] = useState(false);
+  const [inviteName, setInviteName] = useState("");
   const total = pricingBreakdown(design.products).total;
+  const collaborators = design.sharedWith ?? [];
 
   const share = async () => {
     const url = shareUrlFor(design);
@@ -72,6 +77,61 @@ function DesignCard({
           {design.styleName} · {design.products.length} pieces · {new Date(design.createdAt).toLocaleDateString()}
         </div>
         <div className="mt-2 font-display text-lg text-brass-bright">{formatPrice(total)}</div>
+
+        {!compareMode && (
+          <div className="mt-3">
+            <div className="flex flex-wrap items-center gap-1.5">
+              {collaborators.map((person) => (
+                <span
+                  key={person}
+                  className="group/collab flex items-center gap-1 rounded-full border border-ink-line bg-ink-soft py-1 pl-1 pr-2 text-[10px] text-cream-dim"
+                >
+                  <span className="flex h-4 w-4 items-center justify-center rounded-full bg-brass/20 text-[9px] font-bold text-brass-bright">
+                    {person.trim()[0]?.toUpperCase() ?? "?"}
+                  </span>
+                  {person}
+                  <button
+                    onClick={() => removeCollaborator(design.id, person)}
+                    className="text-cream-faint opacity-0 transition group-hover/collab:opacity-100 hover:text-red-400"
+                    aria-label={`Remove ${person}`}
+                  >
+                    <X size={10} />
+                  </button>
+                </span>
+              ))}
+              {inviting ? (
+                <form
+                  className="flex items-center gap-1"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    if (!inviteName.trim()) return;
+                    addCollaborator(design.id, inviteName.trim());
+                    setInviteName("");
+                    setInviting(false);
+                  }}
+                >
+                  <input
+                    autoFocus
+                    value={inviteName}
+                    onChange={(e) => setInviteName(e.target.value)}
+                    onBlur={() => !inviteName.trim() && setInviting(false)}
+                    placeholder="Name or email"
+                    className="w-28 rounded-full border border-brass/40 bg-ink-soft px-2 py-1 text-[10px] outline-none placeholder:text-cream-faint/60"
+                  />
+                </form>
+              ) : (
+                <button
+                  onClick={() => setInviting(true)}
+                  className="flex items-center gap-1 rounded-full border border-dashed border-ink-line px-2 py-1 text-[10px] text-cream-faint transition hover:border-brass/40 hover:text-brass-bright"
+                  title="Note who you've shared the link with — copy the link separately to actually share it"
+                >
+                  <UserPlus size={10} /> Shared with…
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
         {!compareMode && (
           <div className="mt-3 flex gap-2">
             <Link href={`/shared?d=${encodeSnapshot(design)}`} className="btn-ghost flex-1 !py-2 text-xs">

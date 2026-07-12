@@ -9,7 +9,7 @@ export const PLANS = [
     blurb: "Feel the magic on your own room.",
     features: [
       "3 room designs per month",
-      "All 8 signature styles",
+      "All 10 signature styles",
       "Full spatial analysis",
       "Shoppable product lists",
     ],

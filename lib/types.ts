@@ -131,6 +131,15 @@ export interface DesignBrief {
   maxBudget: number | null;
 }
 
+/** Live modifications the AI designer (or the user directly) applies on top of a generated concept. */
+export interface Adjustments {
+  warmthDelta: number;
+  budget: BudgetTier | null;
+  brandFilter: string[] | null;
+  swaps: Partial<Record<ProductCategory, Product>>;
+  childFriendly: boolean;
+}
+
 /* ————— AI designer assistant ————— */
 
 export type AssistantAction =
@@ -190,5 +199,28 @@ export interface RoomSnapshot {
   variant: number;
   spec: RoomStyleSpec;
   products: Product[];
+  createdAt: number;
+  /** Names/emails you've shared this design's link with — a local record of
+   *  who's in the loop, not a live multi-user sync (there's no backend). */
+  sharedWith: string[];
+}
+
+/** A named, freeform collection of products — a moodboard, distinct from a
+ *  full saved room (RoomSnapshot) since it isn't tied to any one design. */
+export interface InspirationBoard {
+  id: string;
+  name: string;
+  createdAt: number;
+  products: Product[];
+}
+
+/** A submitted request for a human designer consultation — a lead, not a live booking. */
+export interface ConsultationRequest {
+  id: string;
+  type: string;
+  name: string;
+  email: string;
+  preferredSlot: string;
+  notes: string;
   createdAt: number;
 }

@@ -8,6 +8,7 @@ const COLUMNS: { title: string; links: { label: string; href: string }[] }[] = [
       { label: "Signature Styles", href: "/styles" },
       { label: "Marketplace", href: "/marketplace" },
       { label: "Pricing", href: "/pricing" },
+      { label: "Book a Consultation", href: "/consultation" },
     ],
   },
   {

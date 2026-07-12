@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import {
+  Calendar,
   Check,
   CheckCircle2,
   Hammer,
@@ -14,6 +15,7 @@ import {
   Sparkles,
   Trash2,
   Truck,
+  Zap,
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import ProductGlyph from "@/components/room/ProductGlyph";
@@ -21,9 +23,9 @@ import { formatPrice } from "@/lib/products";
 import { cartTotal, useMaisonStore } from "@/lib/store";
 
 const DELIVERY = [
-  { id: "standard", label: "Standard delivery", note: "5–7 business days, to your door", price: 0 },
-  { id: "express", label: "Express delivery", note: "2–3 business days", price: 49 },
-  { id: "whiteglove", label: "White-glove delivery", note: "Scheduled window, unboxed & placed in the room", price: 199 },
+  { id: "standard", label: "Standard delivery", note: "5–7 business days, to your door", price: 0, min: 5, max: 7 },
+  { id: "express", label: "Express delivery", note: "2–3 business days", price: 49, min: 2, max: 3 },
+  { id: "whiteglove", label: "White-glove delivery", note: "Scheduled window, unboxed & placed in the room", price: 199, min: 6, max: 9 },
 ] as const;
 
 const INSTALLATION = [
@@ -32,31 +34,83 @@ const INSTALLATION = [
   { id: "styling", label: "Assembly + designer styling visit", note: "A Maison designer stages the room to the concept", price: 399 },
 ] as const;
 
-function deliveryWindow(daysMin: number, daysMax: number): string {
-  const fmt = (offset: number) =>
-    new Date(Date.now() + offset * 86_400_000).toLocaleDateString("en-US", {
-      month: "short",
-      day: "numeric",
-    });
-  return `${fmt(daysMin)} – ${fmt(daysMax)}`;
+type DeliveryId = (typeof DELIVERY)[number]["id"];
+type InstallId = (typeof INSTALLATION)[number]["id"];
+
+function addDays(offset: number): Date {
+  return new Date(Date.now() + offset * 86_400_000);
+}
+function fmtDate(d: Date): string {
+  return d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+}
+
+/** A row of selectable date chips within [min, max] days out. */
+function DatePicker({
+  min,
+  max,
+  selected,
+  onSelect,
+}: {
+  min: number;
+  max: number;
+  selected: number;
+  onSelect: (offset: number) => void;
+}) {
+  const span = Math.max(1, max - min);
+  const count = Math.min(5, span + 1);
+  const offsets = Array.from({ length: count }, (_, i) => min + Math.round((i * span) / Math.max(1, count - 1)));
+  const unique = Array.from(new Set(offsets));
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {unique.map((offset) => (
+        <button
+          key={offset}
+          onClick={() => onSelect(offset)}
+          className={`rounded-lg border px-2.5 py-1.5 text-[11px] font-medium transition ${
+            selected === offset ? "border-brass bg-brass/10 text-brass-bright" : "border-ink-line text-cream-dim hover:border-brass/40"
+          }`}
+        >
+          {fmtDate(addDays(offset))}
+        </button>
+      ))}
+    </div>
+  );
 }
 
 export default function Checkout() {
   const { cart, setQty, removeFromCart, clearCart } = useMaisonStore();
-  const [delivery, setDelivery] = useState<(typeof DELIVERY)[number]["id"]>("whiteglove");
-  const [installation, setInstallation] = useState<(typeof INSTALLATION)[number]["id"]>("assembly");
+  const checkoutDefaults = useMaisonStore((s) => s.checkoutDefaults);
+  const setCheckoutDefaults = useMaisonStore((s) => s.setCheckoutDefaults);
+  const [delivery, setDelivery] = useState<DeliveryId>((checkoutDefaults?.delivery as DeliveryId) ?? "whiteglove");
+  const [installation, setInstallation] = useState<InstallId>((checkoutDefaults?.installation as InstallId) ?? "assembly");
   const [orderId, setOrderId] = useState<string | null>(null);
 
-  const subtotal = cartTotal(cart);
   const deliveryOpt = DELIVERY.find((d) => d.id === delivery)!;
   const installOpt = INSTALLATION.find((i) => i.id === installation)!;
+
+  const [deliveryOffset, setDeliveryOffset] = useState<number>(deliveryOpt.min);
+  const [installOffset, setInstallOffset] = useState<number>(deliveryOpt.min + 2);
+
+  const subtotal = cartTotal(cart);
   const total = subtotal + deliveryOpt.price + installOpt.price;
-  const window = useMemo(
-    () => (delivery === "express" ? deliveryWindow(2, 3) : delivery === "standard" ? deliveryWindow(5, 7) : deliveryWindow(6, 9)),
-    [delivery],
-  );
+
+  const selectDelivery = (id: DeliveryId) => {
+    setDelivery(id);
+    const opt = DELIVERY.find((d) => d.id === id)!;
+    setDeliveryOffset(opt.min);
+    setInstallOffset(opt.min + 2);
+  };
 
   const placeOrder = () => {
+    setCheckoutDefaults({ delivery, installation });
+    setOrderId(`MA-${Math.floor(100000 + Math.random() * 900000)}`);
+    clearCart();
+  };
+
+  const oneClickCheckout = () => {
+    if (!checkoutDefaults) return;
+    setDelivery(checkoutDefaults.delivery as DeliveryId);
+    setInstallation(checkoutDefaults.installation as InstallId);
     setOrderId(`MA-${Math.floor(100000 + Math.random() * 900000)}`);
     clearCart();
   };
@@ -77,9 +131,9 @@ export default function Checkout() {
         <div className="card mt-8 w-full max-w-lg divide-y divide-ink-line/60 text-left">
           {[
             { icon: ShoppingBag, t: "Order confirmed", s: "Just now", done: true },
-            { icon: Truck, t: `${deliveryOpt.label}`, s: `Estimated ${window}`, done: false },
+            { icon: Truck, t: deliveryOpt.label, s: `Scheduled ${fmtDate(addDays(deliveryOffset))}`, done: false },
             ...(installation !== "none"
-              ? [{ icon: Hammer, t: installOpt.label, s: "Scheduled after delivery", done: false }]
+              ? [{ icon: Hammer, t: installOpt.label, s: `Scheduled ${fmtDate(addDays(installOffset))}`, done: false }]
               : []),
             { icon: Sparkles, t: "Live in your new room", s: "The good part", done: false },
           ].map(({ icon: Icon, t, s, done }) => (
@@ -125,8 +179,23 @@ export default function Checkout() {
 
   return (
     <div className="container-page py-12">
-      <div className="eyebrow mb-2">Checkout</div>
-      <h1 className="font-display text-4xl">Almost home.</h1>
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <div className="eyebrow mb-2">Checkout</div>
+          <h1 className="font-display text-4xl">Almost home.</h1>
+        </div>
+        {checkoutDefaults && (
+          <button onClick={oneClickCheckout} className="btn-primary shrink-0">
+            <Zap size={15} /> One-click checkout · {formatPrice(total)}
+          </button>
+        )}
+      </div>
+      {checkoutDefaults && (
+        <p className="mt-2 text-xs text-cream-faint">
+          Using your saved preferences — {DELIVERY.find((d) => d.id === checkoutDefaults.delivery)?.label},{" "}
+          {INSTALLATION.find((i) => i.id === checkoutDefaults.installation)?.label.toLowerCase()}. Adjust below if this order is different.
+        </p>
+      )}
 
       <div className="mt-8 grid gap-8 lg:grid-cols-[1.5fr_1fr]">
         <div className="space-y-6">
@@ -176,7 +245,7 @@ export default function Checkout() {
               {DELIVERY.map((d) => (
                 <button
                   key={d.id}
-                  onClick={() => setDelivery(d.id)}
+                  onClick={() => selectDelivery(d.id)}
                   className={`flex w-full items-center justify-between gap-3 rounded-xl border px-4 py-3 text-left transition ${
                     delivery === d.id ? "border-brass bg-brass/5" : "border-ink-line hover:border-brass/40"
                   }`}
@@ -199,6 +268,12 @@ export default function Checkout() {
                   </div>
                 </button>
               ))}
+            </div>
+            <div className="mt-4">
+              <div className="mb-2 flex items-center gap-1.5 text-[11px] uppercase tracking-wider text-cream-faint">
+                <Calendar size={12} className="text-brass" /> Choose your delivery day
+              </div>
+              <DatePicker min={deliveryOpt.min} max={deliveryOpt.max} selected={deliveryOffset} onSelect={setDeliveryOffset} />
             </div>
           </div>
 
@@ -233,6 +308,14 @@ export default function Checkout() {
                 </button>
               ))}
             </div>
+            {installation !== "none" && (
+              <div className="mt-4">
+                <div className="mb-2 flex items-center gap-1.5 text-[11px] uppercase tracking-wider text-cream-faint">
+                  <Calendar size={12} className="text-brass" /> Choose your installation day
+                </div>
+                <DatePicker min={deliveryOffset + 1} max={deliveryOffset + 5} selected={installOffset} onSelect={setInstallOffset} />
+              </div>
+            )}
           </div>
         </div>
 
@@ -262,7 +345,13 @@ export default function Checkout() {
             </dl>
             <p className="mt-3 rounded-lg bg-ink-soft px-3 py-2.5 text-xs text-cream-dim">
               <Truck size={12} className="mr-1.5 inline text-brass" />
-              Estimated delivery <span className="font-semibold">{window}</span>
+              Delivery <span className="font-semibold">{fmtDate(addDays(deliveryOffset))}</span>
+              {installation !== "none" && (
+                <>
+                  {" "}
+                  · Installation <span className="font-semibold">{fmtDate(addDays(installOffset))}</span>
+                </>
+              )}
             </p>
             <button onClick={placeOrder} className="btn-primary mt-4 w-full">
               Place order · {formatPrice(total)}
