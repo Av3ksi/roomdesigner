@@ -102,6 +102,10 @@ export interface Product {
   /** Dominant color used by the procedural product thumbnail. */
   color: string;
   blurb: string;
+  /** Set on products ingested from a dropship supplier feed; absent for the curated catalog. */
+  supplier?: { id: string; label: string; sku: string; costPrice: number };
+  /** Real product photo URL, when the source is a supplier feed rather than the procedural catalog. */
+  imageUrl?: string;
 }
 
 export interface DesignConcept {
