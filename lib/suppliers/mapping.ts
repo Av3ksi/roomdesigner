@@ -36,12 +36,30 @@ const CATEGORY_KEYWORDS: [ProductCategory, string[]][] = [
   ["decor", ["vase", "bowl", "candle", "tray", "sculpture", "ornament", "decor"]],
 ];
 
-export function inferCategory(raw: RawSupplierProduct): ProductCategory {
-  const text = `${raw.vendorCategory} ${raw.title}`.toLowerCase();
+function findCategory(text: string): ProductCategory | null {
   for (const [category, keywords] of CATEGORY_KEYWORDS) {
     if (keywords.some((k) => containsKeyword(text, k))) return category;
   }
-  return "decor";
+  return null;
+}
+
+export function inferCategory(raw: RawSupplierProduct): ProductCategory {
+  const text = `${raw.vendorCategory} ${raw.title}`.toLowerCase();
+  return findCategory(text) ?? "decor";
+}
+
+/**
+ * Lightweight relevance check for a general wholesaler feed (VidaXL sells
+ * everything from pet supplies to garden tools, not just home furniture):
+ * true if the text hits one of Maison's known furniture/decor categories
+ * at all, false if nothing matched (a "Cat Tree" or "Ride-on Excavator"
+ * won't hit any of the CATEGORY_KEYWORDS groups). This is a stand-in for
+ * real category_path-based curation — good enough to get an on-theme
+ * product set flowing end to end, not a final catalog scope decision.
+ */
+export function hasKnownCategory(raw: RawSupplierProduct): boolean {
+  const text = `${raw.vendorCategory} ${raw.title}`.toLowerCase();
+  return findCategory(text) !== null;
 }
 
 /** Same keyword-scoring shape as lib/mood.ts, applied to product copy instead of a room mood. */

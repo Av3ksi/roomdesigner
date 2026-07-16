@@ -1,5 +1,5 @@
 import type { SupplierAdapter, SupplierCatalogResult, RawSupplierProduct } from "./types";
-import { mapSupplierProduct } from "./mapping";
+import { mapSupplierProduct, hasKnownCategory } from "./mapping";
 
 /**
  * VidaXL / DropshippingXL adapter, wired against their real b2b API docs:
@@ -17,10 +17,16 @@ import { mapSupplierProduct } from "./mapping";
  * - Pagination via ?limit=&offset=, with the response carrying a
  *   `pagination: { offset, limit, total }` block alongside the products.
  *   The real catalog is huge (docs' sample response shows ~49,996 total
- *   products), so fetchLive() below pulls a single page rather than
- *   paginating through the whole thing on every request — a full catalog
- *   sync belongs in a scheduled background job (see Phase B), not a page
- *   load under a 1 req/sec ceiling.
+ *   products) and general-wholesaler-broad (pet supplies, kids' ride-on
+ *   toys, garden tools — not just home furniture), so fetchLive() scans a
+ *   handful of pages and keeps only products that hit one of Maison's
+ *   known furniture/decor categories (see hasKnownCategory in mapping.ts)
+ *   rather than blindly taking whatever's at offset 0. This is a stand-in
+ *   for real category_path-based curation, not the final catalog scope —
+ *   good enough to prove the ingestion → mapping → display pipeline works
+ *   end to end with on-theme products; a full catalog sync/filter belongs
+ *   in a scheduled background job (see Phase B), not a page load under a
+ *   1 req/sec ceiling.
  * - Order placement exists via POST /api_customer/orders, but payment does
  *   not — orders still need to be paid manually in VidaXL's own dashboard
  *   under "Unsubmitted orders". Not implemented here yet; this adapter
@@ -36,6 +42,8 @@ import { mapSupplierProduct } from "./mapping";
 const SUPPLIER_ID = "vidaxl";
 const SUPPLIER_LABEL = "VidaXL";
 const PRODUCTS_PAGE_LIMIT = 60;
+const TARGET_LIVE_PRODUCT_COUNT = 40;
+const MAX_PAGES_TO_SCAN = 6;
 
 export function vidaxlEnabled(): boolean {
   return Boolean(process.env.VIDAXL_API_KEY && process.env.VIDAXL_API_URL && process.env.VIDAXL_ACCOUNT_EMAIL);
@@ -149,20 +157,43 @@ function vidaxlAuthHeader(): string {
   return `Basic ${Buffer.from(`${email}:${token}`).toString("base64")}`;
 }
 
-async function fetchLive(): Promise<RawSupplierProduct[]> {
-  const baseUrl = (process.env.VIDAXL_API_URL ?? "").trim().replace(/\/+$/, "");
-  const res = await fetch(`${baseUrl}/api_customer/products?limit=${PRODUCTS_PAGE_LIMIT}&offset=0`, {
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function fetchProductsPage(baseUrl: string, offset: number): Promise<VidaxlProductsResponse> {
+  const res = await fetch(`${baseUrl}/api_customer/products?limit=${PRODUCTS_PAGE_LIMIT}&offset=${offset}`, {
     headers: { Authorization: vidaxlAuthHeader() },
   });
   if (!res.ok) throw new Error(`VidaXL API error: ${res.status}`);
-  const body = (await res.json()) as VidaxlProductsResponse;
-  return body.data.map((p) => ({
-    sku: p.code,
-    title: p.name,
-    vendorCategory: p.category_path,
-    costPrice: p.price,
-    stockQty: p.quantity,
-  }));
+  return (await res.json()) as VidaxlProductsResponse;
+}
+
+async function fetchLive(): Promise<RawSupplierProduct[]> {
+  const baseUrl = (process.env.VIDAXL_API_URL ?? "").trim().replace(/\/+$/, "");
+  const matched: RawSupplierProduct[] = [];
+
+  for (let page = 0; page < MAX_PAGES_TO_SCAN && matched.length < TARGET_LIVE_PRODUCT_COUNT; page++) {
+    if (page > 0) await sleep(1100); // stay under VidaXL's 1 req/sec rate limit
+
+    const offset = page * PRODUCTS_PAGE_LIMIT;
+    const body = await fetchProductsPage(baseUrl, offset);
+
+    for (const p of body.data) {
+      const raw: RawSupplierProduct = {
+        sku: p.code,
+        title: p.name,
+        vendorCategory: p.category_path,
+        costPrice: p.price,
+        stockQty: p.quantity,
+      };
+      if (hasKnownCategory(raw)) matched.push(raw);
+    }
+
+    if (offset + PRODUCTS_PAGE_LIMIT >= body.pagination.total) break; // scanned the whole catalog
+  }
+
+  return matched;
 }
 
 export async function fetchVidaxlCatalog(): Promise<SupplierCatalogResult> {
