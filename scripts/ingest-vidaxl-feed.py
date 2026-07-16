@@ -28,17 +28,21 @@ import re
 import sys
 from collections import Counter
 
-# Starter allowlist -- matched case-insensitively against the start of each
-# product's German category path (e.g. "Heim & Garten > ..."). This is a
-# first pass, not a final scope decision -- see category_report.txt.
+# Confirmed against a real category_report.txt run: "Möbel" (furniture,
+# 242,502 products) and "Heim & Garten" (home & garden, 53,296) are the two
+# dominant, clearly relevant top-level categories. Everything else in the
+# catalog (Heimwerkerbedarf/DIY tools, Sportartikel, Tier- & Haustierbedarf/
+# pet supplies, Spielzeuge/toys, Bekleidung/clothing, etc.) is irrelevant to
+# an interior design catalog and deliberately excluded.
 CATEGORY_ALLOWLIST = [
     "Möbel",
-    "Beleuchtung",
-    "Wohnaccessoires",
-    "Deko",
-    "Teppich",
-    "Heimtextilien",
+    "Heim & Garten",
 ]
+
+# Möbel alone matched 242k+ products before stock/price filtering -- far
+# more than needed to prove the workflow end to end. Stop once we have a
+# workable sample instead of collecting everything.
+MAX_MATCHES = 200
 
 
 def load_offer_feed(path):
@@ -84,6 +88,7 @@ def main():
             if name and re.match(r"^image\s*\d+$", name.strip(), re.IGNORECASE)
         ]
 
+        stopped_early = False
         for row in reader:
             total_seen += 1
             if total_seen % 50000 == 0:
@@ -107,6 +112,8 @@ def main():
                 continue
 
             images = [row[col].strip() for col in image_columns if row.get(col) and row[col].strip()]
+            if not images:
+                continue  # the whole point of this feed over the REST API is real photos
 
             matched.append({
                 "sku": sku,
@@ -124,16 +131,25 @@ def main():
                 "packaging": row.get("Parcel_or_pallet", ""),
             })
 
-    print(f"\nDone. {total_seen:,} rows scanned, {len(matched):,} matched the allowlist and are in stock.")
+            if len(matched) >= MAX_MATCHES:
+                stopped_early = True
+                break
+
+    if stopped_early:
+        print(f"\nHit the {MAX_MATCHES}-product cap after scanning {total_seen:,} rows -- stopped early.")
+    else:
+        print(f"\nScanned the whole file: {total_seen:,} rows, {len(matched):,} matched.")
 
     with open("vidaxl_catalog.json", "w", encoding="utf-8") as f:
         json.dump(matched, f, ensure_ascii=False, indent=2)
     print("Wrote vidaxl_catalog.json")
 
     with open("category_report.txt", "w", encoding="utf-8") as f:
+        if stopped_early:
+            f.write(f"NOTE: stopped early after {MAX_MATCHES} matches -- counts below only cover the first {total_seen:,} rows, not the whole file.\n\n")
         for cat, count in top_level_counts.most_common():
             f.write(f"{count:>8,}  {cat}\n")
-    print("Wrote category_report.txt -- review this to refine CATEGORY_ALLOWLIST")
+    print("Wrote category_report.txt")
 
 
 if __name__ == "__main__":
