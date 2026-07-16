@@ -11,6 +11,18 @@ import type { RawSupplierProduct } from "./types";
  * ingestion scale where thousands of SKUs need mapping, not one room).
  */
 
+/**
+ * Plain .includes() over-matches short keywords inside unrelated words —
+ * e.g. "print" inside "Pawprints" wrongly tagging cat trees as art, or
+ * "red" inside "covered"/"prepared". Match on word boundaries instead;
+ * \b works fine around multi-word phrases like "wall decor" too, since it
+ * only anchors the outer edges.
+ */
+function containsKeyword(text: string, keyword: string): boolean {
+  const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`\\b${escaped}\\b`).test(text);
+}
+
 const CATEGORY_KEYWORDS: [ProductCategory, string[]][] = [
   ["sofa", ["sofa", "couch", "sectional", "loveseat"]],
   ["chair", ["chair", "armchair", "recliner", "stool", "bench"]],
@@ -27,7 +39,7 @@ const CATEGORY_KEYWORDS: [ProductCategory, string[]][] = [
 export function inferCategory(raw: RawSupplierProduct): ProductCategory {
   const text = `${raw.vendorCategory} ${raw.title}`.toLowerCase();
   for (const [category, keywords] of CATEGORY_KEYWORDS) {
-    if (keywords.some((k) => text.includes(k))) return category;
+    if (keywords.some((k) => containsKeyword(text, k))) return category;
   }
   return "decor";
 }
@@ -49,7 +61,10 @@ const STYLE_KEYWORDS: Record<string, string[]> = {
 export function inferStyles(raw: RawSupplierProduct): string[] {
   const text = `${raw.title} ${raw.description ?? ""} ${raw.vendorCategory}`.toLowerCase();
   const scored = Object.entries(STYLE_KEYWORDS)
-    .map(([styleId, keywords]) => ({ styleId, score: keywords.reduce((n, k) => (text.includes(k) ? n + 1 : n), 0) }))
+    .map(([styleId, keywords]) => ({
+      styleId,
+      score: keywords.reduce((n, k) => (containsKeyword(text, k) ? n + 1 : n), 0),
+    }))
     .filter((s) => s.score > 0)
     .sort((a, b) => b.score - a.score);
   if (scored.length > 0) return scored.slice(0, 3).map((s) => s.styleId);
@@ -71,7 +86,7 @@ const COLOR_KEYWORDS: [string, string][] = [
 export function inferColor(raw: RawSupplierProduct): string {
   const text = `${raw.title} ${raw.description ?? ""}`.toLowerCase();
   for (const [keyword, hex] of COLOR_KEYWORDS) {
-    if (text.includes(keyword)) return hex;
+    if (containsKeyword(text, keyword)) return hex;
   }
   return "#B9A176";
 }

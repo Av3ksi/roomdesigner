@@ -173,7 +173,13 @@ export async function fetchVidaxlCatalog(): Promise<SupplierCatalogResult> {
     supplierLabel: SUPPLIER_LABEL,
     source: live ? "live" : "mock",
     fetchedAt: Date.now(),
-    products: raw.map((r) => mapSupplierProduct(r, SUPPLIER_ID, SUPPLIER_LABEL)),
+    // VidaXL occasionally returns price: 0 for a SKU (unavailable/
+    // discontinued variants, going by the live feed) — a zero-cost item
+    // isn't sellable and would show as a free product, so drop it here
+    // rather than let it render as CHF 0.
+    products: raw
+      .map((r) => mapSupplierProduct(r, SUPPLIER_ID, SUPPLIER_LABEL))
+      .filter((p) => p.price > 0),
   };
 }
 
