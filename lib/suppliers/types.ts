@@ -2,12 +2,12 @@ import type { Product } from "../types";
 
 /**
  * Generic shape every supplier adapter normalizes its own feed into before
- * mapping to a Maison Product. Modeled on the fields common to wholesale
- * dropship feeds (VidaXL, BigBuy, Artisan Furniture all expose roughly
- * this) — SKU/EAN identity, a vendor-specific category taxonomy, cost vs.
- * recommended retail price, stock, and physical dimensions for shipping.
- * Adjust field names once a real feed/API response is in hand — this is a
- * best-effort shape, not a confirmed spec from any one supplier's docs.
+ * mapping to a Maison Product. Only sku/title/vendorCategory/costPrice/
+ * stockQty are guaranteed — that's the full field set VidaXL's real
+ * `GET /api_customer/products` endpoint returns (id, name, code,
+ * category_path, quantity, price — no description, images, or a separate
+ * cost/RRP split). Everything else is optional because it's mock-feed-only
+ * or specific to richer suppliers (e.g. BigBuy) that may be added later.
  */
 export interface RawSupplierProduct {
   sku: string;
@@ -15,14 +15,16 @@ export interface RawSupplierProduct {
   title: string;
   /** Vendor's own category path, e.g. "Home & Living > Lighting > Floor Lamps". */
   vendorCategory: string;
-  description: string;
+  /** Not provided by VidaXL's real feed — populated in the mock feed only. */
+  description?: string;
+  /** VidaXL's single `price` field is the wholesale cost, not a retail price. */
   costPrice: number;
   recommendedRetailPrice?: number;
   stockQty: number;
-  images: string[];
-  weightKg: number;
-  dimensionsCm: { l: number; w: number; h: number };
-  brand: string;
+  images?: string[];
+  weightKg?: number;
+  dimensionsCm?: { l: number; w: number; h: number };
+  brand?: string;
   /** Flags bulky/fragile items that need special shipping handling (e.g. sofas). */
   bulky?: boolean;
 }

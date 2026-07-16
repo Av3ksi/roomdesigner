@@ -47,8 +47,9 @@ export default function SupplierCatalogPreview({ catalog }: { catalog: SupplierC
         <p className="text-sm text-cream-dim">
           {catalog.source === "mock" ? (
             <>
-              Set <code className="rounded bg-ink-panel px-1.5 py-0.5">VIDAXL_API_KEY</code> and{" "}
-              <code className="rounded bg-ink-panel px-1.5 py-0.5">VIDAXL_API_URL</code> in your
+              Set <code className="rounded bg-ink-panel px-1.5 py-0.5">VIDAXL_API_URL</code>,{" "}
+              <code className="rounded bg-ink-panel px-1.5 py-0.5">VIDAXL_ACCOUNT_EMAIL</code> and{" "}
+              <code className="rounded bg-ink-panel px-1.5 py-0.5">VIDAXL_API_KEY</code> in your
               environment to switch this to the real feed — nothing else changes, same product
               shape either way.
             </>
@@ -92,7 +93,7 @@ export default function SupplierCatalogPreview({ catalog }: { catalog: SupplierC
                 <ProductGlyph product={p} className="h-full w-full" />
                 {!p.imageUrl && (
                   <span className="absolute left-2.5 top-2.5 rounded-full bg-ink/80 px-2 py-1 text-[9px] font-semibold uppercase tracking-wider text-cream-faint backdrop-blur">
-                    No photo in mock feed
+                    {catalog.source === "mock" ? "No photo in mock feed" : "No photo in supplier feed"}
                   </span>
                 )}
               </div>

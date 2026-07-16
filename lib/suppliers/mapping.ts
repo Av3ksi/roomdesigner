@@ -47,7 +47,7 @@ const STYLE_KEYWORDS: Record<string, string[]> = {
 };
 
 export function inferStyles(raw: RawSupplierProduct): string[] {
-  const text = `${raw.title} ${raw.description} ${raw.vendorCategory}`.toLowerCase();
+  const text = `${raw.title} ${raw.description ?? ""} ${raw.vendorCategory}`.toLowerCase();
   const scored = Object.entries(STYLE_KEYWORDS)
     .map(([styleId, keywords]) => ({ styleId, score: keywords.reduce((n, k) => (text.includes(k) ? n + 1 : n), 0) }))
     .filter((s) => s.score > 0)
@@ -69,7 +69,7 @@ const COLOR_KEYWORDS: [string, string][] = [
 ];
 
 export function inferColor(raw: RawSupplierProduct): string {
-  const text = `${raw.title} ${raw.description}`.toLowerCase();
+  const text = `${raw.title} ${raw.description ?? ""}`.toLowerCase();
   for (const [keyword, hex] of COLOR_KEYWORDS) {
     if (text.includes(keyword)) return hex;
   }
@@ -84,6 +84,11 @@ export function computeRetailPrice(raw: RawSupplierProduct): number {
 }
 
 export function mapSupplierProduct(raw: RawSupplierProduct, supplierId: string, supplierLabel: string): Product {
+  // VidaXL's real feed has no description — fall back to a copy line built
+  // from the category path so the product card never shows blank copy.
+  const blurb = raw.description
+    ? raw.description.slice(0, 160)
+    : `${raw.title}. Sourced via ${supplierLabel}, category ${raw.vendorCategory.split(">").pop()?.trim() ?? raw.vendorCategory}.`;
   return {
     id: `${supplierId}-${raw.sku}`,
     name: raw.title,
@@ -94,8 +99,8 @@ export function mapSupplierProduct(raw: RawSupplierProduct, supplierId: string, 
     reviews: 0,
     styles: inferStyles(raw),
     color: inferColor(raw),
-    blurb: raw.description.slice(0, 160),
+    blurb,
     supplier: { id: supplierId, label: supplierLabel, sku: raw.sku, costPrice: raw.costPrice },
-    imageUrl: raw.images[0],
+    imageUrl: raw.images?.[0],
   };
 }

@@ -2,24 +2,43 @@ import type { SupplierAdapter, SupplierCatalogResult, RawSupplierProduct } from 
 import { mapSupplierProduct } from "./mapping";
 
 /**
- * VidaXL dropship adapter. Their real program (dropshippingxl.com) is a
- * paid (~€30/mo at last check) subscription that includes API access,
- * real-time stock/price feeds and bulk import — see the account signup
- * flow for current terms, this file doesn't guess at pricing.
+ * VidaXL / DropshippingXL adapter, wired against their real b2b API docs:
  *
- * Until VIDAXL_API_KEY is configured, fetchCatalog() returns this mock
- * feed instead — shaped like a plausible VidaXL export so the mapping
- * layer, pricing math and UI are all real and testable today. Swap in the
- * real HTTP call in `fetchLive()` once real credentials + endpoint docs
- * are in hand; nothing else in the app needs to change, since both paths
- * return the same normalized Product shape.
+ * - Base URL: https://b2b.dropxl.com (prod) or https://sandbox.b2b.dropxl.com
+ *   (sandbox — request access via support@dropXL.com before it works).
+ * - Auth: HTTP Basic, username = account email, password = API token.
+ *   (Not a Bearer token — an earlier version of this file guessed wrong.)
+ * - Rate limit: 1 request/second.
+ * - GET /api_customer/products returns a lean, flat field set — id, name,
+ *   code, category_path, quantity, price, created_at, updated_at. No
+ *   description, no images, no separate cost/RRP split: `price` is the
+ *   wholesale cost VidaXL charges, and Maison's own markup is applied on
+ *   top in mapping.ts's computeRetailPrice().
+ * - Pagination via ?limit=&offset=, with the response carrying a
+ *   `pagination: { offset, limit, total }` block alongside the products.
+ *   The real catalog is huge (docs' sample response shows ~49,996 total
+ *   products), so fetchLive() below pulls a single page rather than
+ *   paginating through the whole thing on every request — a full catalog
+ *   sync belongs in a scheduled background job (see Phase B), not a page
+ *   load under a 1 req/sec ceiling.
+ * - Order placement exists via POST /api_customer/orders, but payment does
+ *   not — orders still need to be paid manually in VidaXL's own dashboard
+ *   under "Unsubmitted orders". Not implemented here yet; this adapter
+ *   only reads the product catalog so far.
+ *
+ * Until VIDAXL_API_KEY, VIDAXL_API_URL and VIDAXL_ACCOUNT_EMAIL are all
+ * configured, fetchCatalog() returns the mock feed below instead — shaped
+ * like a plausible VidaXL export (richer than the real feed, including
+ * description/images, so the mapping layer and UI have something to work
+ * with) so the pipeline is testable without live credentials.
  */
 
 const SUPPLIER_ID = "vidaxl";
 const SUPPLIER_LABEL = "VidaXL";
+const PRODUCTS_PAGE_LIMIT = 60;
 
 export function vidaxlEnabled(): boolean {
-  return Boolean(process.env.VIDAXL_API_KEY && process.env.VIDAXL_API_URL);
+  return Boolean(process.env.VIDAXL_API_KEY && process.env.VIDAXL_API_URL && process.env.VIDAXL_ACCOUNT_EMAIL);
 }
 
 const MOCK_FEED: RawSupplierProduct[] = [
@@ -105,16 +124,43 @@ const MOCK_FEED: RawSupplierProduct[] = [
   },
 ];
 
+/** Shape of a single entry in GET /api_customer/products, per VidaXL's real docs. */
+interface VidaxlApiProduct {
+  id: number;
+  name: string;
+  code: string;
+  category_path: string;
+  quantity: number;
+  price: number;
+  created_at: string;
+  updated_at: string;
+}
+
+interface VidaxlProductsResponse {
+  data: VidaxlApiProduct[];
+  pagination: { offset: number; limit: number; total: number };
+}
+
+function vidaxlAuthHeader(): string {
+  const email = process.env.VIDAXL_ACCOUNT_EMAIL ?? "";
+  const token = process.env.VIDAXL_API_KEY ?? "";
+  return `Basic ${Buffer.from(`${email}:${token}`).toString("base64")}`;
+}
+
 async function fetchLive(): Promise<RawSupplierProduct[]> {
-  // Real endpoint/auth pattern is unconfirmed until we have VidaXL's actual
-  // API docs in hand — wire it up here once credentials exist. Expect to
-  // adjust field names to match their real response shape.
-  const res = await fetch(`${process.env.VIDAXL_API_URL}/catalog`, {
-    headers: { Authorization: `Bearer ${process.env.VIDAXL_API_KEY}` },
+  const baseUrl = process.env.VIDAXL_API_URL;
+  const res = await fetch(`${baseUrl}/api_customer/products?limit=${PRODUCTS_PAGE_LIMIT}&offset=0`, {
+    headers: { Authorization: vidaxlAuthHeader() },
   });
   if (!res.ok) throw new Error(`VidaXL API error: ${res.status}`);
-  const data = (await res.json()) as { products: RawSupplierProduct[] };
-  return data.products;
+  const body = (await res.json()) as VidaxlProductsResponse;
+  return body.data.map((p) => ({
+    sku: p.code,
+    title: p.name,
+    vendorCategory: p.category_path,
+    costPrice: p.price,
+    stockQty: p.quantity,
+  }));
 }
 
 export async function fetchVidaxlCatalog(): Promise<SupplierCatalogResult> {
