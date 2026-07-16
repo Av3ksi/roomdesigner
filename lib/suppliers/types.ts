@@ -32,8 +32,13 @@ export interface RawSupplierProduct {
 export interface SupplierCatalogResult {
   supplierId: string;
   supplierLabel: string;
-  /** "mock" until real credentials are configured — never silently pretend otherwise. */
-  source: "live" | "mock";
+  /**
+   * "live" = real-time REST API call. "sample" = a real, static snapshot
+   * (e.g. ingested from VidaXL's bulk product feed — real prices/stock/
+   * photos, just not queried live). "mock" = fully synthetic placeholder
+   * data. Never blur these — the UI is honest about which one is showing.
+   */
+  source: "live" | "sample" | "mock";
   fetchedAt: number;
   products: Product[];
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { AlertTriangle, ArrowRight, Package, Truck } from "lucide-react";
+import Image from "next/image";
 import { useMemo, useState } from "react";
 import ProductGlyph from "@/components/room/ProductGlyph";
 import { STYLE_MAP } from "@/lib/styles";
@@ -36,16 +37,27 @@ export default function SupplierCatalogPreview({ catalog }: { catalog: SupplierC
 
       <div
         className={`card mt-6 flex flex-wrap items-center gap-3 p-4 ${
-          catalog.source === "mock" ? "border-brass/30 bg-brass/5" : "border-sage/40 bg-sage/5"
+          catalog.source === "live" ? "border-sage/40 bg-sage/5" : "border-brass/30 bg-brass/5"
         }`}
       >
         <span
-          className={`chip ${catalog.source === "mock" ? "!border-brass/40 !text-brass-bright" : "!border-sage/50 !text-sage"}`}
+          className={`chip ${catalog.source === "live" ? "!border-sage/50 !text-sage" : "!border-brass/40 !text-brass-bright"}`}
         >
-          {catalog.source === "mock" ? "MOCK DATA" : "LIVE FEED"}
+          {catalog.source === "live" ? "LIVE FEED" : catalog.source === "sample" ? "SAMPLE DATA" : "MOCK DATA"}
         </span>
         <p className="text-sm text-cream-dim">
-          {catalog.source === "mock" ? (
+          {catalog.source === "live" ? (
+            "Live data from the configured supplier API."
+          ) : catalog.source === "sample" ? (
+            <>
+              Real prices, stock and photos from a static VidaXL feed snapshot — not queried live
+              (see <code className="rounded bg-ink-panel px-1.5 py-0.5">scripts/ingest-vidaxl-feed.py</code>).
+              Set <code className="rounded bg-ink-panel px-1.5 py-0.5">VIDAXL_API_URL</code>,{" "}
+              <code className="rounded bg-ink-panel px-1.5 py-0.5">VIDAXL_ACCOUNT_EMAIL</code> and{" "}
+              <code className="rounded bg-ink-panel px-1.5 py-0.5">VIDAXL_API_KEY</code> to switch
+              to the live feed instead.
+            </>
+          ) : (
             <>
               Set <code className="rounded bg-ink-panel px-1.5 py-0.5">VIDAXL_API_URL</code>,{" "}
               <code className="rounded bg-ink-panel px-1.5 py-0.5">VIDAXL_ACCOUNT_EMAIL</code> and{" "}
@@ -53,8 +65,6 @@ export default function SupplierCatalogPreview({ catalog }: { catalog: SupplierC
               environment to switch this to the real feed — nothing else changes, same product
               shape either way.
             </>
-          ) : (
-            "Live data from the configured supplier API."
           )}
         </p>
         <span className="ml-auto text-xs text-cream-faint">
@@ -90,12 +100,22 @@ export default function SupplierCatalogPreview({ catalog }: { catalog: SupplierC
           const margin = p.supplier ? Math.round(((p.price - p.supplier.costPrice) / p.price) * 100) : null;
           return (
             <div key={p.id} className="card overflow-hidden">
-              <div className="relative aspect-[5/4] overflow-hidden">
-                <ProductGlyph product={p} className="h-full w-full" />
-                {!p.imageUrl && (
-                  <span className="absolute left-2.5 top-2.5 rounded-full bg-ink/80 px-2 py-1 text-[9px] font-semibold uppercase tracking-wider text-cream-faint backdrop-blur">
-                    {catalog.source === "mock" ? "No photo in mock feed" : "No photo in supplier feed"}
-                  </span>
+              <div className="relative aspect-[5/4] overflow-hidden bg-ink-panel">
+                {p.imageUrl ? (
+                  <Image
+                    src={p.imageUrl}
+                    alt={p.name}
+                    fill
+                    sizes="(min-width: 1280px) 25vw, (min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw"
+                    className="object-cover"
+                  />
+                ) : (
+                  <>
+                    <ProductGlyph product={p} className="h-full w-full" />
+                    <span className="absolute left-2.5 top-2.5 rounded-full bg-ink/80 px-2 py-1 text-[9px] font-semibold uppercase tracking-wider text-cream-faint backdrop-blur">
+                      {catalog.source === "mock" ? "No photo in mock feed" : "No photo in supplier feed"}
+                    </span>
+                  </>
                 )}
               </div>
               <div className="p-4">
