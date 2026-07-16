@@ -58,7 +58,8 @@ export default function SupplierCatalogPreview({ catalog }: { catalog: SupplierC
           )}
         </p>
         <span className="ml-auto text-xs text-cream-faint">
-          {catalog.products.length} products · fetched {new Date(catalog.fetchedAt).toLocaleTimeString()}
+          {catalog.products.length} products · fetched{" "}
+          {new Date(catalog.fetchedAt).toLocaleTimeString("en-US", { timeZone: "UTC" })} UTC
         </span>
       </div>
 
