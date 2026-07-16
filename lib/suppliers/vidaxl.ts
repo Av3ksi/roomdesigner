@@ -142,13 +142,15 @@ interface VidaxlProductsResponse {
 }
 
 function vidaxlAuthHeader(): string {
-  const email = process.env.VIDAXL_ACCOUNT_EMAIL ?? "";
-  const token = process.env.VIDAXL_API_KEY ?? "";
+  // .trim() guards against a trailing newline/space from pasting the token
+  // into .env — invisible in an editor, but enough to fail Basic auth.
+  const email = (process.env.VIDAXL_ACCOUNT_EMAIL ?? "").trim();
+  const token = (process.env.VIDAXL_API_KEY ?? "").trim();
   return `Basic ${Buffer.from(`${email}:${token}`).toString("base64")}`;
 }
 
 async function fetchLive(): Promise<RawSupplierProduct[]> {
-  const baseUrl = process.env.VIDAXL_API_URL;
+  const baseUrl = (process.env.VIDAXL_API_URL ?? "").trim().replace(/\/+$/, "");
   const res = await fetch(`${baseUrl}/api_customer/products?limit=${PRODUCTS_PAGE_LIMIT}&offset=0`, {
     headers: { Authorization: vidaxlAuthHeader() },
   });
