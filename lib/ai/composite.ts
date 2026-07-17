@@ -39,6 +39,25 @@ const DEFAULT_CATEGORY_BOX: Record<ProductCategory, DetectionBox> = {
   textile: { x: 0.32, y: 0.58, w: 0.14, h: 0.1 },
 };
 
+/**
+ * The mask only constrains *where editing is allowed*, not how the model
+ * arranges the product within that region — a first real test placed a
+ * sofa centered in open floor instead of pushed back against a wall, a
+ * cheap prompt-level fix rather than a placement-engineering one.
+ */
+const CATEGORY_PLACEMENT_HINT: Record<ProductCategory, string> = {
+  sofa: "flush against the back wall, not floating in the middle of open floor",
+  chair: "against a wall or in a corner, not in the middle of open floor",
+  table: "resting on the floor in front of where a sofa or seating would be",
+  lighting: "in a corner or beside furniture, standing on the floor",
+  rug: "flat on the floor, centered in the main open area of the room",
+  art: "centered on the wall at typical eye height",
+  plant: "in a corner or against a wall, standing on the floor",
+  storage: "flush against a wall",
+  decor: "resting on an existing surface at a natural height, not floating",
+  textile: "draped naturally over existing furniture, not floating in open space",
+};
+
 const CATEGORY_LABEL_ALIASES: Record<ProductCategory, string[]> = {
   sofa: ["sofa", "sectional", "couch"],
   chair: ["chair", "armchair"],
@@ -129,7 +148,8 @@ export async function compositeProductIntoRoom(
     "The first image is a room photo. The second image is a real product photo. " +
       "Composite the exact product from the second image into the masked region of the first image — " +
       "match the room's perspective, scale and lighting. Do not invent a different product; use the " +
-      "one shown. Leave everything outside the masked region unchanged.",
+      "one shown. Leave everything outside the masked region unchanged. " +
+      `Place it realistically the way it would actually sit in a lived-in room: ${CATEGORY_PLACEMENT_HINT[category]}.`,
   );
   form.append("quality", quality);
   form.append("size", "auto");
