@@ -39,10 +39,30 @@ CATEGORY_ALLOWLIST = [
     "Heim & Garten",
 ]
 
+# The first real run (top-level allowlist only) surfaced a lot of garden
+# furniture, bathroom furniture sets, bath towels, and Christmas ornaments
+# -- all technically under "Möbel"/"Heim & Garten" but not living-room/
+# bedroom-relevant. Exclude those specific subcategories (matched anywhere
+# in the full category path), confirmed present from that run's output.
+SUBCATEGORY_DENYLIST = [
+    "Gartenmöbel",           # garden furniture
+    "Rasen & Garten",        # lawn & garden
+    "Gartenbauten",          # garden structures (pavilions, etc.)
+    "Haushaltswäsche",       # household linens -- towels, bedsheets
+    "Möbelgarnituren",       # was entirely bathroom furniture sets in practice
+    "Festtags-Dekoartikel",  # seasonal/holiday decor (Christmas ornaments)
+]
+
 # Möbel alone matched 242k+ products before stock/price filtering -- far
 # more than needed to prove the workflow end to end. Stop once we have a
 # workable sample instead of collecting everything.
 MAX_MATCHES = 200
+
+# The first real run's SKU-ordered scan exhausted the whole 200-item cap on
+# towels alone before reaching any other subcategory -- cap how many
+# products can come from any single second-level category so the sample
+# actually covers a spread of furniture types instead of one product line.
+MAX_PER_SUBCATEGORY = 15
 
 
 def load_offer_feed(path):
@@ -54,7 +74,15 @@ def load_offer_feed(path):
 
 
 def matches_allowlist(category_text):
-    return any(term.lower() in category_text.lower() for term in CATEGORY_ALLOWLIST)
+    top_level = category_text.split(">")[0].strip()
+    if not any(top_level.lower() == term.lower() for term in CATEGORY_ALLOWLIST):
+        return False
+    return not any(term.lower() in category_text.lower() for term in SUBCATEGORY_DENYLIST)
+
+
+def subcategory_of(category_text):
+    parts = category_text.split(">")
+    return parts[1].strip() if len(parts) > 1 else "(none)"
 
 
 def to_float(value):
@@ -76,6 +104,8 @@ def main():
     print(f"  {len(offers):,} SKUs loaded")
 
     top_level_counts = Counter()
+    subcategory_counts = Counter()
+    matched_subcategory_counts = Counter()
     matched = []
     total_seen = 0
     image_columns = None
@@ -97,8 +127,14 @@ def main():
             category = row.get("Category", "") or ""
             top_level = category.split(">")[0].strip() if category else "(none)"
             top_level_counts[top_level] += 1
+            subcategory = subcategory_of(category)
+            if top_level in CATEGORY_ALLOWLIST:
+                subcategory_counts[subcategory] += 1
 
             if not matches_allowlist(category):
+                continue
+
+            if matched_subcategory_counts[subcategory] >= MAX_PER_SUBCATEGORY:
                 continue
 
             sku = row.get("SKU", "")
@@ -115,6 +151,7 @@ def main():
             if not images:
                 continue  # the whole point of this feed over the REST API is real photos
 
+            matched_subcategory_counts[subcategory] += 1
             matched.append({
                 "sku": sku,
                 "title": row.get("Title", ""),
@@ -147,7 +184,14 @@ def main():
     with open("category_report.txt", "w", encoding="utf-8") as f:
         if stopped_early:
             f.write(f"NOTE: stopped early after {MAX_MATCHES} matches -- counts below only cover the first {total_seen:,} rows, not the whole file.\n\n")
+        f.write("Top-level categories seen:\n")
         for cat, count in top_level_counts.most_common():
+            f.write(f"{count:>8,}  {cat}\n")
+        f.write("\nSubcategories actually included in vidaxl_catalog.json:\n")
+        for cat, count in matched_subcategory_counts.most_common():
+            f.write(f"{count:>8,}  {cat}\n")
+        f.write("\nSubcategories seen under Möbel/Heim & Garten (scanned rows, before the denylist):\n")
+        for cat, count in subcategory_counts.most_common(60):
             f.write(f"{count:>8,}  {cat}\n")
     print("Wrote category_report.txt")
 
