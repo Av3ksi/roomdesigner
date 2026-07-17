@@ -31,6 +31,10 @@ export async function POST(req: NextRequest) {
 
   return NextResponse.json({
     source: suggested ? "claude" : "default",
-    boxes: suggested ?? DEFAULT_PLACEMENTS,
+    boxes: suggested?.placements ?? DEFAULT_PLACEMENTS,
+    // Null when Claude is disabled/failed, or when it answered but the
+    // dimension estimate itself came back malformed — no geometry to
+    // fall back on either way, so the UI just skips the size-fit check.
+    roomDimensions: suggested?.roomDimensions ?? null,
   });
 }

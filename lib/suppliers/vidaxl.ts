@@ -75,6 +75,8 @@ interface VidaxlSampleProduct {
   description: string;
   color: string;
   weightKg: number | null;
+  /** Only present in datasets ingested after the ingestion script started capturing it (parsed from VidaXL's "Size" column). */
+  dimensionsCm?: { l: number; w: number; h: number } | null;
   brand: string;
   costPrice: number;
   webshopPrice: number | null;
@@ -96,6 +98,7 @@ function sampleToRaw(p: VidaxlSampleProduct): RawSupplierProduct {
     stockQty: p.stock,
     images: p.images,
     weightKg: p.weightKg ?? undefined,
+    dimensionsCm: p.dimensionsCm ?? undefined,
     brand: p.brand || undefined,
     // "pallet" packaging is VidaXL's own bulky/freight-shipping signal.
     bulky: p.packaging === "pallet",

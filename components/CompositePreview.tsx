@@ -1,7 +1,7 @@
 "use client";
 
-import { AlertTriangle, ArrowUpRight, Sparkles, Upload, Wand2 } from "lucide-react";
-import { useRef, useState } from "react";
+import { AlertTriangle, ArrowUpRight, Ruler, Sparkles, Upload, Wand2 } from "lucide-react";
+import { useMemo, useRef, useState } from "react";
 import ProductGlyph from "@/components/room/ProductGlyph";
 import { DEFAULT_CATEGORY_BOX, clampBox } from "@/lib/placementBoxes";
 import type { SupplierCatalogResult } from "@/lib/suppliers";
@@ -48,6 +48,42 @@ interface PlacementSuggestion {
 
 type PlacementSuggestions = Record<ProductCategory, PlacementSuggestion>;
 
+interface RoomDimensionsEstimate {
+  widthM: number;
+  depthM: number;
+  heightM: number;
+}
+
+interface FitCheck {
+  status: "fits" | "tight" | "oversized";
+  productWidthM: number;
+  availableM: number;
+}
+
+/**
+ * Advisory only, not precise 3D math: without a full camera/depth model,
+ * we can't know exactly how many real meters a box's width spans. Uses
+ * wallAngleDeg as a coarse heuristic — a wall facing the camera fairly
+ * squarely is treated as spanning the room's width, a wall at a sharp
+ * angle (a side wall in a corner shot) as spanning its depth instead —
+ * good enough to flag "this probably won't fit," not a guarantee.
+ */
+function estimateFitAgainstWall(
+  dimensionsCm: { l: number; w: number; h: number } | undefined,
+  roomDimensions: RoomDimensionsEstimate | null,
+  wallAngle: number,
+): FitCheck | null {
+  if (!dimensionsCm || dimensionsCm.l <= 0 || !roomDimensions) return null;
+  const productWidthM = dimensionsCm.l / 100;
+  const availableM = Math.abs(wallAngle) > 15 ? roomDimensions.depthM : roomDimensions.widthM;
+  const ratio = productWidthM / availableM;
+  return {
+    status: ratio > 1 ? "oversized" : ratio > 0.85 ? "tight" : "fits",
+    productWidthM,
+    availableM,
+  };
+}
+
 /** Where the currently shown placement box came from — shown honestly in the UI. */
 type BoxOrigin = "default" | "ai" | "adjusted";
 
@@ -60,6 +96,7 @@ export default function CompositePreview({ catalog }: { catalog: SupplierCatalog
   const [boxOrigin, setBoxOrigin] = useState<BoxOrigin>("default");
   const [aiBoxes, setAiBoxes] = useState<PlacementSuggestions | null>(null);
   const [aiSource, setAiSource] = useState<"claude" | "default" | null>(null);
+  const [roomDimensions, setRoomDimensions] = useState<RoomDimensionsEstimate | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -84,6 +121,7 @@ export default function CompositePreview({ catalog }: { catalog: SupplierCatalog
     // Suggestions are per-photo — a new photo invalidates them.
     setAiBoxes(null);
     setAiSource(null);
+    setRoomDimensions(null);
     if (roomPreviewUrl) URL.revokeObjectURL(roomPreviewUrl);
     setRoomPreviewUrl(file ? URL.createObjectURL(file) : null);
     if (selectedProduct) {
@@ -124,6 +162,7 @@ export default function CompositePreview({ catalog }: { catalog: SupplierCatalog
       const boxes = body.boxes as PlacementSuggestions;
       setAiBoxes(boxes);
       setAiSource(body.source as "claude" | "default");
+      setRoomDimensions((body.roomDimensions as RoomDimensionsEstimate | null) ?? null);
       if (selectedProduct) {
         const suggestion = boxes[selectedProduct.category];
         const box = { ...suggestion.box };
@@ -215,6 +254,11 @@ export default function CompositePreview({ catalog }: { catalog: SupplierCatalog
         ? "AI-suggested placement"
         : "generic default — drag it or use AI suggest") +
     (wallAngleDeg ? ` · wall ${wallAngleDeg > 0 ? "recedes right" : "recedes left"} ${Math.abs(Math.round(wallAngleDeg))}°` : "");
+
+  const fitCheck = useMemo(
+    () => estimateFitAgainstWall(selectedProduct?.dimensionsCm, roomDimensions, wallAngleDeg),
+    [selectedProduct, roomDimensions, wallAngleDeg],
+  );
 
   return (
     <div className="container-page py-14">
@@ -331,6 +375,27 @@ export default function CompositePreview({ catalog }: { catalog: SupplierCatalog
               <div className="mt-3 text-xs text-cream-dim">
                 Selected: <span className="font-semibold text-cream">{selectedProduct.name}</span> ·{" "}
                 {formatChf(selectedProduct.price)} · category "{selectedProduct.category}"
+              </div>
+            )}
+            {selectedProduct && !selectedProduct.dimensionsCm && (
+              <div className="mt-2 text-[10px] text-cream-faint">
+                No real dimensions for this product yet — re-run the ingestion script to capture VidaXL's
+                Size column, then the size-fit check below activates automatically.
+              </div>
+            )}
+            {fitCheck && fitCheck.status !== "fits" && (
+              <div
+                className={`mt-2 flex items-start gap-2 rounded-lg border p-2.5 text-[11px] ${
+                  fitCheck.status === "oversized" ? "border-red-500/30 bg-red-500/5 text-red-300" : "border-brass/30 bg-brass/5 text-cream-dim"
+                }`}
+              >
+                <Ruler size={13} className="mt-0.5 shrink-0" />
+                <span>
+                  {fitCheck.status === "oversized" ? "Likely doesn't fit: " : "Tight fit: "}
+                  this product is ~{fitCheck.productWidthM.toFixed(1)}m wide, this wall is roughly ~
+                  {fitCheck.availableM.toFixed(1)}m — estimated from both the room photo and the product's
+                  real size, not a guarantee.
+                </span>
               </div>
             )}
           </div>

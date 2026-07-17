@@ -108,6 +108,8 @@ export interface Product {
   imageUrl?: string;
   /** Real purchase-page URL at the supplier, when known — not every supplier feed/endpoint includes this. */
   productUrl?: string;
+  /** Real physical dimensions in cm, when the supplier feed provides them — powers room/placement size-fit checks. */
+  dimensionsCm?: { l: number; w: number; h: number };
 }
 
 export interface DesignConcept {

@@ -150,5 +150,6 @@ export function mapSupplierProduct(raw: RawSupplierProduct, supplierId: string, 
     supplier: { id: supplierId, label: supplierLabel, sku: raw.sku, costPrice: raw.costPrice },
     imageUrl: raw.images?.[0],
     productUrl: raw.productUrl,
+    dimensionsCm: raw.dimensionsCm,
   };
 }

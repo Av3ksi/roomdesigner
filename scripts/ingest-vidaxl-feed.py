@@ -92,6 +92,24 @@ def to_float(value):
         return None
 
 
+def parse_dimensions_cm(size_text):
+    """Parses VidaXL's free-text Size column ("112 x 33,5 x 70 cm",
+    "220 x 250 cm") into {l, w, h} in cm. German feed uses a decimal comma
+    (33,5 = 33.5), not a thousands separator -- normalize before matching.
+    Two numbers (common for flat items like rugs/throws) leaves h at 0.
+    Returns None if fewer than two numbers are found -- no real dimension
+    data to work with, better to omit the field than guess."""
+    if not size_text:
+        return None
+    normalized = re.sub(r"(\d),(\d)", r"\1.\2", size_text)
+    numbers = [float(n) for n in re.findall(r"\d+(?:\.\d+)?", normalized)]
+    if len(numbers) < 2:
+        return None
+    l, w = numbers[0], numbers[1]
+    h = numbers[2] if len(numbers) >= 3 else 0
+    return {"l": l, "w": w, "h": h}
+
+
 def main():
     if len(sys.argv) != 3:
         print("Usage: python3 ingest-vidaxl-feed.py <main_feed.csv> <offer_feed.csv>")
@@ -160,6 +178,7 @@ def main():
                 "description": (row.get("Description", "") or "")[:500],
                 "color": row.get("Color", ""),
                 "weightKg": to_float(row.get("Weight")),
+                "dimensionsCm": parse_dimensions_cm(row.get("Size", "")),
                 "brand": row.get("Brand", "") or "vidaXL",
                 "costPrice": b2b_price,
                 "webshopPrice": to_float(offer.get("Webshop price")) if offer else None,
