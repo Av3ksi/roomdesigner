@@ -8,7 +8,7 @@ import { STYLES } from "@/lib/styles";
  * and the caller falls back to the deterministic demo engine.
  */
 
-const MODEL = "claude-opus-4-8";
+export const MODEL = "claude-opus-4-8";
 
 export function aiEnabled(): boolean {
   return Boolean(process.env.ANTHROPIC_API_KEY);

@@ -15,14 +15,23 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "OPENAI_API_KEY not configured on the server." }, { status: 501 });
   }
 
-  const form = await req.formData();
-  const roomFile = form.get("room");
-  const productImageUrl = form.get("productImageUrl");
-  const category = form.get("category");
+  // formData() itself throws on a missing/non-multipart body — that's a
+  // caller mistake (400), not a server failure (500).
+  const form = await req.formData().catch(() => null);
+  const roomFile = form?.get("room");
+  const productImageUrl = form?.get("productImageUrl");
+  const category = form?.get("category");
 
-  if (!(roomFile instanceof File) || typeof productImageUrl !== "string" || typeof category !== "string") {
+  if (!form || !(roomFile instanceof File) || typeof productImageUrl !== "string" || typeof category !== "string") {
     return NextResponse.json({ error: "Missing room photo, productImageUrl, or category." }, { status: 400 });
   }
+
+  // Optional explicit placement box (the Option B path) — all four
+  // normalized coordinates must parse or the box is ignored entirely.
+  const coords = ["boxX", "boxY", "boxW", "boxH"].map((k) => Number.parseFloat(String(form.get(k) ?? "")));
+  const explicitBox = coords.every((n) => Number.isFinite(n))
+    ? { x: coords[0], y: coords[1], w: coords[2], h: coords[3] }
+    : undefined;
 
   const productRes = await fetch(productImageUrl);
   if (!productRes.ok) {
@@ -33,7 +42,14 @@ export async function POST(req: NextRequest) {
   const productBuffer = Buffer.from(await productRes.arrayBuffer());
 
   try {
-    const result = await compositeProductIntoRoom(roomBuffer, productBuffer, category as ProductCategory, [], "low");
+    const result = await compositeProductIntoRoom(
+      roomBuffer,
+      productBuffer,
+      category as ProductCategory,
+      [],
+      "low",
+      explicitBox,
+    );
     return NextResponse.json(result);
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 500 });

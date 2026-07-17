@@ -1,4 +1,5 @@
 import sharp from "sharp";
+import { DEFAULT_CATEGORY_BOX, clampBox } from "../placementBoxes";
 import type { Detection, DetectionBox, ProductCategory } from "../types";
 
 /**
@@ -8,15 +9,14 @@ import type { Detection, DetectionBox, ProductCategory } from "../types";
  * requires OpenAI specifically — Claude (lib/ai/claude.ts) has no image
  * generation/editing capability, so this is a second, separate provider.
  *
- * Mask placement ("Option A", per the workflow decision): prefer a real
- * detection box already present in the room's analysis when the category
- * matches something Claude actually found in the photo (e.g. replacing an
- * existing sofa uses its real position) — otherwise fall back to a rough,
- * context-blind default position per category. Both are a stand-in for the
- * eventual real fix: a UI where the mask region is drawn against the
- * user's actual photo. Neither is layout-aware of what's already in an
- * arbitrary room, so expect visibly wrong placements sometimes — that's
- * expected at this stage, not a bug to chase down yet.
+ * Mask placement, in order of precedence:
+ *   1. An explicit box passed by the caller — the "Option B" path, where
+ *      placement was decided upstream (Claude vision suggestion via
+ *      lib/ai/placement.ts, then user-adjusted in the UI) and this module
+ *      just executes it.
+ *   2. A real detection box from the room's analysis whose label matches
+ *      the category (e.g. replacing an existing sofa uses its position).
+ *   3. The context-blind per-category default (lib/placementBoxes.ts).
  */
 
 export function compositingEnabled(): boolean {
@@ -24,20 +24,6 @@ export function compositingEnabled(): boolean {
 }
 
 const MODEL = "gpt-image-1.5";
-
-/** Deliberately rough — see module doc comment. Tuned for a typical eye-level living-room photo. */
-const DEFAULT_CATEGORY_BOX: Record<ProductCategory, DetectionBox> = {
-  sofa: { x: 0.28, y: 0.52, w: 0.46, h: 0.3 },
-  chair: { x: 0.06, y: 0.5, w: 0.2, h: 0.28 },
-  table: { x: 0.38, y: 0.72, w: 0.22, h: 0.14 },
-  lighting: { x: 0.82, y: 0.3, w: 0.12, h: 0.45 },
-  rug: { x: 0.22, y: 0.8, w: 0.56, h: 0.16 },
-  art: { x: 0.36, y: 0.14, w: 0.3, h: 0.22 },
-  plant: { x: 0.86, y: 0.42, w: 0.12, h: 0.38 },
-  storage: { x: 0.02, y: 0.3, w: 0.18, h: 0.4 },
-  decor: { x: 0.42, y: 0.66, w: 0.1, h: 0.1 },
-  textile: { x: 0.32, y: 0.58, w: 0.14, h: 0.1 },
-};
 
 /**
  * The mask only constrains *where editing is allowed*, not how the model
@@ -114,9 +100,17 @@ export interface CompositeResult {
   /** Base64 PNG — the room photo with the product composited in. */
   imageBase64: string;
   maskBox: DetectionBox;
-  /** True if a real detection from the room's own analysis was used instead of the generic default. */
-  usedRealDetection: boolean;
+  /** Which precedence tier decided the mask position — see the module doc comment. */
+  placementSource: "explicit" | "detection" | "default";
 }
+
+/**
+ * The mask is padded slightly beyond the placement box so the model has
+ * room to blend shadows and contact edges into the surrounding pixels —
+ * a hard mask edge exactly at the product's silhouette produces visible
+ * seams. The hotspot still gets the unpadded box.
+ */
+const MASK_PADDING = 0.04;
 
 export async function compositeProductIntoRoom(
   roomPhoto: Buffer,
@@ -124,6 +118,7 @@ export async function compositeProductIntoRoom(
   category: ProductCategory,
   detections: Detection[] = [],
   quality: "low" | "medium" | "high" = "low",
+  explicitBox?: DetectionBox,
 ): Promise<CompositeResult> {
   if (!compositingEnabled()) throw new Error("OPENAI_API_KEY not configured");
 
@@ -131,9 +126,17 @@ export async function compositeProductIntoRoom(
   const width = meta.width ?? 1024;
   const height = meta.height ?? 1024;
 
-  const detectedBox = matchingDetectionBox(category, detections);
-  const maskBox = detectedBox ?? DEFAULT_CATEGORY_BOX[category];
-  const maskPng = await buildMaskPng(width, height, maskBox);
+  const detectedBox = explicitBox ? null : matchingDetectionBox(category, detections);
+  const maskBox = explicitBox ? clampBox(explicitBox) : detectedBox ?? DEFAULT_CATEGORY_BOX[category];
+  const placementSource: CompositeResult["placementSource"] = explicitBox ? "explicit" : detectedBox ? "detection" : "default";
+
+  const paddedBox = clampBox({
+    x: maskBox.x - MASK_PADDING,
+    y: maskBox.y - MASK_PADDING,
+    w: maskBox.w + MASK_PADDING * 2,
+    h: maskBox.h + MASK_PADDING * 2,
+  });
+  const maskPng = await buildMaskPng(width, height, paddedBox);
 
   const roomImage = await toImageBlob(roomPhoto);
   const productImage = await toImageBlob(productPhoto);
@@ -149,7 +152,11 @@ export async function compositeProductIntoRoom(
       "Composite the exact product from the second image into the masked region of the first image — " +
       "match the room's perspective, scale and lighting. Do not invent a different product; use the " +
       "one shown. Leave everything outside the masked region unchanged. " +
-      `Place it realistically the way it would actually sit in a lived-in room: ${CATEGORY_PLACEMENT_HINT[category]}.`,
+      // With an explicit user/AI-chosen box the mask IS the intended position — a generic
+      // category hint ("against a wall") could fight a deliberate mid-room placement.
+      (explicitBox
+        ? "The masked region marks the exact intended position — fit the product naturally within it, resting on the floor or surface with a realistic contact shadow."
+        : `Place it realistically the way it would actually sit in a lived-in room: ${CATEGORY_PLACEMENT_HINT[category]}.`),
   );
   form.append("quality", quality);
   form.append("size", "auto");
@@ -170,5 +177,5 @@ export async function compositeProductIntoRoom(
   const b64 = body.data?.[0]?.b64_json;
   if (!b64) throw new Error("OpenAI response had no image data");
 
-  return { imageBase64: b64, maskBox, usedRealDetection: Boolean(detectedBox) };
+  return { imageBase64: b64, maskBox, placementSource };
 }

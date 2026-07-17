@@ -1,10 +1,11 @@
 "use client";
 
-import { AlertTriangle, ArrowUpRight, Sparkles, Upload } from "lucide-react";
-import { useState } from "react";
+import { AlertTriangle, ArrowUpRight, Sparkles, Upload, Wand2 } from "lucide-react";
+import { useRef, useState } from "react";
 import ProductGlyph from "@/components/room/ProductGlyph";
+import { DEFAULT_CATEGORY_BOX, clampBox } from "@/lib/placementBoxes";
 import type { SupplierCatalogResult } from "@/lib/suppliers";
-import type { DetectionBox, Product } from "@/lib/types";
+import type { DetectionBox, Product, ProductCategory } from "@/lib/types";
 
 function formatChf(n: number): string {
   return n.toLocaleString("en-US", { style: "currency", currency: "CHF", maximumFractionDigits: 0 });
@@ -13,17 +14,36 @@ function formatChf(n: number): string {
 interface CompositeApiResult {
   imageBase64: string;
   maskBox: DetectionBox;
-  usedRealDetection: boolean;
+  placementSource: "explicit" | "detection" | "default";
 }
+
+type PlacementBoxes = Record<ProductCategory, DetectionBox>;
+
+/** Where the currently shown placement box came from — shown honestly in the UI. */
+type BoxOrigin = "default" | "ai" | "adjusted";
 
 export default function CompositePreview({ catalog }: { catalog: SupplierCatalogResult }) {
   const [roomFile, setRoomFile] = useState<File | null>(null);
   const [roomPreviewUrl, setRoomPreviewUrl] = useState<string | null>(null);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const [placementBox, setPlacementBox] = useState<DetectionBox | null>(null);
+  const [boxOrigin, setBoxOrigin] = useState<BoxOrigin>("default");
+  const [aiBoxes, setAiBoxes] = useState<PlacementBoxes | null>(null);
+  const [aiSource, setAiSource] = useState<"claude" | "default" | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<CompositeApiResult | null>(null);
   const [hotspotOpen, setHotspotOpen] = useState(false);
+
+  const overlayRef = useRef<HTMLDivElement | null>(null);
+  const dragRef = useRef<{
+    mode: "move" | "resize";
+    startX: number;
+    startY: number;
+    box: DetectionBox;
+    rect: DOMRect;
+  } | null>(null);
 
   const productsWithPhotos = catalog.products.filter((p) => p.imageUrl);
 
@@ -31,12 +51,82 @@ export default function CompositePreview({ catalog }: { catalog: SupplierCatalog
     setRoomFile(file);
     setResult(null);
     setError(null);
+    // Suggestions are per-photo — a new photo invalidates them.
+    setAiBoxes(null);
+    setAiSource(null);
     if (roomPreviewUrl) URL.revokeObjectURL(roomPreviewUrl);
     setRoomPreviewUrl(file ? URL.createObjectURL(file) : null);
+    if (selectedProduct) {
+      setPlacementBox({ ...DEFAULT_CATEGORY_BOX[selectedProduct.category] });
+      setBoxOrigin("default");
+    }
+  }
+
+  function selectProduct(p: Product) {
+    setSelectedProduct(p);
+    const suggested = aiBoxes?.[p.category];
+    setPlacementBox({ ...(suggested ?? DEFAULT_CATEGORY_BOX[p.category]) });
+    setBoxOrigin(suggested ? "ai" : "default");
+  }
+
+  async function suggestPlacement() {
+    if (!roomFile) return;
+    setAiLoading(true);
+    setError(null);
+    try {
+      const form = new FormData();
+      form.append("room", roomFile);
+      const res = await fetch("/api/placement", { method: "POST", body: form });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error ?? `Placement request failed: ${res.status}`);
+      setAiBoxes(body.boxes as PlacementBoxes);
+      setAiSource(body.source as "claude" | "default");
+      if (selectedProduct) {
+        setPlacementBox({ ...(body.boxes as PlacementBoxes)[selectedProduct.category] });
+        setBoxOrigin(body.source === "claude" ? "ai" : "default");
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setAiLoading(false);
+    }
+  }
+
+  function onBoxPointerDown(e: React.PointerEvent, mode: "move" | "resize") {
+    if (!placementBox || !overlayRef.current) return;
+    e.preventDefault();
+    e.stopPropagation();
+    dragRef.current = {
+      mode,
+      startX: e.clientX,
+      startY: e.clientY,
+      box: placementBox,
+      rect: overlayRef.current.getBoundingClientRect(),
+    };
+    overlayRef.current.setPointerCapture(e.pointerId);
+  }
+
+  function onOverlayPointerMove(e: React.PointerEvent) {
+    const d = dragRef.current;
+    if (!d) return;
+    const dx = (e.clientX - d.startX) / d.rect.width;
+    const dy = (e.clientY - d.startY) / d.rect.height;
+    setPlacementBox(
+      clampBox(
+        d.mode === "move"
+          ? { ...d.box, x: d.box.x + dx, y: d.box.y + dy }
+          : { ...d.box, w: d.box.w + dx, h: d.box.h + dy },
+      ),
+    );
+    setBoxOrigin("adjusted");
+  }
+
+  function onOverlayPointerUp() {
+    dragRef.current = null;
   }
 
   async function generate() {
-    if (!roomFile || !selectedProduct?.imageUrl) return;
+    if (!roomFile || !selectedProduct?.imageUrl || !placementBox) return;
     setLoading(true);
     setError(null);
     setResult(null);
@@ -47,6 +137,10 @@ export default function CompositePreview({ catalog }: { catalog: SupplierCatalog
       form.append("room", roomFile);
       form.append("productImageUrl", selectedProduct.imageUrl);
       form.append("category", selectedProduct.category);
+      form.append("boxX", String(placementBox.x));
+      form.append("boxY", String(placementBox.y));
+      form.append("boxW", String(placementBox.w));
+      form.append("boxH", String(placementBox.h));
 
       const res = await fetch("/api/composite", { method: "POST", body: form });
       const body = await res.json();
@@ -59,16 +153,22 @@ export default function CompositePreview({ catalog }: { catalog: SupplierCatalog
     }
   }
 
+  const boxOriginLabel =
+    boxOrigin === "adjusted"
+      ? "your placement (dragged)"
+      : boxOrigin === "ai"
+        ? "AI-suggested placement"
+        : "generic default — drag it or use AI suggest";
+
   return (
     <div className="container-page py-14">
       <div className="max-w-2xl">
         <div className="eyebrow mb-3">Compositing step — internal preview</div>
         <h1 className="font-display text-4xl leading-tight sm:text-5xl">A real product, in your real room.</h1>
         <p className="mt-4 text-cream-dim">
-          Upload a real room photo, pick a real product, and hit generate — this makes one real, billed
-          OpenAI call (nothing fires automatically). The mask position is still a rough placeholder (see{" "}
-          <code className="rounded bg-ink-panel px-1.5 py-0.5">lib/ai/composite.ts</code>), so expect
-          imperfect placement for now; the hotspot below shows exactly where the mask was.
+          Upload a real room photo, pick a real product, position the placement box on your photo
+          (drag to move, corner to resize — or let AI read the room and suggest it), then generate.
+          Generation makes one real, billed OpenAI call; nothing fires automatically.
         </p>
       </div>
 
@@ -86,9 +186,57 @@ export default function CompositePreview({ catalog }: { catalog: SupplierCatalog
                 onChange={(e) => onRoomFileChange(e.target.files?.[0] ?? null)}
               />
             </label>
+
             {roomPreviewUrl && (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={roomPreviewUrl} alt="Room preview" className="mt-3 max-h-48 w-full rounded-lg object-cover" />
+              <div
+                ref={overlayRef}
+                onPointerMove={onOverlayPointerMove}
+                onPointerUp={onOverlayPointerUp}
+                className="relative mt-3 touch-none select-none overflow-hidden rounded-lg"
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={roomPreviewUrl} alt="Room preview" draggable={false} className="w-full" />
+                {placementBox && selectedProduct && (
+                  <div
+                    onPointerDown={(e) => onBoxPointerDown(e, "move")}
+                    style={{
+                      left: `${placementBox.x * 100}%`,
+                      top: `${placementBox.y * 100}%`,
+                      width: `${placementBox.w * 100}%`,
+                      height: `${placementBox.h * 100}%`,
+                    }}
+                    className="absolute cursor-move rounded-md border-2 border-brass-bright/80 bg-brass/15"
+                  >
+                    <span className="absolute -top-5 left-0 rounded bg-ink/80 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-brass-bright backdrop-blur">
+                      {selectedProduct.category}
+                    </span>
+                    <span
+                      onPointerDown={(e) => onBoxPointerDown(e, "resize")}
+                      className="absolute -bottom-1.5 -right-1.5 h-4 w-4 cursor-nwse-resize rounded-sm border border-ink bg-brass-bright"
+                    />
+                  </div>
+                )}
+              </div>
+            )}
+
+            {roomPreviewUrl && selectedProduct && (
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <button
+                  onClick={suggestPlacement}
+                  disabled={aiLoading}
+                  className="flex items-center gap-1.5 rounded-full border border-brass/40 px-3.5 py-1.5 text-xs font-semibold text-brass-bright transition hover:bg-brass/10 disabled:opacity-40"
+                >
+                  <Wand2 size={13} />
+                  {aiLoading ? "Reading the room..." : "AI suggest placement"}
+                </button>
+                <span className="text-[10px] text-cream-faint">{boxOriginLabel}</span>
+              </div>
+            )}
+            {aiSource === "default" && (
+              <div className="mt-2 text-[10px] text-cream-faint">
+                AI placement unavailable (no ANTHROPIC_API_KEY on the server) — these are the generic
+                defaults, drag the box to position it yourself.
+              </div>
             )}
           </div>
 
@@ -106,7 +254,7 @@ export default function CompositePreview({ catalog }: { catalog: SupplierCatalog
               {productsWithPhotos.slice(0, 30).map((p) => (
                 <button
                   key={p.id}
-                  onClick={() => setSelectedProduct(p)}
+                  onClick={() => selectProduct(p)}
                   className={`overflow-hidden rounded-lg border text-left transition ${
                     selectedProduct?.id === p.id ? "border-brass ring-1 ring-brass" : "border-ink-line hover:border-brass/40"
                   }`}
@@ -133,7 +281,7 @@ export default function CompositePreview({ catalog }: { catalog: SupplierCatalog
 
           <button
             onClick={generate}
-            disabled={!roomFile || !selectedProduct || loading}
+            disabled={!roomFile || !selectedProduct || !placementBox || loading}
             className="flex w-full items-center justify-center gap-2 rounded-full bg-brass px-6 py-3 text-sm font-semibold text-ink disabled:cursor-not-allowed disabled:opacity-40"
           >
             <Sparkles size={16} />
@@ -202,12 +350,16 @@ export default function CompositePreview({ catalog }: { catalog: SupplierCatalog
                 </div>
               )}
               <span className="absolute bottom-2 right-2 rounded-full bg-ink/80 px-2 py-1 text-[9px] font-semibold uppercase tracking-wider text-cream-faint backdrop-blur">
-                {result.usedRealDetection ? "positioned via a real detection" : "generic default position"}
+                {result.placementSource === "explicit"
+                  ? "your placement"
+                  : result.placementSource === "detection"
+                    ? "detected position"
+                    : "generic default position"}
               </span>
             </div>
           ) : (
             <div className="p-16 text-center text-sm text-cream-faint">
-              Upload a room photo and pick a product, then generate to see the result here.
+              Upload a room photo, pick a product, position the box, then generate to see the result here.
             </div>
           )}
         </div>

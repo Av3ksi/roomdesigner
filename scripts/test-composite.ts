@@ -53,7 +53,7 @@ async function main() {
   const outPath = `composited-${Date.now()}.png`;
   writeFileSync(outPath, Buffer.from(result.imageBase64, "base64"));
   console.log(`Wrote ${outPath}`);
-  console.log(`Used a real detection box: ${result.usedRealDetection} (false = generic default position)`);
+  console.log(`Placement source: ${result.placementSource} (this CLI passes no explicit box, so expect "detection" or "default")`);
 }
 
 main().catch((err) => {
