@@ -33,6 +33,9 @@ export async function POST(req: NextRequest) {
     ? { x: coords[0], y: coords[1], w: coords[2], h: coords[3] }
     : undefined;
 
+  const wallAngleRaw = Number.parseFloat(String(form.get("wallAngleDeg") ?? ""));
+  const wallAngleDeg = Number.isFinite(wallAngleRaw) ? wallAngleRaw : undefined;
+
   const productRes = await fetch(productImageUrl);
   if (!productRes.ok) {
     return NextResponse.json({ error: `Failed to fetch the product photo: ${productRes.status}` }, { status: 502 });
@@ -49,6 +52,7 @@ export async function POST(req: NextRequest) {
       [],
       "low",
       explicitBox,
+      wallAngleDeg,
     );
     return NextResponse.json(result);
   } catch (err) {

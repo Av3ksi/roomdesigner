@@ -119,6 +119,8 @@ export async function compositeProductIntoRoom(
   detections: Detection[] = [],
   quality: "low" | "medium" | "high" = "low",
   explicitBox?: DetectionBox,
+  /** Estimated angle of the wall/floor plane the box sits against — see lib/ai/placement.ts. 0 or undefined = no rotation hint. */
+  wallAngleDeg?: number,
 ): Promise<CompositeResult> {
   if (!compositingEnabled()) throw new Error("OPENAI_API_KEY not configured");
 
@@ -146,6 +148,16 @@ export async function compositeProductIntoRoom(
   form.append("image[]", roomImage.blob, roomImage.filename);
   form.append("image[]", productImage.blob, productImage.filename);
   form.append("mask", new Blob([new Uint8Array(maskPng)], { type: "image/png" }), "mask.png");
+  const wallAngleInstruction =
+    wallAngleDeg && Math.abs(wallAngleDeg) > 2
+      ? ` The wall or floor plane behind this position recedes at approximately ${Math.round(wallAngleDeg)}° from the camera ` +
+        `(${wallAngleDeg > 0 ? "receding away to the right" : "receding away to the left"}, matching this photo's actual ` +
+        "vanishing lines) — rotate the product so its parallel edges (front face, top, base) align exactly with that " +
+        "plane. It must lie flush and parallel against its real surface, not face the camera head-on."
+      : wallAngleDeg === 0
+        ? " The wall behind this position faces the camera directly (no perspective recession) — keep the product's front face parallel to the camera plane."
+        : "";
+
   form.append(
     "prompt",
     "The first image is a room photo. The second image is a real product photo. " +
@@ -156,7 +168,8 @@ export async function compositeProductIntoRoom(
       // category hint ("against a wall") could fight a deliberate mid-room placement.
       (explicitBox
         ? "The masked region marks the exact intended position — fit the product naturally within it, resting on the floor or surface with a realistic contact shadow."
-        : `Place it realistically the way it would actually sit in a lived-in room: ${CATEGORY_PLACEMENT_HINT[category]}.`),
+        : `Place it realistically the way it would actually sit in a lived-in room: ${CATEGORY_PLACEMENT_HINT[category]}.`) +
+      wallAngleInstruction,
   );
   form.append("quality", quality);
   form.append("size", "auto");

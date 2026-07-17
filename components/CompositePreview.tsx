@@ -41,7 +41,12 @@ interface CompositeApiResult {
   placementSource: "explicit" | "detection" | "default";
 }
 
-type PlacementBoxes = Record<ProductCategory, DetectionBox>;
+interface PlacementSuggestion {
+  box: DetectionBox;
+  wallAngleDeg: number;
+}
+
+type PlacementSuggestions = Record<ProductCategory, PlacementSuggestion>;
 
 /** Where the currently shown placement box came from — shown honestly in the UI. */
 type BoxOrigin = "default" | "ai" | "adjusted";
@@ -51,8 +56,9 @@ export default function CompositePreview({ catalog }: { catalog: SupplierCatalog
   const [roomPreviewUrl, setRoomPreviewUrl] = useState<string | null>(null);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [placementBox, setPlacementBox] = useState<DetectionBox | null>(null);
+  const [wallAngleDeg, setWallAngleDeg] = useState(0);
   const [boxOrigin, setBoxOrigin] = useState<BoxOrigin>("default");
-  const [aiBoxes, setAiBoxes] = useState<PlacementBoxes | null>(null);
+  const [aiBoxes, setAiBoxes] = useState<PlacementSuggestions | null>(null);
   const [aiSource, setAiSource] = useState<"claude" | "default" | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -82,6 +88,7 @@ export default function CompositePreview({ catalog }: { catalog: SupplierCatalog
     setRoomPreviewUrl(file ? URL.createObjectURL(file) : null);
     if (selectedProduct) {
       setPlacementBox({ ...DEFAULT_CATEGORY_BOX[selectedProduct.category] });
+      setWallAngleDeg(0);
       setBoxOrigin("default");
     }
   }
@@ -89,8 +96,9 @@ export default function CompositePreview({ catalog }: { catalog: SupplierCatalog
   async function selectProduct(p: Product) {
     setSelectedProduct(p);
     const suggested = aiBoxes?.[p.category];
-    const box = { ...(suggested ?? DEFAULT_CATEGORY_BOX[p.category]) };
+    const box = { ...(suggested?.box ?? DEFAULT_CATEGORY_BOX[p.category]) };
     setPlacementBox(box); // show something immediately, reshape once the product photo's real ratio is known
+    setWallAngleDeg(suggested?.wallAngleDeg ?? 0);
     setBoxOrigin(suggested ? "ai" : "default");
 
     if (p.imageUrl) {
@@ -113,11 +121,14 @@ export default function CompositePreview({ catalog }: { catalog: SupplierCatalog
       const res = await fetch("/api/placement", { method: "POST", body: form });
       const body = await res.json();
       if (!res.ok) throw new Error(body.error ?? `Placement request failed: ${res.status}`);
-      setAiBoxes(body.boxes as PlacementBoxes);
+      const boxes = body.boxes as PlacementSuggestions;
+      setAiBoxes(boxes);
       setAiSource(body.source as "claude" | "default");
       if (selectedProduct) {
-        const box = { ...(body.boxes as PlacementBoxes)[selectedProduct.category] };
+        const suggestion = boxes[selectedProduct.category];
+        const box = { ...suggestion.box };
         setPlacementBox(box);
+        setWallAngleDeg(suggestion.wallAngleDeg);
         setBoxOrigin(body.source === "claude" ? "ai" : "default");
         if (selectedProduct.imageUrl) {
           try {
@@ -184,6 +195,7 @@ export default function CompositePreview({ catalog }: { catalog: SupplierCatalog
       form.append("boxY", String(placementBox.y));
       form.append("boxW", String(placementBox.w));
       form.append("boxH", String(placementBox.h));
+      form.append("wallAngleDeg", String(wallAngleDeg));
 
       const res = await fetch("/api/composite", { method: "POST", body: form });
       const body = await res.json();
@@ -197,11 +209,12 @@ export default function CompositePreview({ catalog }: { catalog: SupplierCatalog
   }
 
   const boxOriginLabel =
-    boxOrigin === "adjusted"
+    (boxOrigin === "adjusted"
       ? "your placement (dragged)"
       : boxOrigin === "ai"
         ? "AI-suggested placement"
-        : "generic default — drag it or use AI suggest";
+        : "generic default — drag it or use AI suggest") +
+    (wallAngleDeg ? ` · wall ${wallAngleDeg > 0 ? "recedes right" : "recedes left"} ${Math.abs(Math.round(wallAngleDeg))}°` : "");
 
   return (
     <div className="container-page py-14">

@@ -1,9 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
-import { suggestPlacements } from "@/lib/ai/placement";
+import { suggestPlacements, type PlacementMap } from "@/lib/ai/placement";
 import { DEFAULT_CATEGORY_BOX } from "@/lib/placementBoxes";
 
 // sharp (used for the pre-analysis downscale) needs the Node runtime.
 export const runtime = "nodejs";
+
+/** Context-blind defaults, normalized to the same {box, wallAngleDeg} shape Claude returns — no geometry to estimate wallAngleDeg from, so 0 (camera-facing). */
+const DEFAULT_PLACEMENTS: PlacementMap = Object.fromEntries(
+  Object.entries(DEFAULT_CATEGORY_BOX).map(([category, box]) => [category, { box, wallAngleDeg: 0 }]),
+) as PlacementMap;
 
 /**
  * Room-aware placement suggestions for the compositing step. One Claude
@@ -26,6 +31,6 @@ export async function POST(req: NextRequest) {
 
   return NextResponse.json({
     source: suggested ? "claude" : "default",
-    boxes: suggested ?? DEFAULT_CATEGORY_BOX,
+    boxes: suggested ?? DEFAULT_PLACEMENTS,
   });
 }
