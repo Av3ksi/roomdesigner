@@ -11,6 +11,30 @@ function formatChf(n: number): string {
   return n.toLocaleString("en-US", { style: "currency", currency: "CHF", maximumFractionDigits: 0 });
 }
 
+/** Reads a product photo's real width:height ratio without a network re-fetch (browser cache handles it). */
+function loadImageAspectRatio(url: string): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const img = new window.Image();
+    img.onload = () => resolve(img.naturalWidth / img.naturalHeight);
+    img.onerror = () => reject(new Error("Failed to load product image"));
+    img.src = url;
+  });
+}
+
+/**
+ * AI/default boxes only know the category ("storage"), not whether this
+ * specific product is a tall narrow wardrobe or a low wide sideboard —
+ * that mismatch is what made an earlier real test look wrong. Reshape the
+ * box to the product's actual proportions: keep the suggested width (the
+ * footprint estimate) and the floor contact point (bottom edge) fixed,
+ * and recompute height from the real aspect ratio instead of guessing it.
+ */
+function reshapeBoxToAspectRatio(box: DetectionBox, aspectRatio: number): DetectionBox {
+  const bottom = box.y + box.h;
+  const h = box.w / aspectRatio;
+  return clampBox({ x: box.x, y: bottom - h, w: box.w, h });
+}
+
 interface CompositeApiResult {
   imageBase64: string;
   maskBox: DetectionBox;
@@ -62,11 +86,21 @@ export default function CompositePreview({ catalog }: { catalog: SupplierCatalog
     }
   }
 
-  function selectProduct(p: Product) {
+  async function selectProduct(p: Product) {
     setSelectedProduct(p);
     const suggested = aiBoxes?.[p.category];
-    setPlacementBox({ ...(suggested ?? DEFAULT_CATEGORY_BOX[p.category]) });
+    const box = { ...(suggested ?? DEFAULT_CATEGORY_BOX[p.category]) };
+    setPlacementBox(box); // show something immediately, reshape once the product photo's real ratio is known
     setBoxOrigin(suggested ? "ai" : "default");
+
+    if (p.imageUrl) {
+      try {
+        const ratio = await loadImageAspectRatio(p.imageUrl);
+        setPlacementBox(reshapeBoxToAspectRatio(box, ratio));
+      } catch {
+        // Keep the un-reshaped box if the product photo fails to load — still usable, just less precise.
+      }
+    }
   }
 
   async function suggestPlacement() {
@@ -82,8 +116,17 @@ export default function CompositePreview({ catalog }: { catalog: SupplierCatalog
       setAiBoxes(body.boxes as PlacementBoxes);
       setAiSource(body.source as "claude" | "default");
       if (selectedProduct) {
-        setPlacementBox({ ...(body.boxes as PlacementBoxes)[selectedProduct.category] });
+        const box = { ...(body.boxes as PlacementBoxes)[selectedProduct.category] };
+        setPlacementBox(box);
         setBoxOrigin(body.source === "claude" ? "ai" : "default");
+        if (selectedProduct.imageUrl) {
+          try {
+            const ratio = await loadImageAspectRatio(selectedProduct.imageUrl);
+            setPlacementBox(reshapeBoxToAspectRatio(box, ratio));
+          } catch {
+            // Keep the un-reshaped box if the product photo fails to load.
+          }
+        }
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
