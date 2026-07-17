@@ -58,6 +58,21 @@ function matchingDetectionBox(category: ProductCategory, detections: Detection[]
   return match?.box ?? null;
 }
 
+const MIME_BY_FORMAT: Record<string, string> = { jpeg: "image/jpeg", jpg: "image/jpeg", png: "image/png", webp: "image/webp" };
+
+/**
+ * new Blob([buffer]) with no `type` option serializes as
+ * application/octet-stream in the multipart body regardless of the
+ * filename extension you pass — OpenAI's API rejects that outright
+ * ("unsupported mimetype"). Detect the real format and set it explicitly.
+ */
+async function toImageBlob(buffer: Buffer): Promise<{ blob: Blob; filename: string }> {
+  const { format } = await sharp(buffer).metadata();
+  const mime = (format && MIME_BY_FORMAT[format]) || "image/png";
+  const ext = format === "jpeg" ? "jpg" : format ?? "png";
+  return { blob: new Blob([new Uint8Array(buffer)], { type: mime }), filename: `image.${ext}` };
+}
+
 async function buildMaskPng(width: number, height: number, box: DetectionBox): Promise<Buffer> {
   const channels = 4;
   const pixels = Buffer.alloc(width * height * channels, 255); // opaque everywhere = "keep as-is"
@@ -101,11 +116,14 @@ export async function compositeProductIntoRoom(
   const maskBox = detectedBox ?? DEFAULT_CATEGORY_BOX[category];
   const maskPng = await buildMaskPng(width, height, maskBox);
 
+  const roomImage = await toImageBlob(roomPhoto);
+  const productImage = await toImageBlob(productPhoto);
+
   const form = new FormData();
   form.append("model", MODEL);
-  form.append("image[]", new Blob([new Uint8Array(roomPhoto)]), "room.png");
-  form.append("image[]", new Blob([new Uint8Array(productPhoto)]), "product.png");
-  form.append("mask", new Blob([new Uint8Array(maskPng)]), "mask.png");
+  form.append("image[]", roomImage.blob, roomImage.filename);
+  form.append("image[]", productImage.blob, productImage.filename);
+  form.append("mask", new Blob([new Uint8Array(maskPng)], { type: "image/png" }), "mask.png");
   form.append(
     "prompt",
     "The first image is a room photo. The second image is a real product photo. " +
