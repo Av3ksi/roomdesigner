@@ -94,6 +94,14 @@ export default function CompositePreview({ catalog }: { catalog: SupplierCatalog
 
           <div className="card p-5">
             <div className="mb-3 text-sm font-semibold">2. Product ({catalog.supplierLabel}, {catalog.source})</div>
+            {productsWithPhotos.length === 0 && (
+              <div className="flex items-start gap-2 rounded-lg border border-brass/30 bg-brass/5 p-3 text-xs text-cream-dim">
+                <AlertTriangle size={14} className="mt-0.5 shrink-0 text-brass" />
+                {catalog.source === "live"
+                  ? "No products with photos in this live scan — the live feed only has photos where a SKU happens to cross-match the bundled sample. Temporarily rename .env (mv .env .env.live-backup) and restart to test against the sample dataset instead, which guarantees photos."
+                  : "No products with photos in this catalog at all — check lib/suppliers/data/vidaxl-sample.json."}
+              </div>
+            )}
             <div className="grid max-h-72 grid-cols-3 gap-2 overflow-y-auto">
               {productsWithPhotos.slice(0, 30).map((p) => (
                 <button
@@ -131,6 +139,15 @@ export default function CompositePreview({ catalog }: { catalog: SupplierCatalog
             <Sparkles size={16} />
             {loading ? "Generating (real API call, ~15-60s)..." : "Generate composite (real cost, ~$0.01)"}
           </button>
+          {!loading && (!roomFile || !selectedProduct) && (
+            <div className="text-center text-xs text-cream-faint">
+              {!roomFile && !selectedProduct
+                ? "Upload a room photo and pick a product to enable this."
+                : !roomFile
+                  ? "Upload a room photo to enable this."
+                  : "Pick a product to enable this."}
+            </div>
+          )}
 
           {error && (
             <div className="card flex items-start gap-2 border-red-500/30 bg-red-500/5 p-4 text-sm text-red-300">
