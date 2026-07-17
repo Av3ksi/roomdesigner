@@ -27,6 +27,8 @@ export interface RawSupplierProduct {
   brand?: string;
   /** Flags bulky/fragile items that need special shipping handling (e.g. sofas). */
   bulky?: boolean;
+  /** Real purchase-page URL at the supplier, when the feed provides one. */
+  productUrl?: string;
 }
 
 export interface SupplierCatalogResult {

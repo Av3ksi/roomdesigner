@@ -69,6 +69,8 @@ export function vidaxlEnabled(): boolean {
 interface VidaxlSampleProduct {
   sku: string;
   title: string;
+  /** Only present in datasets ingested after the ingestion script started capturing it. */
+  productUrl?: string;
   category: string;
   description: string;
   color: string;
@@ -87,6 +89,7 @@ function sampleToRaw(p: VidaxlSampleProduct): RawSupplierProduct {
     sku: p.sku,
     ean: p.ean || undefined,
     title: p.title,
+    productUrl: p.productUrl || undefined,
     vendorCategory: p.category,
     description: p.description || undefined,
     costPrice: p.costPrice,

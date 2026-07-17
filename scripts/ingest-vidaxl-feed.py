@@ -155,6 +155,7 @@ def main():
             matched.append({
                 "sku": sku,
                 "title": row.get("Title", ""),
+                "productUrl": row.get("Link", ""),
                 "category": category,
                 "description": (row.get("Description", "") or "")[:500],
                 "color": row.get("Color", ""),

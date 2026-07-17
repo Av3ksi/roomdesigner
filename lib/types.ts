@@ -106,6 +106,8 @@ export interface Product {
   supplier?: { id: string; label: string; sku: string; costPrice: number };
   /** Real product photo URL, when the source is a supplier feed rather than the procedural catalog. */
   imageUrl?: string;
+  /** Real purchase-page URL at the supplier, when known — not every supplier feed/endpoint includes this. */
+  productUrl?: string;
 }
 
 export interface DesignConcept {
