@@ -14,26 +14,35 @@ import type { RawSupplierProduct } from "./types";
 /**
  * Plain .includes() over-matches short keywords inside unrelated words —
  * e.g. "print" inside "Pawprints" wrongly tagging cat trees as art, or
- * "red" inside "covered"/"prepared". Match on word boundaries instead;
- * \b works fine around multi-word phrases like "wall decor" too, since it
- * only anchors the outer edges.
+ * "red" inside "covered"/"prepared". A strict word-boundary match avoids
+ * that, but over-corrects for German: compound nouns are single words with
+ * no internal boundary ("Nachttisch", "Gartentisch" both contain "tisch"
+ * but neither has a \b before it), so a boundary-only match would miss
+ * almost every German product title — and VidaXL's feed is German.
+ *
+ * German compounds are right-headed (the core noun is the last component),
+ * so for single-word keywords, match a text token *ending with* the
+ * keyword instead — catches "Nachttisch" via "tisch" while still rejecting
+ * "Pawprints" via "print" (it ends in "prints", not "print"). Multi-word
+ * phrases ("wall decor") aren't compounds, so plain substring is fine.
  */
 function containsKeyword(text: string, keyword: string): boolean {
-  const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return new RegExp(`\\b${escaped}\\b`).test(text);
+  if (keyword.includes(" ")) return text.includes(keyword);
+  const tokens = text.split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+  return tokens.some((t) => t.endsWith(keyword));
 }
 
 const CATEGORY_KEYWORDS: [ProductCategory, string[]][] = [
   ["sofa", ["sofa", "couch", "sectional", "loveseat"]],
-  ["chair", ["chair", "armchair", "recliner", "stool", "bench"]],
-  ["table", ["table", "desk"]],
-  ["lighting", ["lamp", "light", "pendant", "chandelier", "sconce"]],
-  ["rug", ["rug", "carpet", "runner"]],
-  ["art", ["art", "print", "canvas", "wall decor", "poster", "mirror"]],
-  ["plant", ["plant", "planter", "pot", "greenery"]],
-  ["storage", ["cabinet", "sideboard", "shelf", "shelving", "wardrobe", "chest", "bookcase", "credenza"]],
-  ["textile", ["cushion", "pillow", "throw", "blanket", "curtain"]],
-  ["decor", ["vase", "bowl", "candle", "tray", "sculpture", "ornament", "decor"]],
+  ["chair", ["chair", "armchair", "recliner", "stool", "bench", "stuhl", "sessel", "hocker", "sitzbank"]],
+  ["table", ["table", "desk", "tisch"]],
+  ["lighting", ["lamp", "light", "pendant", "chandelier", "sconce", "lampe", "leuchte"]],
+  ["rug", ["rug", "carpet", "runner", "teppich"]],
+  ["art", ["art", "print", "canvas", "wall decor", "poster", "mirror", "spiegel"]],
+  ["plant", ["plant", "planter", "pot", "greenery", "pflanze"]],
+  ["storage", ["cabinet", "sideboard", "shelf", "shelving", "wardrobe", "chest", "bookcase", "credenza", "schrank", "kommode", "regal"]],
+  ["textile", ["cushion", "pillow", "throw", "blanket", "curtain", "kissen", "vorhang"]],
+  ["decor", ["vase", "bowl", "candle", "tray", "sculpture", "ornament", "decor", "kerze"]],
 ];
 
 function findCategory(text: string): ProductCategory | null {
@@ -91,14 +100,19 @@ export function inferStyles(raw: RawSupplierProduct): string[] {
 }
 
 const COLOR_KEYWORDS: [string, string][] = [
-  ["black", "#22211F"], ["charcoal", "#3A3733"], ["grey", "#8A8378"], ["gray", "#8A8378"],
-  ["white", "#EDE7DA"], ["ivory", "#F1ECE1"], ["cream", "#E9E2D2"], ["beige", "#D9C9A8"],
-  ["oak", "#B9A176"], ["walnut", "#6E5B44"], ["natural wood", "#B9A176"],
-  ["green", "#5A7058"], ["emerald", "#2E5347"], ["sage", "#8A9B84"],
-  ["blue", "#46586E"], ["navy", "#2B3A4A"],
+  ["black", "#22211F"], ["schwarz", "#22211F"],
+  ["charcoal", "#3A3733"],
+  ["grey", "#8A8378"], ["gray", "#8A8378"], ["grau", "#8A8378"],
+  ["white", "#EDE7DA"], ["weiss", "#EDE7DA"], ["weiß", "#EDE7DA"],
+  ["ivory", "#F1ECE1"], ["cream", "#E9E2D2"],
+  ["beige", "#D9C9A8"],
+  ["oak", "#B9A176"], ["eiche", "#B9A176"],
+  ["walnut", "#6E5B44"], ["natural wood", "#B9A176"], ["braun", "#6E5B44"],
+  ["green", "#5A7058"], ["grün", "#5A7058"], ["emerald", "#2E5347"], ["sage", "#8A9B84"],
+  ["blue", "#46586E"], ["blau", "#46586E"], ["navy", "#2B3A4A"],
   ["terracotta", "#C0603A"], ["rust", "#9C5B3C"], ["orange", "#C0603A"],
   ["brass", "#C8A96E"], ["gold", "#C8A96E"],
-  ["pink", "#C99A9A"], ["red", "#8C3B34"],
+  ["pink", "#C99A9A"], ["red", "#8C3B34"], ["rot", "#8C3B34"],
 ];
 
 export function inferColor(raw: RawSupplierProduct): string {
