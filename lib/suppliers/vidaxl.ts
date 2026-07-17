@@ -1,5 +1,5 @@
 import type { SupplierAdapter, SupplierCatalogResult, RawSupplierProduct } from "./types";
-import { mapSupplierProduct, hasKnownCategory } from "./mapping";
+import { mapSupplierProduct } from "./mapping";
 import sampleFeedData from "./data/vidaxl-sample.json";
 
 /**
@@ -20,14 +20,24 @@ import sampleFeedData from "./data/vidaxl-sample.json";
  *   The real catalog is huge (docs' sample response shows ~49,996 total
  *   products) and general-wholesaler-broad (pet supplies, kids' ride-on
  *   toys, garden tools — not just home furniture), so fetchLive() scans a
- *   handful of pages and keeps only products that hit one of Maison's
- *   known furniture/decor categories (see hasKnownCategory in mapping.ts)
- *   rather than blindly taking whatever's at offset 0. This is a stand-in
- *   for real category_path-based curation, not the final catalog scope —
- *   good enough to prove the ingestion → mapping → display pipeline works
- *   end to end with on-theme products; a full catalog sync/filter belongs
- *   in a scheduled background job (see Phase B), not a page load under a
- *   1 req/sec ceiling.
+ *   handful of pages and keeps only products whose category_path starts
+ *   with one of VidaXL's own top-level categories confirmed relevant from
+ *   the real bulk feed (see scripts/ingest-vidaxl-feed.py's
+ *   category_report.txt output: "Möbel" and "Heim & Garten" are the two
+ *   that matter, everything else is DIY tools/sporting goods/pet supplies/
+ *   clothing/toys). An earlier version matched English furniture keywords
+ *   against the title text instead — it let pet products through twice
+ *   (once via "print" inside "Pawprints", then again with items like "Cat
+ *   Scratching Post" that happened to contain no obviously-pet keyword),
+ *   because keyword-guessing against arbitrary product titles is
+ *   inherently leaky. Matching VidaXL's own real category taxonomy
+ *   directly is the more reliable signal.
+ *
+ *   Live results are also cross-enriched with real photos from the bundled
+ *   sample feed (data/vidaxl-sample.json) wherever the SKU matches — the
+ *   REST API itself never returns images, but the static sample does, so
+ *   any live SKU that happens to also be in that 200-product sample gets a
+ *   real photo instead of falling back to the procedural glyph.
  * - Order placement exists via POST /api_customer/orders, but payment does
  *   not — orders still need to be paid manually in VidaXL's own dashboard
  *   under "Unsubmitted orders". Not implemented here yet; this adapter
@@ -90,6 +100,16 @@ function sampleToRaw(p: VidaxlSampleProduct): RawSupplierProduct {
 }
 
 const SAMPLE_FEED: RawSupplierProduct[] = (sampleFeedData as VidaxlSampleProduct[]).map(sampleToRaw);
+const SAMPLE_BY_SKU = new Map(SAMPLE_FEED.map((p) => [p.sku, p]));
+
+// Confirmed against a real category_report.txt run over VidaXL's bulk
+// feed — see the module doc comment above.
+const RELEVANT_TOP_LEVEL_CATEGORIES = new Set(["Möbel", "Heim & Garten"]);
+
+function isRelevantCategoryPath(categoryPath: string): boolean {
+  const topLevel = categoryPath.split(">")[0]?.trim() ?? "";
+  return RELEVANT_TOP_LEVEL_CATEGORIES.has(topLevel);
+}
 
 /** Shape of a single entry in GET /api_customer/products, per VidaXL's real docs. */
 interface VidaxlApiProduct {
@@ -139,6 +159,8 @@ async function fetchLive(): Promise<RawSupplierProduct[]> {
     const body = await fetchProductsPage(baseUrl, offset);
 
     for (const p of body.data) {
+      if (!isRelevantCategoryPath(p.category_path)) continue;
+
       const raw: RawSupplierProduct = {
         sku: p.code,
         title: p.name,
@@ -146,7 +168,14 @@ async function fetchLive(): Promise<RawSupplierProduct[]> {
         costPrice: p.price,
         stockQty: p.quantity,
       };
-      if (hasKnownCategory(raw)) matched.push(raw);
+
+      const samplePhoto = SAMPLE_BY_SKU.get(p.code);
+      if (samplePhoto?.images?.length) {
+        raw.images = samplePhoto.images;
+        raw.description = samplePhoto.description;
+      }
+
+      matched.push(raw);
     }
 
     if (offset + PRODUCTS_PAGE_LIMIT >= body.pagination.total) break; // scanned the whole catalog
