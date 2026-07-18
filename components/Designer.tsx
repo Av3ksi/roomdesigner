@@ -69,6 +69,7 @@ export default function Designer() {
   const [thinking, setThinking] = useState(false);
   const [generating, setGenerating] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [identityWarning, setIdentityWarning] = useState<string | null>(null);
   const [openHotspot, setOpenHotspot] = useState<number | null>(null);
   const [roomId, setRoomId] = useState<string | null>(null);
   const [rehydrating, setRehydrating] = useState(false);
@@ -115,6 +116,7 @@ export default function Designer() {
     setProposals([]);
     setRoomContext(null); // placement analysis is per-photo
     setError(null);
+    setIdentityWarning(null);
     setMessages([]);
     setConstraints([]);
     // A manually uploaded photo always starts a fresh room, never appends to a restored one.
@@ -166,6 +168,7 @@ export default function Designer() {
     if (!roomFile || generating !== null) return;
     setGenerating(index);
     setError(null);
+    setIdentityWarning(null);
 
     try {
       // Base image: latest generated version so edits stack, else the original photo.
@@ -207,6 +210,9 @@ export default function Designer() {
       setVersions((v) => [...v, next]);
       setCurrentVersion(versions.length); // index of the new version
       setProposals((p) => p.filter((_, i) => i !== index));
+      if (body.identityCheck && body.identityCheck.pass === false) {
+        setIdentityWarning(body.identityCheck.note);
+      }
 
       if (roomId) {
         fetch(`/api/rooms/${roomId}/versions`, {
@@ -330,6 +336,15 @@ export default function Designer() {
 
         {/* Canvas + filmstrip */}
         <div className="space-y-4">
+          {identityWarning && (
+            <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-200">
+              <AlertTriangle size={13} className="mt-0.5 shrink-0" />
+              <div>
+                <span className="font-semibold">This render may not match the product you picked.</span>{" "}
+                {identityWarning}
+              </div>
+            </div>
+          )}
           <div className="card relative flex min-h-[420px] items-center justify-center overflow-hidden bg-ink-panel p-0">
             {rehydrating && !canvasSrc ? (
               <div className="p-16 text-center text-sm text-cream-faint">Restoring your room…</div>
@@ -398,6 +413,7 @@ export default function Designer() {
                   onClick={() => {
                     setCurrentVersion(i);
                     setOpenHotspot(null);
+                    setIdentityWarning(null);
                   }}
                   className={`shrink-0 overflow-hidden rounded-lg border text-left transition ${
                     i === currentVersion ? "border-brass ring-1 ring-brass" : "border-ink-line hover:border-brass/40"

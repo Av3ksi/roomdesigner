@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { compositeProductIntoRoom, compositingEnabled } from "@/lib/ai/composite";
+import { checkRenderedProductIdentity } from "@/lib/ai/identityCheck";
 import type { ProductCategory } from "@/lib/types";
 
 // sharp (used by lib/ai/composite.ts) needs the Node runtime, not edge.
@@ -54,7 +55,18 @@ export async function POST(req: NextRequest) {
       explicitBox,
       wallAngleDeg,
     );
-    return NextResponse.json(result);
+
+    // Best-effort QA pass (Phase 2): compares the rendered region against the
+    // real product photo since compositing models occasionally substitute a
+    // different object. Never blocks the render the user already paid for —
+    // a failed/skipped check just means no identityCheck in the response.
+    const identityCheck = await checkRenderedProductIdentity(
+      productBuffer,
+      Buffer.from(result.imageBase64, "base64"),
+      result.maskBox,
+    ).catch(() => null);
+
+    return NextResponse.json({ ...result, identityCheck });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 500 });
   }
