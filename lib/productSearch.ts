@@ -26,8 +26,32 @@ export interface ProductSearchFilters {
   limit?: number;
 }
 
+/**
+ * A JSON schema on a tool definition is a hint to the model, not an
+ * enforced contract — a real Designer Agent call sent keywords as a plain
+ * string instead of an array (a known LLM tool-call quirk) and crashed
+ * `.map`. Every field here is untrusted input from an LLM's tool_use
+ * block, so coerce defensively rather than trust the declared shape.
+ */
+function toStringArray(value: unknown): string[] {
+  if (Array.isArray(value)) return value.filter((v): v is string => typeof v === "string" && v.length > 0);
+  if (typeof value === "string" && value.trim()) return [value.trim()];
+  return [];
+}
+
+function toFiniteNumber(value: unknown): number | undefined {
+  const n = typeof value === "string" ? Number.parseFloat(value) : value;
+  return typeof n === "number" && Number.isFinite(n) ? n : undefined;
+}
+
 export function searchProducts(products: Product[], filters: ProductSearchFilters): Product[] {
-  const { category, maxPrice, minPrice, keywords = [], maxWidthCm, styleIds = [], limit = 8 } = filters;
+  const category = typeof filters.category === "string" ? (filters.category as ProductCategory) : undefined;
+  const maxPrice = toFiniteNumber(filters.maxPrice);
+  const minPrice = toFiniteNumber(filters.minPrice);
+  const maxWidthCm = toFiniteNumber(filters.maxWidthCm);
+  const limit = toFiniteNumber(filters.limit) ?? 8;
+  const keywords = toStringArray(filters.keywords);
+  const styleIds = toStringArray(filters.styleIds);
 
   const pool = products.filter((p) => {
     if (category && p.category !== category) return false;
@@ -37,7 +61,7 @@ export function searchProducts(products: Product[], filters: ProductSearchFilter
     return true;
   });
 
-  const lowerKeywords = keywords.map((k) => k.toLowerCase()).filter(Boolean);
+  const lowerKeywords = keywords.map((k) => k.toLowerCase());
 
   const scored = pool.map((p) => {
     const text = `${p.name} ${p.blurb}`.toLowerCase();
