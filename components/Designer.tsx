@@ -1,9 +1,17 @@
 "use client";
 
 import { AlertTriangle, ArrowUpRight, Send, Sparkles, Upload } from "lucide-react";
-import { useRef, useState } from "react";
-import { base64PngToFile, loadImageAspectRatio, reshapeBoxToAspectRatio } from "@/lib/clientImage";
+import { useEffect, useRef, useState } from "react";
+import {
+  base64PngToFile,
+  base64ToFile,
+  detectImageMimeFromBase64,
+  loadImageAspectRatio,
+  reshapeBoxToAspectRatio,
+} from "@/lib/clientImage";
 import type { DetectionBox, Product } from "@/lib/types";
+
+const ROOM_ID_STORAGE_KEY = "maison_room_id";
 
 function formatChf(n: number): string {
   return n.toLocaleString("en-US", { style: "currency", currency: "CHF", maximumFractionDigits: 0 });
@@ -39,6 +47,15 @@ interface RoomVersion {
   label: string;
 }
 
+interface PersistedRoomApi {
+  id: string;
+  originalPhotoBase64: string;
+  roomContext: unknown;
+  messages: { role: "user" | "assistant"; content: string }[];
+  constraints: Constraint[];
+  versions: { imageBase64: string; label: string; objects: PlacedObject[] }[];
+}
+
 export default function Designer() {
   const [roomFile, setRoomFile] = useState<File | null>(null);
   const [roomPreviewUrl, setRoomPreviewUrl] = useState<string | null>(null);
@@ -53,7 +70,41 @@ export default function Designer() {
   const [generating, setGenerating] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [openHotspot, setOpenHotspot] = useState<number | null>(null);
+  const [roomId, setRoomId] = useState<string | null>(null);
+  const [rehydrating, setRehydrating] = useState(false);
   const chatEndRef = useRef<HTMLDivElement | null>(null);
+
+  // On mount: if a room was persisted last visit (DB-backed sessions only),
+  // fetch its full state back so a refresh doesn't lose the conversation.
+  useEffect(() => {
+    const storedId = typeof window !== "undefined" ? localStorage.getItem(ROOM_ID_STORAGE_KEY) : null;
+    if (!storedId) return;
+    setRehydrating(true);
+    (async () => {
+      try {
+        const res = await fetch(`/api/rooms/${storedId}`);
+        if (!res.ok) throw new Error("Room not found");
+        const { room }: { room: PersistedRoomApi } = await res.json();
+        const mime = detectImageMimeFromBase64(room.originalPhotoBase64);
+        setRoomFile(base64ToFile(room.originalPhotoBase64, "room", mime));
+        setRoomPreviewUrl(`data:${mime};base64,${room.originalPhotoBase64}`);
+        setRoomId(room.id);
+        setMessages(room.messages.map((m) => ({ role: m.role, content: m.content })));
+        setConstraints(room.constraints);
+        setRoomContext(room.roomContext);
+        const restored: RoomVersion[] = [
+          { imageBase64: null, objects: [], label: "Original" },
+          ...room.versions.map((v) => ({ imageBase64: v.imageBase64, objects: v.objects, label: v.label })),
+        ];
+        setVersions(restored);
+        setCurrentVersion(restored.length - 1);
+      } catch {
+        localStorage.removeItem(ROOM_ID_STORAGE_KEY);
+      } finally {
+        setRehydrating(false);
+      }
+    })();
+  }, []);
 
   function onRoomFileChange(file: File | null) {
     setRoomFile(file);
@@ -64,6 +115,11 @@ export default function Designer() {
     setProposals([]);
     setRoomContext(null); // placement analysis is per-photo
     setError(null);
+    setMessages([]);
+    setConstraints([]);
+    // A manually uploaded photo always starts a fresh room, never appends to a restored one.
+    setRoomId(null);
+    if (typeof window !== "undefined") localStorage.removeItem(ROOM_ID_STORAGE_KEY);
   }
 
   async function sendMessage() {
@@ -82,6 +138,7 @@ export default function Designer() {
       form.append("constraints", JSON.stringify(constraints));
       form.append("roomContext", JSON.stringify(roomContext));
       if (roomFile) form.append("room", roomFile);
+      if (roomId) form.append("roomId", roomId);
 
       const res = await fetch("/api/designer", { method: "POST", body: form });
       const body = await res.json();
@@ -91,6 +148,10 @@ export default function Designer() {
       setProposals(body.proposals ?? []);
       setConstraints(body.constraints ?? []);
       setRoomContext(body.roomContext ?? null);
+      if (body.roomId && body.roomId !== roomId) {
+        setRoomId(body.roomId);
+        if (typeof window !== "undefined") localStorage.setItem(ROOM_ID_STORAGE_KEY, body.roomId);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
       setMessages(nextMessages); // keep the user's message; the reply failed
@@ -146,6 +207,16 @@ export default function Designer() {
       setVersions((v) => [...v, next]);
       setCurrentVersion(versions.length); // index of the new version
       setProposals((p) => p.filter((_, i) => i !== index));
+
+      if (roomId) {
+        fetch(`/api/rooms/${roomId}/versions`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ imageBase64: next.imageBase64, label: next.label, objects: next.objects }),
+        }).catch(() => {
+          // The render already succeeded and is visible — a persistence hiccup here isn't worth surfacing.
+        });
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -260,7 +331,9 @@ export default function Designer() {
         {/* Canvas + filmstrip */}
         <div className="space-y-4">
           <div className="card relative flex min-h-[420px] items-center justify-center overflow-hidden bg-ink-panel p-0">
-            {canvasSrc ? (
+            {rehydrating && !canvasSrc ? (
+              <div className="p-16 text-center text-sm text-cream-faint">Restoring your room…</div>
+            ) : canvasSrc ? (
               <div className="relative w-full">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src={canvasSrc} alt="Room" className="w-full" />

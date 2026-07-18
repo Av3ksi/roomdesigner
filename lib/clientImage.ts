@@ -28,10 +28,26 @@ export function reshapeBoxToAspectRatio(box: DetectionBox, aspectRatio: number):
   return clampBox({ x: box.x, y: bottom - h, w: box.w, h });
 }
 
-/** Converts a base64 PNG (an /api/composite result) into a File usable as the next edit's base image. */
-export function base64PngToFile(base64: string, filename: string): File {
+function base64ToBytes(base64: string): Uint8Array<ArrayBuffer> {
   const bytes = atob(base64);
   const arr = new Uint8Array(bytes.length);
   for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i);
-  return new File([arr], filename, { type: "image/png" });
+  return arr;
+}
+
+/** Converts a base64 PNG (an /api/composite result) into a File usable as the next edit's base image. */
+export function base64PngToFile(base64: string, filename: string): File {
+  return new File([base64ToBytes(base64)], filename, { type: "image/png" });
+}
+
+/** Converts an arbitrary base64 image (any format) into a File with the given mime type. */
+export function base64ToFile(base64: string, filename: string, mime: string): File {
+  return new File([base64ToBytes(base64)], filename, { type: mime });
+}
+
+/** Sniffs the real format from a base64 payload's leading bytes — rehydrated rooms only have the base64, not a Content-Type. */
+export function detectImageMimeFromBase64(base64: string): string {
+  if (base64.startsWith("iVBORw0KGgo")) return "image/png";
+  if (base64.startsWith("UklGR")) return "image/webp";
+  return "image/jpeg";
 }
