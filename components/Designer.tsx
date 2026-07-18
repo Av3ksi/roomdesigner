@@ -22,13 +22,23 @@ interface Constraint {
   description: string;
 }
 
-interface EditProposal {
+interface AddProposal {
+  kind: "add";
   product: Product;
   category: string;
   box: DetectionBox;
   wallAngleDeg: number;
   rationale: string;
 }
+
+/** Removing something already physically in the room photo (Phase 2) — no product, nothing to buy. */
+interface RemoveProposal {
+  kind: "remove";
+  category: string;
+  rationale: string;
+}
+
+type EditProposal = AddProposal | RemoveProposal;
 
 interface ChatMessage {
   role: "user" | "assistant";
@@ -163,7 +173,23 @@ export default function Designer() {
     }
   }
 
-  /** The explicit money moment: one confirmed proposal = one billed /api/composite call. */
+  /** Appends a new rendered version and (best-effort) persists it — shared by both the add and remove flows. */
+  function commitVersion(imageBase64: string, label: string, objects: PlacedObject[]) {
+    const next: RoomVersion = { imageBase64, objects, label };
+    setVersions((v) => [...v, next]);
+    setCurrentVersion(versions.length); // index of the new version
+    if (roomId) {
+      fetch(`/api/rooms/${roomId}/versions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ imageBase64: next.imageBase64, label: next.label, objects: next.objects }),
+      }).catch(() => {
+        // The render already succeeded and is visible — a persistence hiccup here isn't worth surfacing.
+      });
+    }
+  }
+
+  /** The explicit money moment: one confirmed proposal = one billed render call. */
   async function generateProposal(proposal: EditProposal, index: number) {
     if (!roomFile || generating !== null) return;
     setGenerating(index);
@@ -173,9 +199,22 @@ export default function Designer() {
     try {
       // Base image: latest generated version so edits stack, else the original photo.
       const latest = versions[versions.length - 1];
-      const baseFile = latest?.imageBase64
-        ? base64PngToFile(latest.imageBase64, "version.png")
-        : roomFile;
+      const baseFile = latest?.imageBase64 ? base64PngToFile(latest.imageBase64, "version.png") : roomFile;
+      const prevObjects = latest?.objects ?? [];
+
+      if (proposal.kind === "remove") {
+        const form = new FormData();
+        form.append("room", baseFile);
+        form.append("category", proposal.category);
+
+        const res = await fetch("/api/remove-object", { method: "POST", body: form });
+        const body = await res.json();
+        if (!res.ok) throw new Error(body.error ?? `Removal failed: ${res.status}`);
+
+        commitVersion(body.imageBase64, `V${versions.length} · Removed ${proposal.category}`, prevObjects);
+        setProposals((p) => p.filter((_, i) => i !== index));
+        return;
+      }
 
       // Fit the box to the product's real shape before rendering.
       let box = proposal.box;
@@ -201,27 +240,14 @@ export default function Designer() {
       const body = await res.json();
       if (!res.ok) throw new Error(body.error ?? `Render failed: ${res.status}`);
 
-      const prevObjects = versions[versions.length - 1]?.objects ?? [];
-      const next: RoomVersion = {
-        imageBase64: body.imageBase64,
-        objects: [...prevObjects, { box: body.maskBox, product: proposal.product }],
-        label: `V${versions.length} · ${proposal.product.name.slice(0, 24)}`,
-      };
-      setVersions((v) => [...v, next]);
-      setCurrentVersion(versions.length); // index of the new version
+      commitVersion(
+        body.imageBase64,
+        `V${versions.length} · ${proposal.product.name.slice(0, 24)}`,
+        [...prevObjects, { box: body.maskBox, product: proposal.product }],
+      );
       setProposals((p) => p.filter((_, i) => i !== index));
       if (body.identityCheck && body.identityCheck.pass === false) {
         setIdentityWarning(body.identityCheck.note);
-      }
-
-      if (roomId) {
-        fetch(`/api/rooms/${roomId}/versions`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ imageBase64: next.imageBase64, label: next.label, objects: next.objects }),
-        }).catch(() => {
-          // The render already succeeded and is visible — a persistence hiccup here isn't worth surfacing.
-        });
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -236,7 +262,7 @@ export default function Designer() {
   return (
     <div className="container-page py-10">
       <div className="max-w-2xl">
-        <div className="eyebrow mb-3">Designer — Phase 1 preview</div>
+        <div className="eyebrow mb-3">Designer</div>
         <h1 className="font-display text-4xl leading-tight sm:text-5xl">Talk to your room.</h1>
         <p className="mt-4 text-cream-dim">
           Upload a room photo and just say what you want — the AI designer searches the real
@@ -269,20 +295,24 @@ export default function Designer() {
             {thinking && <div className="text-xs text-cream-faint">Designing…</div>}
 
             {proposals.map((p, i) => (
-              <div key={`${p.product.id}-${i}`} className="rounded-xl border border-brass/30 bg-brass/5 p-3">
-                <div className="flex items-center gap-3">
-                  {p.product.imageUrl && (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={p.product.imageUrl} alt={p.product.name} className="h-14 w-14 rounded-lg object-cover" />
-                  )}
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-sm font-semibold">{p.product.name}</div>
-                    <div className="text-xs text-cream-faint">
-                      {formatChf(p.product.price)} · {p.category}
-                      {p.product.dimensionsCm ? ` · ${p.product.dimensionsCm.l}cm wide` : ""}
+              <div key={i} className="rounded-xl border border-brass/30 bg-brass/5 p-3">
+                {p.kind === "add" ? (
+                  <div className="flex items-center gap-3">
+                    {p.product.imageUrl && (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={p.product.imageUrl} alt={p.product.name} className="h-14 w-14 rounded-lg object-cover" />
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-sm font-semibold">{p.product.name}</div>
+                      <div className="text-xs text-cream-faint">
+                        {formatChf(p.product.price)} · {p.category}
+                        {p.product.dimensionsCm ? ` · ${p.product.dimensionsCm.l}cm wide` : ""}
+                      </div>
                     </div>
                   </div>
-                </div>
+                ) : (
+                  <div className="text-sm font-semibold">Remove existing {p.category}</div>
+                )}
                 {p.rationale && <div className="mt-2 text-xs text-cream-dim">{p.rationale}</div>}
                 <button
                   onClick={() => generateProposal(p, i)}
@@ -290,7 +320,11 @@ export default function Designer() {
                   className="mt-2.5 flex w-full items-center justify-center gap-1.5 rounded-full bg-brass px-4 py-2 text-xs font-semibold text-ink disabled:opacity-40"
                 >
                   <Sparkles size={13} />
-                  {generating === i ? "Rendering (~15-60s)…" : "Place in room (~$0.01)"}
+                  {generating === i
+                    ? "Rendering (~15-60s)…"
+                    : p.kind === "add"
+                      ? "Place in room (~$0.01)"
+                      : "Remove from room (~$0.02)"}
                 </button>
               </div>
             ))}
@@ -432,9 +466,9 @@ export default function Designer() {
           )}
 
           <div className="text-[10px] text-cream-faint">
-            Phase 1 preview: versions live in this tab only (database persistence is the next chunk).
-            The designer can add products; removing or moving existing furniture needs the Phase-2
-            vision stack — it will say so honestly if you ask.
+            Rooms persist across visits when the server has a database configured. The designer can
+            add catalog products and, where its object-detection step is available, remove furniture
+            already in the photo — it will say so honestly if either isn't available right now.
           </div>
         </div>
       </div>

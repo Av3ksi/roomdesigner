@@ -192,3 +192,85 @@ export async function compositeProductIntoRoom(
 
   return { imageBase64: b64, maskBox, placementSource };
 }
+
+/**
+ * Converts a segmentation model's mask (an arbitrary-shape white-on-black
+ * PNG at, ideally, the room photo's own resolution) into the alpha-channel
+ * mask OpenAI's edit endpoint expects (alpha 0 = "edit here"). Resizes to
+ * the target dimensions first since a model's mask output isn't guaranteed
+ * to match the source photo's exact pixel size.
+ */
+async function buildAlphaMaskFromSegmentation(segmentationMask: Buffer, width: number, height: number): Promise<Buffer> {
+  const { data } = await sharp(segmentationMask)
+    .resize(width, height, { fit: "fill" })
+    .greyscale()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+
+  const channels = 4;
+  const pixels = Buffer.alloc(width * height * channels, 255); // opaque everywhere = "keep as-is"
+  for (let i = 0; i < width * height; i++) {
+    const isObject = data[i] > 128;
+    pixels[i * channels + 3] = isObject ? 0 : 255; // alpha 0 = "edit this region" (the detected object)
+  }
+  return sharp(pixels, { raw: { width, height, channels } }).png().toBuffer();
+}
+
+export interface RemovalResult {
+  /** Base64 PNG — the room photo with the object erased and its background filled in. */
+  imageBase64: string;
+}
+
+/**
+ * Erases an existing object already physically present in the room photo
+ * (Phase 2: "remove that sofa" / "move the chair" starts with removal).
+ * Needs a real segmentation mask from lib/ai/vision/segmentation.ts — unlike
+ * compositeProductIntoRoom, there's no product photo and no rectangular
+ * default mask to fall back to; the caller only calls this once segmentation
+ * has actually found something.
+ */
+export async function removeExistingObject(
+  roomPhoto: Buffer,
+  segmentationMask: Buffer,
+  category: ProductCategory,
+): Promise<RemovalResult> {
+  if (!compositingEnabled()) throw new Error("OPENAI_API_KEY not configured");
+
+  const meta = await sharp(roomPhoto).metadata();
+  const width = meta.width ?? 1024;
+  const height = meta.height ?? 1024;
+
+  const maskPng = await buildAlphaMaskFromSegmentation(segmentationMask, width, height);
+  const roomImage = await toImageBlob(roomPhoto);
+
+  const form = new FormData();
+  form.append("model", MODEL);
+  form.append("image[]", roomImage.blob, roomImage.filename);
+  form.append("mask", new Blob([new Uint8Array(maskPng)], { type: "image/png" }), "mask.png");
+  form.append(
+    "prompt",
+    `Remove the ${category} from the masked region entirely. Fill in what would realistically be behind it — ` +
+      "matching the existing floor, wall, and lighting exactly, as if the object was never there. " +
+      "Leave everything outside the masked region unchanged.",
+  );
+  form.append("quality", "low");
+  form.append("size", "auto");
+  form.append("n", "1");
+
+  const res = await fetch("https://api.openai.com/v1/images/edits", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}` },
+    body: form,
+  });
+
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`OpenAI image edit failed: ${res.status} ${errText}`);
+  }
+
+  const body = (await res.json()) as { data?: { b64_json?: string }[] };
+  const b64 = body.data?.[0]?.b64_json;
+  if (!b64) throw new Error("OpenAI response had no image data");
+
+  return { imageBase64: b64 };
+}
