@@ -29,29 +29,17 @@
  */
 import { readFileSync } from "fs";
 import { checkRenderedProductIdentity } from "../lib/ai/identityCheck";
-import { compositingEnabled, composeSceneWithProducts, type SceneItem } from "../lib/ai/composite";
+import { compositingEnabled, composeSceneWithProducts, reshapeBoxForProduct, type SceneItem } from "../lib/ai/composite";
 import { suggestPlacements } from "../lib/ai/placement";
 import { createFinishedRoom } from "../lib/finishedRooms";
 import { dbEnabled } from "../lib/db";
 import { loadProductCatalog } from "../lib/productSearchDb";
-import { clampBox } from "../lib/placementBoxes";
-import type { DetectionBox, Product } from "../lib/types";
+import type { Product } from "../lib/types";
 
 try {
   process.loadEnvFile?.();
 } catch {
   // No .env file yet — fall through to the clearer "not configured" checks below.
-}
-
-/** Server-side equivalent of lib/clientImage.ts's reshapeBoxToAspectRatio (that one needs a browser canvas). */
-async function reshapeBoxForProduct(box: DetectionBox, productBuffer: Buffer): Promise<DetectionBox> {
-  const sharp = (await import("sharp")).default;
-  const { width, height } = await sharp(productBuffer).metadata();
-  if (!width || !height) return box;
-  const aspectRatio = width / height;
-  const bottom = box.y + box.h;
-  const h = box.w / aspectRatio;
-  return clampBox({ x: box.x, y: bottom - h, w: box.w, h });
 }
 
 async function main() {

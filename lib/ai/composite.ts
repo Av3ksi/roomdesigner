@@ -445,3 +445,18 @@ export async function composeSceneWithProducts(
 
   return { imageBase64: b64 };
 }
+
+/**
+ * Server-side equivalent of lib/clientImage.ts's reshapeBoxToAspectRatio
+ * (that one needs a browser canvas) — adapts a category's generic
+ * placement box to a specific product's real width:height ratio, keeping
+ * the suggested width and floor-contact bottom edge fixed.
+ */
+export async function reshapeBoxForProduct(box: DetectionBox, productPhoto: Buffer): Promise<DetectionBox> {
+  const { width, height } = await sharp(productPhoto).metadata();
+  if (!width || !height) return box;
+  const aspectRatio = width / height;
+  const bottom = box.y + box.h;
+  const h = box.w / aspectRatio;
+  return clampBox({ x: box.x, y: bottom - h, w: box.w, h });
+}
