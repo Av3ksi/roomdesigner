@@ -41,3 +41,21 @@ export function isValidBox(box: unknown): box is DetectionBox {
   const b = box as Record<string, unknown>;
   return ["x", "y", "w", "h"].every((k) => typeof b[k] === "number" && Number.isFinite(b[k] as number));
 }
+
+/** Plain-English position for a box's center — a soft hint in a text prompt, not a coordinate. */
+export function describeRoughLocation(box: DetectionBox): string {
+  const cx = box.x + box.w / 2;
+  const cy = box.y + box.h / 2;
+  const h = cx < 0.4 ? "left" : cx > 0.6 ? "right" : "center";
+  const v = cy < 0.4 ? "upper" : cy > 0.6 ? "lower" : "middle";
+  return `${v} ${h}`;
+}
+
+/** The smallest box that contains every input box — used to build one combined edit mask covering several placement spots at once. */
+export function unionBox(boxes: DetectionBox[]): DetectionBox {
+  const x0 = Math.min(...boxes.map((b) => b.x));
+  const y0 = Math.min(...boxes.map((b) => b.y));
+  const x1 = Math.max(...boxes.map((b) => b.x + b.w));
+  const y1 = Math.max(...boxes.map((b) => b.y + b.h));
+  return clampBox({ x: x0, y: y0, w: x1 - x0, h: y1 - y0 });
+}

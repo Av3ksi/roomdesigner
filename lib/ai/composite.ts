@@ -1,7 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import sharp from "sharp";
 import { MODEL as CLAUDE_MODEL, aiEnabled } from "./claude";
-import { DEFAULT_CATEGORY_BOX, clampBox } from "../placementBoxes";
+import { DEFAULT_CATEGORY_BOX, clampBox, describeRoughLocation, unionBox } from "../placementBoxes";
 import type { Detection, DetectionBox, ProductCategory } from "../types";
 
 /**
@@ -319,6 +319,112 @@ export async function removeExistingObject(
       "Leave everything outside the masked region unchanged.",
   );
   form.append("quality", "low");
+  form.append("size", "auto");
+  form.append("n", "1");
+
+  const res = await fetch("https://api.openai.com/v1/images/edits", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}` },
+    body: form,
+  });
+
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`OpenAI image edit failed: ${res.status} ${errText}`);
+  }
+
+  const body = (await res.json()) as { data?: { b64_json?: string }[] };
+  const b64 = body.data?.[0]?.b64_json;
+  if (!b64) throw new Error("OpenAI response had no image data");
+
+  return { imageBase64: b64 };
+}
+
+export interface SceneItem {
+  productPhoto: Buffer;
+  category: ProductCategory;
+  box: DetectionBox;
+  wallAngleDeg?: number;
+}
+
+export interface SceneCompositeResult {
+  imageBase64: string;
+}
+
+/**
+ * Composites MULTIPLE products into a room in ONE edit call, instead of one
+ * call per product. Built specifically for curated "finished room" bundles
+ * (scripts/compose-finished-room.ts), where the whole point is a single,
+ * cohesively staged photo — chaining N separate single-object edits (the
+ * Designer chat's approach, appropriate there since the user confirms one
+ * item at a time) compounds into a scattered, stitched-together look for a
+ * bundle: each call only knows its own category's generic box, has no
+ * awareness of the other items already added, and repeated edit-of-an-edit
+ * passes degrade quality further with every extra item. One call with every
+ * reference image and an explicit per-item layout description lets the
+ * model reason about the whole scene — relative scale, shared lighting,
+ * believable arrangement — at once.
+ */
+export async function composeSceneWithProducts(
+  roomPhotoInput: Buffer,
+  items: SceneItem[],
+  quality: "low" | "medium" | "high" = "medium",
+): Promise<SceneCompositeResult> {
+  if (!compositingEnabled()) throw new Error("OPENAI_API_KEY not configured");
+  if (items.length === 0) throw new Error("composeSceneWithProducts needs at least one item");
+
+  const roomPhoto = await sharp(roomPhotoInput)
+    .rotate()
+    .resize(COMPOSITE_MAX_EDGE, COMPOSITE_MAX_EDGE, { fit: "inside", withoutEnlargement: true })
+    .toBuffer();
+  const meta = await sharp(roomPhoto).metadata();
+  const width = meta.width ?? 1024;
+  const height = meta.height ?? 1024;
+
+  const union = unionBox(items.map((i) => i.box));
+  const maskRegion = clampBox({
+    x: union.x - MASK_PADDING,
+    y: union.y - MASK_PADDING,
+    w: union.w + MASK_PADDING * 2,
+    h: union.h + MASK_PADDING * 2,
+  });
+  console.log("[maison] composeSceneWithProducts mask", { width, height, itemCount: items.length, maskRegion });
+  const maskPng = await buildMaskPng(width, height, maskRegion);
+
+  const roomImage = await toImageBlob(roomPhoto);
+  const form = new FormData();
+  form.append("model", MODEL);
+  form.append("image[]", roomImage.blob, roomImage.filename);
+
+  const itemLines: string[] = [];
+  for (const [i, item] of items.entries()) {
+    const productImage = await toImageBlob(item.productPhoto);
+    form.append("image[]", productImage.blob, productImage.filename);
+    const description = await describeProductForPrompt(item.productPhoto);
+    const wallAngleNote =
+      item.wallAngleDeg && Math.abs(item.wallAngleDeg) > 2
+        ? ` The surface behind it recedes at about ${Math.round(item.wallAngleDeg)}° (${item.wallAngleDeg > 0 ? "away to the right" : "away to the left"}) — align it flush with that plane, not facing the camera head-on.`
+        : "";
+    itemLines.push(
+      `Reference image ${i + 2} is a real ${item.category}${description ? `: ${description}` : ""} — place it in the ` +
+        `${describeRoughLocation(item.box)} of the masked area.${wallAngleNote}`,
+    );
+  }
+
+  form.append("mask", new Blob([new Uint8Array(maskPng)], { type: "image/png" }), "mask.png");
+  form.append(
+    "prompt",
+    "The first image is a room photo. Every image after it is a real product photo to composite into the masked " +
+      "region of the room — arrange them together as ONE cohesive, professionally staged room, the way a real " +
+      "interior designer would lay out real furniture: consistent scale and lighting across every piece, " +
+      "believable relative positions (e.g. a coffee table sits in front of a sofa, not overlapping it or floating " +
+      "apart from it; a sideboard sits flush against a wall), and realistic contact shadows where each item " +
+      "touches the floor. Use the EXACT product shown in each reference image for its corresponding item — never " +
+      "substitute a different piece of furniture for any of them, and never omit one. " +
+      itemLines.join(" ") +
+      " Leave everything outside the masked region unchanged.",
+  );
+  form.append("quality", quality);
   form.append("size", "auto");
   form.append("n", "1");
 

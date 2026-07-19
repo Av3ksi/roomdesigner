@@ -1,30 +1,35 @@
 /**
  * Composes ONE curated "finished room" bundle — a real room photo with a
- * hand-picked, ordered set of real catalog products composited into it,
- * saved as a fixed sellable look (lib/finishedRooms.ts). This is the
+ * hand-picked set of real catalog products composited into it in a single
+ * scene, saved as a fixed sellable look (lib/finishedRooms.ts). This is the
  * IKEA-showroom model: you supply the room photo and choose the products;
  * this script does the compositing and saves the result. Not automated
  * curation — you're the designer here, same as a real IKEA room-set stylist.
  *
- * Every product placed is a real, billed OpenAI call (~$0.01-0.03 each at
- * the quality you choose) plus one Claude vision call for room placement
- * and one per product for prompt grounding — real money, scales with how
- * many products you put in one room. Runs once per finished room, not per
- * customer, so the cost is fixed regardless of how many times it's later
- * viewed/sold.
+ * All products are composited in ONE OpenAI call (composeSceneWithProducts)
+ * rather than one call per product — chaining separate single-object edits
+ * produced a scattered, disconnected-looking room in real testing, since
+ * each call only knew its own category's generic box with no awareness of
+ * the others. One call lets the model arrange the whole scene cohesively.
+ *
+ * Real money: one OpenAI image-edit call (~$0.02-0.06 depending on quality
+ * and how many products are in the scene) plus a few cheap Claude vision
+ * calls (room placement + one product description per item + one identity
+ * check per item afterward). Runs once per finished room, not per customer.
  *
  * Usage:
  *   npx tsx scripts/compose-finished-room.ts <room.jpg> <title> <productId1,productId2,...> [quality] [description]
  *
- * productIds are catalog ids (e.g. "vidaxl-247598") — check /suppliers or
- * query the DB/live catalog to find real ones. quality: low|medium|high,
+ * productIds are catalog ids (e.g. "vidaxl-247598") — use
+ * scripts/list-products.ts to find real ones. quality: low|medium|high,
  * defaults to medium (this is public storefront content, worth the extra
  * cost over the "low" default used for one-off customer previews).
  *
  * Reads ANTHROPIC_API_KEY, OPENAI_API_KEY, DATABASE_URL from .env.
  */
 import { readFileSync } from "fs";
-import { compositeProductIntoRoom, compositingEnabled } from "../lib/ai/composite";
+import { checkRenderedProductIdentity } from "../lib/ai/identityCheck";
+import { compositingEnabled, composeSceneWithProducts, type SceneItem } from "../lib/ai/composite";
 import { suggestPlacements } from "../lib/ai/placement";
 import { createFinishedRoom } from "../lib/finishedRooms";
 import { dbEnabled } from "../lib/db";
@@ -88,15 +93,15 @@ async function main() {
   }
 
   // One placement box exists per CATEGORY (suggestPlacements), not per product —
-  // two products of the same category would silently composite into the same
-  // spot, the second overwriting the first. A real "complete room" wants variety
-  // across categories anyway, so this is a hard stop, not a smart-offset hack.
+  // two products of the same category would land in the same spot in the scene.
+  // A real "complete room" wants variety across categories anyway, so this is a
+  // hard stop, not a smart-offset hack.
   const seenCategories = new Set<string>();
   for (const p of products) {
     if (seenCategories.has(p.category)) {
       console.error(
         `Two products in the same category ("${p.category}"): "${p.name}". ` +
-          "Each category gets one placement spot, so a second item of the same kind would overwrite the first. " +
+          "Each category gets one placement spot in the scene. " +
           "Pick one item per category instead (sofa + table + rug + lighting + art...).",
       );
       process.exit(1);
@@ -112,34 +117,35 @@ async function main() {
     process.exit(1);
   }
 
-  let baseImage = roomPhoto;
-  let totalPrice = 0;
-
-  for (const [i, product] of products.entries()) {
-    console.log(`[${i + 1}/${products.length}] Compositing "${product.name}" (${product.category})...`);
+  console.log(`Fetching ${products.length} product photo(s)...`);
+  const items: SceneItem[] = [];
+  for (const product of products) {
     const productRes = await fetch(product.imageUrl!);
     if (!productRes.ok) {
       console.error(`Failed to fetch product photo for "${product.name}": ${productRes.status}`);
       process.exit(1);
     }
     const productBuffer = Buffer.from(await productRes.arrayBuffer());
-
     const suggestion = placement.placements[product.category];
     const box = await reshapeBoxForProduct(suggestion.box, productBuffer);
-
-    const result = await compositeProductIntoRoom(
-      baseImage,
-      productBuffer,
-      product.category,
-      [],
-      quality,
-      box,
-      suggestion.wallAngleDeg,
-    );
-    baseImage = Buffer.from(result.imageBase64, "base64");
-    totalPrice += product.price;
+    items.push({ productPhoto: productBuffer, category: product.category, box, wallAngleDeg: suggestion.wallAngleDeg });
   }
 
+  console.log(`Compositing the whole scene in one call (${quality} quality)...`);
+  const result = await composeSceneWithProducts(roomPhoto, items, quality);
+  const finalImage = Buffer.from(result.imageBase64, "base64");
+
+  console.log("Reviewing the result against each product photo...");
+  for (const [i, product] of products.entries()) {
+    const check = await checkRenderedProductIdentity(items[i].productPhoto, finalImage, items[i].box);
+    if (check && !check.pass) {
+      console.warn(`  ⚠ "${product.name}": ${check.note}`);
+    } else if (check) {
+      console.log(`  ✓ "${product.name}" looks right.`);
+    }
+  }
+
+  const totalPrice = products.reduce((sum, p) => sum + p.price, 0);
   const styleTags = Array.from(new Set(products.flatMap((p) => p.styles)));
 
   console.log("Saving finished room...");
@@ -147,7 +153,7 @@ async function main() {
     title,
     description: description ?? "",
     styleTags,
-    heroImageBase64: baseImage.toString("base64"),
+    heroImageBase64: finalImage.toString("base64"),
     productIds: products.map((p) => p.id),
     totalPrice,
   });

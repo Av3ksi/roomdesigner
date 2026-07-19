@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import sharp from "sharp";
 import { MODEL, aiEnabled } from "./claude";
+import { describeRoughLocation } from "../placementBoxes";
 import type { DetectionBox } from "../types";
 
 /**
@@ -50,14 +51,6 @@ async function toJpegBase64(buffer: Buffer, maxEdge?: number): Promise<string> {
   if (maxEdge) pipeline = pipeline.resize(maxEdge, maxEdge, { fit: "inside", withoutEnlargement: true });
   const jpeg = await pipeline.jpeg({ quality: 85 }).toBuffer();
   return jpeg.toString("base64");
-}
-
-function describeRoughLocation(box: DetectionBox): string {
-  const cx = box.x + box.w / 2;
-  const cy = box.y + box.h / 2;
-  const h = cx < 0.4 ? "left" : cx > 0.6 ? "right" : "center";
-  const v = cy < 0.4 ? "upper" : cy > 0.6 ? "lower" : "middle";
-  return `${v} ${h}`;
 }
 
 export async function checkRenderedProductIdentity(
