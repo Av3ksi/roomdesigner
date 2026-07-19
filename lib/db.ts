@@ -110,4 +110,26 @@ async function runSchema(): Promise<void> {
   `;
   await db`CREATE INDEX IF NOT EXISTS idx_products_category ON products(category)`;
   await db`CREATE INDEX IF NOT EXISTS idx_products_price ON products(price)`;
+
+  // Curated, fixed "shop the whole look" bundles (the IKEA-style showroom
+  // model) — a hero image of a real room with a hand-picked set of real
+  // catalog products already composited in, sold as one complete look
+  // rather than assembled live per customer. Product IDs reference the
+  // `products` table's id column but aren't a hard FK: a bundle should
+  // still display (with stale pricing flagged) if a product is later
+  // discontinued, not 500 because of one dangling reference.
+  await db`
+    CREATE TABLE IF NOT EXISTS finished_rooms (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      title TEXT NOT NULL,
+      description TEXT NOT NULL DEFAULT '',
+      style_tags TEXT[] NOT NULL DEFAULT '{}',
+      hero_image_base64 TEXT NOT NULL,
+      product_ids TEXT[] NOT NULL DEFAULT '{}',
+      total_price NUMERIC NOT NULL,
+      published BOOLEAN NOT NULL DEFAULT true,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `;
+  await db`CREATE INDEX IF NOT EXISTS idx_finished_rooms_published ON finished_rooms(published)`;
 }
