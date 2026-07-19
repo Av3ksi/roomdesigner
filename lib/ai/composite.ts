@@ -158,8 +158,19 @@ async function describeProductForPrompt(productPhoto: Buffer): Promise<string | 
   }
 }
 
+/**
+ * Real photos (a phone camera shot, easily 4000×3000+) are far larger than
+ * an image-edit API needs — sending one uncompressed is slow to upload,
+ * slower for the model to process, and risks silently hitting whatever
+ * size/dimension limit the API enforces. Downscaling first is standard
+ * practice, and this app already does it for every Claude vision call
+ * (lib/ai/placement.ts, lib/ai/identityCheck.ts) — this was the one place
+ * still sending the original, full-resolution buffer straight through.
+ */
+const COMPOSITE_MAX_EDGE = 2048;
+
 export async function compositeProductIntoRoom(
-  roomPhoto: Buffer,
+  roomPhotoInput: Buffer,
   productPhoto: Buffer,
   category: ProductCategory,
   detections: Detection[] = [],
@@ -169,6 +180,11 @@ export async function compositeProductIntoRoom(
   wallAngleDeg?: number,
 ): Promise<CompositeResult> {
   if (!compositingEnabled()) throw new Error("OPENAI_API_KEY not configured");
+
+  const roomPhoto = await sharp(roomPhotoInput)
+    .rotate() // respect EXIF orientation so mask coordinates match what the user (and the model) actually see
+    .resize(COMPOSITE_MAX_EDGE, COMPOSITE_MAX_EDGE, { fit: "inside", withoutEnlargement: true })
+    .toBuffer();
 
   const meta = await sharp(roomPhoto).metadata();
   const width = meta.width ?? 1024;
@@ -184,7 +200,13 @@ export async function compositeProductIntoRoom(
     w: maskBox.w + MASK_PADDING * 2,
     h: maskBox.h + MASK_PADDING * 2,
   });
-  console.log("[maison] compositeProductIntoRoom mask", { width, height, placementSource, maskBox, paddedBox });
+  console.log("[maison] compositeProductIntoRoom mask", {
+    originalSize: await sharp(roomPhotoInput).metadata().then((m) => `${m.width}x${m.height}`),
+    resizedTo: `${width}x${height}`,
+    placementSource,
+    maskBox,
+    paddedBox,
+  });
   const maskPng = await buildMaskPng(width, height, paddedBox);
 
   const roomImage = await toImageBlob(roomPhoto);
@@ -262,11 +284,16 @@ export interface RemovalResult {
  * just the object's exact silhouette) for zero new infrastructure.
  */
 export async function removeExistingObject(
-  roomPhoto: Buffer,
+  roomPhotoInput: Buffer,
   box: DetectionBox,
   category: ProductCategory,
 ): Promise<RemovalResult> {
   if (!compositingEnabled()) throw new Error("OPENAI_API_KEY not configured");
+
+  const roomPhoto = await sharp(roomPhotoInput)
+    .rotate()
+    .resize(COMPOSITE_MAX_EDGE, COMPOSITE_MAX_EDGE, { fit: "inside", withoutEnlargement: true })
+    .toBuffer();
 
   const meta = await sharp(roomPhoto).metadata();
   const width = meta.width ?? 1024;
