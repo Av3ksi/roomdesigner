@@ -1,4 +1,6 @@
+import Anthropic from "@anthropic-ai/sdk";
 import sharp from "sharp";
+import { MODEL as CLAUDE_MODEL, aiEnabled } from "./claude";
 import { DEFAULT_CATEGORY_BOX, clampBox } from "../placementBoxes";
 import type { Detection, DetectionBox, ProductCategory } from "../types";
 
@@ -112,6 +114,50 @@ export interface CompositeResult {
  */
 const MASK_PADDING = 0.04;
 
+/**
+ * gpt-image-1.5's multi-image edit doesn't reliably treat a second
+ * reference image as a hard content constraint — a real, confirmed
+ * failure had it paint a generic console table into the mask instead of
+ * the sofa it was given, despite the prompt already saying "use the
+ * exact product shown." Getting a plain-text description of the product
+ * from Claude vision first and repeating THAT in the edit prompt gives
+ * the model a second, text-based anchor for what's supposed to appear —
+ * image-reference-following and text-instruction-following are different
+ * strengths and this hedges across both. One extra cheap vision call,
+ * not an image generation call, so it doesn't meaningfully change cost.
+ */
+async function describeProductForPrompt(productPhoto: Buffer): Promise<string | null> {
+  if (!aiEnabled()) return null;
+  try {
+    const jpeg = await sharp(productPhoto)
+      .rotate()
+      .resize(512, 512, { fit: "inside", withoutEnlargement: true })
+      .jpeg({ quality: 80 })
+      .toBuffer();
+
+    const response = await new Anthropic().messages.create({
+      model: CLAUDE_MODEL,
+      max_tokens: 200,
+      system:
+        "Describe this furniture/decor product photo in one concise sentence, for someone who must recreate " +
+        "its exact appearance elsewhere without seeing this photo. State the product type, dominant color, " +
+        "material, and any distinctive shape or features. Do not mention the background or photography style.",
+      messages: [
+        {
+          role: "user",
+          content: [{ type: "image", source: { type: "base64", media_type: "image/jpeg", data: jpeg.toString("base64") } }],
+        },
+      ],
+    });
+
+    const text = response.content.find((b) => b.type === "text")?.text;
+    return text?.trim() || null;
+  } catch (err) {
+    console.error("[maison] product description failed, compositing without it:", err);
+    return null;
+  }
+}
+
 export async function compositeProductIntoRoom(
   roomPhoto: Buffer,
   productPhoto: Buffer,
@@ -143,6 +189,7 @@ export async function compositeProductIntoRoom(
 
   const roomImage = await toImageBlob(roomPhoto);
   const productImage = await toImageBlob(productPhoto);
+  const productDescription = await describeProductForPrompt(productPhoto);
 
   const form = new FormData();
   form.append("model", MODEL);
@@ -161,10 +208,15 @@ export async function compositeProductIntoRoom(
 
   form.append(
     "prompt",
-    "The first image is a room photo. The second image is a real product photo. " +
-      "Composite the exact product from the second image into the masked region of the first image — " +
-      "match the room's perspective, scale and lighting. Do not invent a different product; use the " +
-      "one shown. Leave everything outside the masked region unchanged. " +
+    "The first image is a room photo. The second image is a real product photo — " +
+      `a real ${category}${productDescription ? `: ${productDescription}` : ""}. ` +
+      "Composite the EXACT product shown in the second image into the masked region of the first image — " +
+      "match the room's perspective, scale and lighting. CRITICAL: the masked region must contain ONLY this " +
+      `exact ${category} and nothing else — never substitute a different piece of furniture or object (no ` +
+      "consoles, shelves, side tables, decor, or any other category), even if it seems like a more natural fit " +
+      "for the room. If the reference photo is unclear, still insert something that resembles it as closely as " +
+      "possible — do not default to a generic or different object. Leave everything outside the masked region " +
+      "unchanged. " +
       // With an explicit user/AI-chosen box the mask IS the intended position — a generic
       // category hint ("against a wall") could fight a deliberate mid-room placement.
       (explicitBox
