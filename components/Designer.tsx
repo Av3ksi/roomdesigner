@@ -467,8 +467,8 @@ export default function Designer() {
 
           <div className="text-[10px] text-cream-faint">
             Rooms persist across visits when the server has a database configured. The designer can
-            add catalog products and, where its object-detection step is available, remove furniture
-            already in the photo — it will say so honestly if either isn't available right now.
+            add catalog products and remove furniture already in the photo (removal isn't
+            pixel-precise yet, so a little surrounding wall or floor may get repainted too).
           </div>
         </div>
       </div>

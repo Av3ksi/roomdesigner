@@ -1,7 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { MODEL, aiEnabled } from "./claude";
 import { suggestPlacements, type PlacementMap, type RoomDimensionsEstimate } from "./placement";
-import { replicateEnabled } from "./vision/replicate";
 import { searchProducts, toAgentProductSummary } from "../productSearch";
 import { DEFAULT_CATEGORY_BOX, clampBox, isValidBox } from "../placementBoxes";
 import type { DetectionBox, Product, ProductCategory } from "../types";
@@ -18,10 +17,10 @@ import type { DetectionBox, Product, ProductCategory } from "../types";
  * the billed image call. Agent turns themselves cost normal Claude usage
  * (the placement tool is one extra vision call, once per photo).
  *
- * v1 scope, stated honestly: no DB yet (conversation state round-trips
- * through the client), no segmentation (can't remove/move *existing*
- * furniture — the agent is told to say so instead of pretending), and the
- * catalog is the ~200-product sample. Those are the next Phase-1 chunks.
+ * Persistence (lib/roomPersistence.ts) and existing-furniture removal
+ * (lib/ai/locate.ts + removeExistingObject) landed in later chunks — see
+ * docs/BLUEPRINT.md for the roadmap. Still true: no "move" (only remove),
+ * no wall/floor restyling, and the catalog is the ~200-product sample.
  */
 
 const CATEGORIES: ProductCategory[] = [
@@ -53,7 +52,7 @@ export interface AddProposal {
   rationale: string;
 }
 
-/** Removing something already physically in the photo (Phase 2 — needs REPLICATE_API_TOKEN; see lib/ai/vision/segmentation.ts). No product: there's nothing to buy. */
+/** Removing something already physically in the photo (Phase 2 — see lib/ai/locate.ts). No product: there's nothing to buy. */
 export interface RemoveProposal {
   kind: "remove";
   category: ProductCategory;
@@ -137,33 +136,22 @@ const TOOLS: Anthropic.Tool[] = [
       required: ["description"],
     },
   },
+  {
+    name: "remove_existing_object",
+    description:
+      "Propose removing an object that's already physically present in the room photo (not a catalog product — there's nothing to buy). The user sees this as a card and must explicitly confirm before the (billed) render happens. The removal only succeeds if a vision step actually locates a matching item in the photo — if it doesn't, the confirm will fail and you should acknowledge that honestly rather than insisting it worked.",
+    input_schema: {
+      type: "object",
+      properties: {
+        category: { type: "string", enum: CATEGORIES },
+        rationale: { type: "string", description: "One sentence: why remove this, referencing the user's request." },
+      },
+      required: ["category", "rationale"],
+    },
+  },
 ];
 
-/** Only offered when the server has REPLICATE_API_TOKEN configured — the underlying segmentation step needs it. */
-const REMOVE_OBJECT_TOOL: Anthropic.Tool = {
-  name: "remove_existing_object",
-  description:
-    "Propose removing an object that's already physically present in the room photo (not a catalog product — there's nothing to buy). The user sees this as a card and must explicitly confirm before the (billed) render happens. The removal only succeeds if an object-detection step actually finds a matching item in the photo — if it doesn't, the confirm will fail and you should acknowledge that honestly rather than insisting it worked.",
-  input_schema: {
-    type: "object",
-    properties: {
-      category: { type: "string", enum: CATEGORIES },
-      rationale: { type: "string", description: "One sentence: why remove this, referencing the user's request." },
-    },
-    required: ["category", "rationale"],
-  },
-};
-
-function buildTools(): Anthropic.Tool[] {
-  return replicateEnabled() ? [...TOOLS, REMOVE_OBJECT_TOOL] : TOOLS;
-}
-
-function buildSystemPrompt(
-  constraints: Constraint[],
-  hasPhoto: boolean,
-  roomContext: RoomContext | null,
-  removalAvailable: boolean,
-): string {
+function buildSystemPrompt(constraints: Constraint[], hasPhoto: boolean, roomContext: RoomContext | null): string {
   const constraintList = constraints.length
     ? constraints.map((c) => `- [${c.kind}] ${c.description}`).join("\n")
     : "(none yet)";
@@ -182,11 +170,7 @@ How you work:
 3. get_room_placement once, then propose_edit for each item you recommend (max 3-4 per turn) using that category's box and wallAngleDeg.
 4. Your final text reply: brief, concrete, in the client's own language. Reference the proposals you made — the UI shows them as cards the client confirms. Each confirmed render costs the client a little money, so propose what you'd genuinely stand behind.
 
-Honest limits (say so when asked, offer the nearest real alternative): you can ADD products to the photo. ${
-    removalAvailable
-      ? "You can also propose REMOVING a piece of furniture already physically in the photo with remove_existing_object — this depends on an object-detection step actually finding a matching item, so it can fail; if the confirm comes back with an error, tell the user honestly instead of pretending it worked. There's no way to just move an object in place yet, only remove it (they'd re-add a replacement afterward)."
-      : "You cannot yet remove or move furniture that's already physically in the photo (that needs a vision step this deployment doesn't have configured)."
-  } You cannot restyle walls/floors. The catalog is ~200 VidaXL products today.`;
+Honest limits (say so when asked, offer the nearest real alternative): you can ADD products to the photo. You can also propose REMOVING a piece of furniture already physically in the photo with remove_existing_object — this depends on a vision step actually locating a matching item, so it can fail; if the confirm comes back with an error, tell the user honestly instead of pretending it worked. There's no way to just move an object in place yet, only remove it (they'd re-add a replacement afterward). You cannot restyle walls/floors. The catalog is ~200 VidaXL products today.`;
 }
 
 interface AgentState {
@@ -292,8 +276,6 @@ export async function runDesignerTurn(
   };
 
   const client = new Anthropic();
-  const tools = buildTools();
-  const removalAvailable = replicateEnabled();
   const messages: Anthropic.MessageParam[] = [
     ...history.map((t) => ({ role: t.role, content: t.content })),
     { role: "user" as const, content: userMessage },
@@ -305,8 +287,8 @@ export async function runDesignerTurn(
       model: MODEL,
       max_tokens: 4096,
       thinking: { type: "adaptive" },
-      system: buildSystemPrompt(state.constraints, Boolean(roomPhoto), state.roomContext, removalAvailable),
-      tools,
+      system: buildSystemPrompt(state.constraints, Boolean(roomPhoto), state.roomContext),
+      tools: TOOLS,
       messages,
     });
 

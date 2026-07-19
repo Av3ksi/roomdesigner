@@ -193,29 +193,6 @@ export async function compositeProductIntoRoom(
   return { imageBase64: b64, maskBox, placementSource };
 }
 
-/**
- * Converts a segmentation model's mask (an arbitrary-shape white-on-black
- * PNG at, ideally, the room photo's own resolution) into the alpha-channel
- * mask OpenAI's edit endpoint expects (alpha 0 = "edit here"). Resizes to
- * the target dimensions first since a model's mask output isn't guaranteed
- * to match the source photo's exact pixel size.
- */
-async function buildAlphaMaskFromSegmentation(segmentationMask: Buffer, width: number, height: number): Promise<Buffer> {
-  const { data } = await sharp(segmentationMask)
-    .resize(width, height, { fit: "fill" })
-    .greyscale()
-    .raw()
-    .toBuffer({ resolveWithObject: true });
-
-  const channels = 4;
-  const pixels = Buffer.alloc(width * height * channels, 255); // opaque everywhere = "keep as-is"
-  for (let i = 0; i < width * height; i++) {
-    const isObject = data[i] > 128;
-    pixels[i * channels + 3] = isObject ? 0 : 255; // alpha 0 = "edit this region" (the detected object)
-  }
-  return sharp(pixels, { raw: { width, height, channels } }).png().toBuffer();
-}
-
 export interface RemovalResult {
   /** Base64 PNG — the room photo with the object erased and its background filled in. */
   imageBase64: string;
@@ -223,15 +200,17 @@ export interface RemovalResult {
 
 /**
  * Erases an existing object already physically present in the room photo
- * (Phase 2: "remove that sofa" / "move the chair" starts with removal).
- * Needs a real segmentation mask from lib/ai/vision/segmentation.ts — unlike
- * compositeProductIntoRoom, there's no product photo and no rectangular
- * default mask to fall back to; the caller only calls this once segmentation
- * has actually found something.
+ * (Phase 2: "remove that sofa"). The box comes from Claude vision
+ * (lib/ai/locate.ts) rather than pixel-precise segmentation — a
+ * deliberate v1 simplification (see that module's doc comment) that
+ * reuses the same rectangular box-mask machinery as
+ * compositeProductIntoRoom instead of a second vendor. Trades a bit of
+ * mask precision (some surrounding wall/floor gets repainted too, not
+ * just the object's exact silhouette) for zero new infrastructure.
  */
 export async function removeExistingObject(
   roomPhoto: Buffer,
-  segmentationMask: Buffer,
+  box: DetectionBox,
   category: ProductCategory,
 ): Promise<RemovalResult> {
   if (!compositingEnabled()) throw new Error("OPENAI_API_KEY not configured");
@@ -240,7 +219,13 @@ export async function removeExistingObject(
   const width = meta.width ?? 1024;
   const height = meta.height ?? 1024;
 
-  const maskPng = await buildAlphaMaskFromSegmentation(segmentationMask, width, height);
+  const paddedBox = clampBox({
+    x: box.x - MASK_PADDING,
+    y: box.y - MASK_PADDING,
+    w: box.w + MASK_PADDING * 2,
+    h: box.h + MASK_PADDING * 2,
+  });
+  const maskPng = await buildMaskPng(width, height, paddedBox);
   const roomImage = await toImageBlob(roomPhoto);
 
   const form = new FormData();
