@@ -53,10 +53,14 @@ SUBCATEGORY_DENYLIST = [
     "Festtags-Dekoartikel",  # seasonal/holiday decor (Christmas ornaments)
 ]
 
-# Möbel alone matched 242k+ products before stock/price filtering -- far
-# more than needed to prove the workflow end to end. Stop once we have a
-# workable sample instead of collecting everything.
-MAX_MATCHES = 200
+# Möbel alone matched 242k+ products before stock/price filtering. The
+# original 200-item cap proved the workflow end to end but turned out too
+# small in practice: scanning the CSV in file order, it exhausted the cap
+# on early subcategories (storage, decor) before ever reaching rows for
+# lighting, rugs, art or plants later in the file -- a real "complete
+# room" bundle needs those categories, so raise the cap enough that a full
+# scan actually reaches a representative spread of the whole catalog.
+MAX_MATCHES = 3000
 
 # The first real run's SKU-ordered scan exhausted the whole 200-item cap on
 # towels alone before reaching any other subcategory -- cap how many
