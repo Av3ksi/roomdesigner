@@ -87,6 +87,23 @@ async function main() {
     products.push(p);
   }
 
+  // One placement box exists per CATEGORY (suggestPlacements), not per product —
+  // two products of the same category would silently composite into the same
+  // spot, the second overwriting the first. A real "complete room" wants variety
+  // across categories anyway, so this is a hard stop, not a smart-offset hack.
+  const seenCategories = new Set<string>();
+  for (const p of products) {
+    if (seenCategories.has(p.category)) {
+      console.error(
+        `Two products in the same category ("${p.category}"): "${p.name}". ` +
+          "Each category gets one placement spot, so a second item of the same kind would overwrite the first. " +
+          "Pick one item per category instead (sofa + table + rug + lighting + art...).",
+      );
+      process.exit(1);
+    }
+    seenCategories.add(p.category);
+  }
+
   console.log("Analyzing room placement (one Claude vision call)...");
   const roomPhoto = readFileSync(roomPath);
   const placement = await suggestPlacements(roomPhoto);
