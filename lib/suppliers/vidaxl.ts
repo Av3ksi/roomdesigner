@@ -95,6 +95,12 @@ function sampleToRaw(p: VidaxlSampleProduct): RawSupplierProduct {
     vendorCategory: p.category,
     description: p.description || undefined,
     costPrice: p.costPrice,
+    // VidaXL's own "Webshop price" column — what they themselves charge
+    // retail customers on de.vidaxl.ch. Was never threaded through before,
+    // so computeRetailPrice() always fell back to its own cost*1.65 markup
+    // instead — which can (and did, per a real reported case) price a
+    // product ABOVE what the exact same item costs directly from VidaXL.
+    recommendedRetailPrice: p.webshopPrice ?? undefined,
     stockQty: p.stock,
     images: p.images,
     weightKg: p.weightKg ?? undefined,
@@ -179,6 +185,12 @@ async function fetchLive(): Promise<RawSupplierProduct[]> {
       if (samplePhoto?.images?.length) {
         raw.images = samplePhoto.images;
         raw.description = samplePhoto.description;
+      }
+      // The live product-list endpoint only returns a single wholesale
+      // `price` field (no RRP) — reuse the bulk feed's webshop price for
+      // the same SKU as the retail reference when we have it.
+      if (samplePhoto?.recommendedRetailPrice) {
+        raw.recommendedRetailPrice = samplePhoto.recommendedRetailPrice;
       }
 
       matched.push(raw);
