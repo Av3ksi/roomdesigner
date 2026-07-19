@@ -37,6 +37,11 @@ export async function POST(req: NextRequest) {
   const wallAngleRaw = Number.parseFloat(String(form.get("wallAngleDeg") ?? ""));
   const wallAngleDeg = Number.isFinite(wallAngleRaw) ? wallAngleRaw : undefined;
 
+  // Diagnostic: the box a render actually used is otherwise invisible once
+  // it's in front of a customer — useful for root-causing a mismatch
+  // between where the mask was and what the model actually painted.
+  console.log("[maison] /api/composite", { category, productImageUrl, explicitBox, wallAngleDeg });
+
   const productRes = await fetch(productImageUrl);
   if (!productRes.ok) {
     return NextResponse.json({ error: `Failed to fetch the product photo: ${productRes.status}` }, { status: 502 });

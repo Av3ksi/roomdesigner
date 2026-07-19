@@ -138,6 +138,7 @@ export async function compositeProductIntoRoom(
     w: maskBox.w + MASK_PADDING * 2,
     h: maskBox.h + MASK_PADDING * 2,
   });
+  console.log("[maison] compositeProductIntoRoom mask", { width, height, placementSource, maskBox, paddedBox });
   const maskPng = await buildMaskPng(width, height, paddedBox);
 
   const roomImage = await toImageBlob(roomPhoto);

@@ -6,13 +6,19 @@ import type { DetectionBox } from "../types";
 /**
  * Phase 2's "Product identity QA" gate (docs/BLUEPRINT.md's honest critique
  * of the prototype called this out as missing). After a masked composite
- * render, ask Claude vision to compare the rendered region against the
- * actual product photo — image-editing models occasionally substitute a
- * different object entirely (this was flagged, unconfirmed, once already
- * in this app's own testing: a rendered console/shelf where a sofa should
- * have been). Degrades exactly like the rest of lib/ai: any failure here
- * just skips the check (returns null) rather than blocking a render the
- * user already paid for.
+ * render, ask Claude vision whether the intended product actually shows up
+ * somewhere in the result — image-editing models occasionally substitute a
+ * different object entirely (confirmed in real testing: a rendered
+ * console/shelf where a sofa should have been).
+ *
+ * v1 of this check cropped the render to the placement box before judging
+ * it — but that crop is only as trustworthy as the box itself, and the
+ * exact bug this exists to catch (the model painting something other than
+ * asked, possibly not even where asked) can also throw the box off. A crop
+ * built from an untrustworthy box can miss the very thing it's supposed to
+ * review, silently passing a bad render. Judging the FULL rendered image
+ * instead removes that dependency — Claude looks at the whole room, not a
+ * region we're already unsure is correct.
  */
 
 export interface IdentityCheckResult {
@@ -30,40 +36,41 @@ const IDENTITY_SCHEMA = {
   },
 } as const;
 
-const IDENTITY_SYSTEM = `You are a quality-control reviewer for Maison, an AI interior design platform. You are shown two images: (1) the real product photo a customer picked from the catalog, and (2) a cropped region from a photo-composite render that was supposed to place THAT exact product into a room photo.
+const IDENTITY_SYSTEM = `You are a quality-control reviewer for Maison, an AI interior design platform. An automated tool just tried to add ONE specific product into a customer's room photo via an AI image edit. You are shown two images: (1) the real product photo the customer picked from the catalog, and (2) the FULL room photo after the edit.
 
-Your only job: does the cropped render actually show the same product — same category, same rough shape/proportions, same dominant color and material — or did the image-generation step substitute a different, wrong object? This class of model occasionally hallucinates a completely different item (e.g. a low console table where a sofa should be) instead of the product it was shown. Minor differences from lighting, camera angle, shadow, or a tight crop are normal and should still pass. Only fail when the object is clearly a different kind or form of furniture than the product photo — not for stylistic rendering differences.
+Your only job: look across the whole room photo and decide whether the intended product now genuinely appears somewhere in it — same category, same rough shape/proportions, same dominant color and material as the reference photo. Image-editing models occasionally substitute a completely different, wrong object (e.g. a console table where a sofa should be), or place the result somewhere other than where it was supposed to go — so check the whole frame, not just one area. Minor differences from lighting, camera angle, or scale are normal and should still pass. Only fail when you cannot find a plausible match for the reference product anywhere in the room.
 
 Return pass=true/false and one short, plain, customer-friendly sentence explaining your reasoning (shown as a warning banner only when pass=false).`;
 
-async function toJpegBase64(buffer: Buffer): Promise<string> {
-  const jpeg = await sharp(buffer).rotate().jpeg({ quality: 85 }).toBuffer();
+/** Long edge the rendered photo is downscaled to before this review call — plenty to judge object identity, keeps tokens cheap. */
+const REVIEW_MAX_EDGE = 900;
+
+async function toJpegBase64(buffer: Buffer, maxEdge?: number): Promise<string> {
+  let pipeline = sharp(buffer).rotate();
+  if (maxEdge) pipeline = pipeline.resize(maxEdge, maxEdge, { fit: "inside", withoutEnlargement: true });
+  const jpeg = await pipeline.jpeg({ quality: 85 }).toBuffer();
   return jpeg.toString("base64");
 }
 
-/** Crops the region the product was composited into, padded so a tall/wide object isn't cut off before review. */
-async function cropRegion(imageBuffer: Buffer, box: DetectionBox): Promise<Buffer> {
-  const { width = 1024, height = 1024 } = await sharp(imageBuffer).metadata();
-  const pad = 0.08;
-  const x0 = Math.max(0, Math.round((box.x - pad) * width));
-  const y0 = Math.max(0, Math.round((box.y - pad) * height));
-  const x1 = Math.min(width, Math.round((box.x + box.w + pad) * width));
-  const y1 = Math.min(height, Math.round((box.y + box.h + pad) * height));
-  return sharp(imageBuffer)
-    .extract({ left: x0, top: y0, width: Math.max(1, x1 - x0), height: Math.max(1, y1 - y0) })
-    .toBuffer();
+function describeRoughLocation(box: DetectionBox): string {
+  const cx = box.x + box.w / 2;
+  const cy = box.y + box.h / 2;
+  const h = cx < 0.4 ? "left" : cx > 0.6 ? "right" : "center";
+  const v = cy < 0.4 ? "upper" : cy > 0.6 ? "lower" : "middle";
+  return `${v} ${h}`;
 }
 
 export async function checkRenderedProductIdentity(
   productPhoto: Buffer,
   renderedImage: Buffer,
-  maskBox: DetectionBox,
+  /** Where the edit was intended to place it — a soft hint for Claude's search, not a crop boundary. */
+  intendedBox: DetectionBox,
 ): Promise<IdentityCheckResult | null> {
   if (!aiEnabled()) return null;
   try {
-    const [productJpeg, cropJpeg] = await Promise.all([
+    const [productJpeg, roomJpeg] = await Promise.all([
       toJpegBase64(productPhoto),
-      cropRegion(renderedImage, maskBox).then(toJpegBase64),
+      toJpegBase64(renderedImage, REVIEW_MAX_EDGE),
     ]);
 
     const response = await new Anthropic().messages.create({
@@ -80,8 +87,12 @@ export async function checkRenderedProductIdentity(
           content: [
             { type: "text", text: "Product photo (what the customer picked):" },
             { type: "image", source: { type: "base64", media_type: "image/jpeg", data: productJpeg } },
-            { type: "text", text: "Cropped region from the rendered composite:" },
-            { type: "image", source: { type: "base64", media_type: "image/jpeg", data: cropJpeg } },
+            { type: "text", text: "Full room photo after the edit:" },
+            { type: "image", source: { type: "base64", media_type: "image/jpeg", data: roomJpeg } },
+            {
+              type: "text",
+              text: `It was intended to be placed roughly in the ${describeRoughLocation(intendedBox)} of the frame, but check the whole photo regardless.`,
+            },
           ],
         },
       ],
