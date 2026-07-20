@@ -24,6 +24,7 @@ Writes (into the current directory):
 
 import csv
 import json
+import os
 import re
 import sys
 from collections import Counter
@@ -48,10 +49,14 @@ SUBCATEGORY_DENYLIST = [
     "Gartenmöbel",           # garden furniture
     "Rasen & Garten",        # lawn & garden
     "Gartenbauten",          # garden structures (pavilions, etc.)
-    "Haushaltswäsche",       # household linens -- towels, bedsheets
     "Möbelgarnituren",       # was entirely bathroom furniture sets in practice
     "Festtags-Dekoartikel",  # seasonal/holiday decor (Christmas ornaments)
 ]
+# "Haushaltswäsche" (household linens) was originally denylisted because a
+# towel flood ate the whole sample cap. It's ALSO where cushions/decorative
+# pillows live -- products the finished-room bundles actively want to sell.
+# MAX_PER_SUBCATEGORY now prevents the flood on its own, so linens are
+# allowed back in, capped like everything else.
 
 # Möbel alone matched 242k+ products before stock/price filtering. The
 # original 200-item cap proved the workflow end to end but turned out too
@@ -66,7 +71,7 @@ MAX_MATCHES = 3000
 # towels alone before reaching any other subcategory -- cap how many
 # products can come from any single second-level category so the sample
 # actually covers a spread of furniture types instead of one product line.
-MAX_PER_SUBCATEGORY = 15
+MAX_PER_SUBCATEGORY = 25
 
 
 def load_offer_feed(path):
@@ -204,6 +209,17 @@ def main():
     with open("vidaxl_catalog.json", "w", encoding="utf-8") as f:
         json.dump(matched, f, ensure_ascii=False, indent=2)
     print("Wrote vidaxl_catalog.json")
+
+    # Also write straight into the app's bundled sample dataset -- the manual
+    # "now copy the output into lib/suppliers/data/" step was repeatedly
+    # forgotten/mistyped in practice. Path resolved from this script's own
+    # location so it works no matter where the script is run from.
+    app_data_path = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "..", "lib", "suppliers", "data", "vidaxl-sample.json"
+    )
+    with open(app_data_path, "w", encoding="utf-8") as f:
+        json.dump(matched, f, ensure_ascii=False, indent=2)
+    print(f"Wrote {os.path.normpath(app_data_path)} (the app now uses this dataset directly)")
 
     with open("category_report.txt", "w", encoding="utf-8") as f:
         if stopped_early:
