@@ -45,6 +45,7 @@ export default function LooksStudio({ catalog }: { catalog: Product[] }) {
   const [selected, setSelected] = useState<Partial<Record<ProductCategory, Product>>>({});
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
+  const [styleDirection, setStyleDirection] = useState("");
   const [quality, setQuality] = useState<"low" | "medium" | "high">("medium");
   const [generating, setGenerating] = useState(false);
   const [result, setResult] = useState<GenerateResult | null>(null);
@@ -87,6 +88,7 @@ export default function LooksStudio({ catalog }: { catalog: Product[] }) {
       form.append("room", roomFile);
       form.append("productIds", JSON.stringify(selectedProducts.map((p) => p.id)));
       form.append("quality", quality);
+      if (styleDirection.trim()) form.append("styleDirection", styleDirection.trim());
 
       const res = await fetch("/api/finished-rooms/generate", { method: "POST", body: form });
       const body = await res.json();
@@ -181,6 +183,24 @@ export default function LooksStudio({ catalog }: { catalog: Product[] }) {
                 </div>
               );
             })}
+          </div>
+
+          <div>
+            <label className="mb-1.5 block text-xs font-semibold text-cream-dim">
+              Style direction <span className="font-normal text-cream-faint">(showroom mode)</span>
+            </label>
+            <textarea
+              value={styleDirection}
+              onChange={(e) => setStyleDirection(e.target.value)}
+              rows={2}
+              placeholder='e.g. "warm japandi, sage-green accent wall, cozy evening lighting" — empty = keep the photo untouched, only add products'
+              className="w-full rounded-lg border border-ink-line bg-ink-panel px-3 py-2 text-xs outline-none placeholder:text-cream-faint focus:border-brass/50"
+            />
+            <p className="mt-1 text-[10px] text-cream-faint">
+              With a style direction, the whole room gets redesigned around the products — repainted
+              walls, lighting mood, staging accents — like a real showroom shoot. The architecture
+              (windows, doors, layout) stays; only the products are what customers actually buy.
+            </p>
           </div>
 
           <div>

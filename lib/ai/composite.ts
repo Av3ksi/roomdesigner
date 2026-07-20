@@ -364,11 +364,21 @@ export interface SceneCompositeResult {
  * reference image and an explicit per-item layout description lets the
  * model reason about the whole scene — relative scale, shared lighting,
  * believable arrangement — at once.
+ *
+ * styleDirection: when set, the edit is UNMASKED and the model is told to
+ * restyle the entire room (wall color, lighting mood, staging accents)
+ * around the real products, per that direction — for curated showroom
+ * bundles where the hero image should look like a magazine shoot, not the
+ * bare input photo with objects added. Real feedback drove this: products
+ * dropped into an untouched plain room read as "basic", nothing a customer
+ * wants to buy whole. Never use styleDirection for a customer's own room
+ * photo — customers expect THEIR room back, untouched except the product.
  */
 export async function composeSceneWithProducts(
   roomPhotoInput: Buffer,
   items: SceneItem[],
   quality: "low" | "medium" | "high" = "medium",
+  styleDirection?: string,
 ): Promise<SceneCompositeResult> {
   if (!compositingEnabled()) throw new Error("OPENAI_API_KEY not configured");
   if (items.length === 0) throw new Error("composeSceneWithProducts needs at least one item");
@@ -381,15 +391,7 @@ export async function composeSceneWithProducts(
   const width = meta.width ?? 1024;
   const height = meta.height ?? 1024;
 
-  const union = unionBox(items.map((i) => i.box));
-  const maskRegion = clampBox({
-    x: union.x - MASK_PADDING,
-    y: union.y - MASK_PADDING,
-    w: union.w + MASK_PADDING * 2,
-    h: union.h + MASK_PADDING * 2,
-  });
-  console.log("[maison] composeSceneWithProducts mask", { width, height, itemCount: items.length, maskRegion });
-  const maskPng = await buildMaskPng(width, height, maskRegion);
+  const restyle = Boolean(styleDirection?.trim());
 
   const roomImage = await toImageBlob(roomPhoto);
   const form = new FormData();
@@ -407,23 +409,52 @@ export async function composeSceneWithProducts(
         : "";
     itemLines.push(
       `Reference image ${i + 2} is a real ${item.category}${description ? `: ${description}` : ""} — place it in the ` +
-        `${describeRoughLocation(item.box)} of the masked area.${wallAngleNote}`,
+        `${describeRoughLocation(item.box)} of the ${restyle ? "room" : "masked area"}.${wallAngleNote}`,
     );
   }
 
-  form.append("mask", new Blob([new Uint8Array(maskPng)], { type: "image/png" }), "mask.png");
-  form.append(
-    "prompt",
-    "The first image is a room photo. Every image after it is a real product photo to composite into the masked " +
-      "region of the room — arrange them together as ONE cohesive, professionally staged room, the way a real " +
-      "interior designer would lay out real furniture: consistent scale and lighting across every piece, " +
-      "believable relative positions (e.g. a coffee table sits in front of a sofa, not overlapping it or floating " +
-      "apart from it; a sideboard sits flush against a wall), and realistic contact shadows where each item " +
-      "touches the floor. Use the EXACT product shown in each reference image for its corresponding item — never " +
-      "substitute a different piece of furniture for any of them, and never omit one. " +
-      itemLines.join(" ") +
-      " Leave everything outside the masked region unchanged.",
-  );
+  if (restyle) {
+    // No mask: the whole image may change (walls, lighting, floor mood),
+    // constrained to the room's real architecture by the prompt instead.
+    console.log("[maison] composeSceneWithProducts restyle", { width, height, itemCount: items.length, styleDirection });
+    form.append(
+      "prompt",
+      "The first image is a photo of a real room. Every image after it is a real product photo. Transform this " +
+        "room into a professionally designed, magazine-quality interior in this style: " +
+        `${styleDirection!.trim()}. ` +
+        "Keep the room's actual architecture exactly as photographed — same walls, window and door positions, " +
+        "ceiling height, camera angle and perspective — but you may repaint walls (accent walls welcome), change " +
+        "the floor or add a rug consistent with the style, adjust the lighting mood (warm lamps, natural light), " +
+        "and add tasteful small staging accents (cushions, books, a plant, wall art) so the space feels lived-in " +
+        "and aspirational. The featured products are the heroes of the scene: use the EXACT product shown in each " +
+        "reference image — never substitute a different piece for any of them, and never omit one. " +
+        itemLines.join(" ") +
+        " Consistent scale, perspective and lighting across everything; realistic contact shadows where items touch the floor.",
+    );
+  } else {
+    const union = unionBox(items.map((i) => i.box));
+    const maskRegion = clampBox({
+      x: union.x - MASK_PADDING,
+      y: union.y - MASK_PADDING,
+      w: union.w + MASK_PADDING * 2,
+      h: union.h + MASK_PADDING * 2,
+    });
+    console.log("[maison] composeSceneWithProducts mask", { width, height, itemCount: items.length, maskRegion });
+    const maskPng = await buildMaskPng(width, height, maskRegion);
+    form.append("mask", new Blob([new Uint8Array(maskPng)], { type: "image/png" }), "mask.png");
+    form.append(
+      "prompt",
+      "The first image is a room photo. Every image after it is a real product photo to composite into the masked " +
+        "region of the room — arrange them together as ONE cohesive, professionally staged room, the way a real " +
+        "interior designer would lay out real furniture: consistent scale and lighting across every piece, " +
+        "believable relative positions (e.g. a coffee table sits in front of a sofa, not overlapping it or floating " +
+        "apart from it; a sideboard sits flush against a wall), and realistic contact shadows where each item " +
+        "touches the floor. Use the EXACT product shown in each reference image for its corresponding item — never " +
+        "substitute a different piece of furniture for any of them, and never omit one. " +
+        itemLines.join(" ") +
+        " Leave everything outside the masked region unchanged.",
+    );
+  }
   form.append("quality", quality);
   form.append("size", "auto");
   form.append("n", "1");

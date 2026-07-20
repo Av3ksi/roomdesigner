@@ -43,6 +43,11 @@ export async function POST(req: NextRequest) {
   const qualityRaw = form.get("quality");
   const quality = (qualityRaw === "low" || qualityRaw === "high" ? qualityRaw : "medium") as "low" | "medium" | "high";
 
+  // Optional: restyles the whole room (walls, lighting, staging) around the
+  // products instead of leaving the photo untouched — showroom mode.
+  const styleDirectionRaw = form.get("styleDirection");
+  const styleDirection = typeof styleDirectionRaw === "string" && styleDirectionRaw.trim() ? styleDirectionRaw.trim() : undefined;
+
   const catalog = await loadProductCatalog();
   const byId = new Map(catalog.map((p) => [p.id, p]));
   const products: Product[] = [];
@@ -81,7 +86,7 @@ export async function POST(req: NextRequest) {
       items.push({ productPhoto, category: product.category, box, wallAngleDeg: suggestion.wallAngleDeg });
     }
 
-    const result = await composeSceneWithProducts(roomPhoto, items, quality);
+    const result = await composeSceneWithProducts(roomPhoto, items, quality, styleDirection);
     const finalImage = Buffer.from(result.imageBase64, "base64");
 
     const checks = await Promise.all(
