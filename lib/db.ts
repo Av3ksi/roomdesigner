@@ -132,4 +132,11 @@ async function runSchema(): Promise<void> {
     )
   `;
   await db`CREATE INDEX IF NOT EXISTS idx_finished_rooms_published ON finished_rooms(published)`;
+  // Where each product actually ended up in the final hero image (a
+  // {productId: DetectionBox} map), located by lib/ai/locate.ts against the
+  // finished render itself — not the pre-generation placement suggestion,
+  // which showroom-restyle mode is free to ignore. Powers clickable
+  // hotspots on /looks/[id]. Rows created before this existed just have
+  // '{}' and render without hotspots rather than erroring.
+  await db`ALTER TABLE finished_rooms ADD COLUMN IF NOT EXISTS item_boxes JSONB NOT NULL DEFAULT '{}'::jsonb`;
 }

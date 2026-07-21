@@ -3,8 +3,9 @@ import { aiEnabled } from "@/lib/ai/claude";
 import { checkRenderedProductIdentity } from "@/lib/ai/identityCheck";
 import { compositingEnabled, composeSceneWithProducts, reshapeBoxForProduct, type SceneItem } from "@/lib/ai/composite";
 import { suggestPlacements } from "@/lib/ai/placement";
+import { locateExistingObject } from "@/lib/ai/locate";
 import { loadProductCatalog } from "@/lib/productSearchDb";
-import type { Product } from "@/lib/types";
+import type { DetectionBox, Product } from "@/lib/types";
 
 // sharp (compositing) needs the Node runtime, not edge.
 export const runtime = "nodejs";
@@ -89,12 +90,25 @@ export async function POST(req: NextRequest) {
     const result = await composeSceneWithProducts(roomPhoto, items, quality, styleDirection);
     const finalImage = Buffer.from(result.imageBase64, "base64");
 
-    const checks = await Promise.all(
-      products.map(async (product, i) => {
-        const check = await checkRenderedProductIdentity(items[i].productPhoto, finalImage, items[i].box);
-        return { productId: product.id, name: product.name, pass: check?.pass ?? null, note: check?.note ?? null };
-      }),
-    );
+    // Where each product actually ended up in the FINAL image — the
+    // pre-generation box (items[i].box) is only a placement suggestion, and
+    // showroom-restyle mode is explicitly free to ignore it. Locating
+    // against the finished render is what makes hotspots reliable.
+    const itemBoxes: Record<string, DetectionBox> = {};
+    const [checks] = await Promise.all([
+      Promise.all(
+        products.map(async (product, i) => {
+          const check = await checkRenderedProductIdentity(items[i].productPhoto, finalImage, items[i].box);
+          return { productId: product.id, name: product.name, pass: check?.pass ?? null, note: check?.note ?? null };
+        }),
+      ),
+      Promise.all(
+        products.map(async (product) => {
+          const located = await locateExistingObject(finalImage, product.category);
+          if (located) itemBoxes[product.id] = located.box;
+        }),
+      ),
+    ]);
 
     const totalPrice = products.reduce((sum, p) => sum + p.price, 0);
     const styleTags = Array.from(new Set(products.flatMap((p) => p.styles)));
@@ -104,6 +118,7 @@ export async function POST(req: NextRequest) {
       totalPrice,
       styleTags,
       productIds: products.map((p) => p.id),
+      itemBoxes,
       checks,
     });
   } catch (err) {

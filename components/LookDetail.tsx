@@ -1,6 +1,7 @@
 "use client";
 
-import { ShoppingBag } from "lucide-react";
+import { useState } from "react";
+import { ArrowUpRight, ShoppingBag } from "lucide-react";
 import { formatPrice } from "@/lib/products";
 import { useMaisonStore } from "@/lib/store";
 import type { FinishedRoom } from "@/lib/finishedRooms";
@@ -8,17 +9,74 @@ import type { FinishedRoom } from "@/lib/finishedRooms";
 export default function LookDetail({ room }: { room: FinishedRoom }) {
   const addToCart = useMaisonStore((s) => s.addToCart);
   const addManyToCart = useMaisonStore((s) => s.addManyToCart);
+  const [openHotspot, setOpenHotspot] = useState<string | null>(null);
+
+  const hotspotItems = room.items.filter((item) => item.box);
 
   return (
     <div className="container-page py-14">
       <div className="grid gap-10 lg:grid-cols-[1.3fr_1fr]">
         <div>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={`data:image/png;base64,${room.heroImageBase64}`}
-            alt={room.title}
-            className="w-full rounded-2xl border border-ink-line"
-          />
+          <div className="relative">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={`data:image/png;base64,${room.heroImageBase64}`}
+              alt={room.title}
+              className="w-full rounded-2xl border border-ink-line"
+            />
+            {hotspotItems.map(({ product, box }) => (
+              <button
+                key={product.id}
+                onClick={() => setOpenHotspot(openHotspot === product.id ? null : product.id)}
+                style={{
+                  left: `${box!.x * 100}%`,
+                  top: `${box!.y * 100}%`,
+                  width: `${box!.w * 100}%`,
+                  height: `${box!.h * 100}%`,
+                }}
+                className="absolute rounded-md border-2 border-brass-bright/60 bg-brass/5 transition hover:bg-brass/15"
+                aria-label={`View ${product.name}`}
+              />
+            ))}
+            {openHotspot &&
+              (() => {
+                const item = hotspotItems.find((i) => i.product.id === openHotspot);
+                if (!item) return null;
+                return (
+                  <div
+                    style={{
+                      left: `${Math.min(item.box!.x * 100, 68)}%`,
+                      top: `${(item.box!.y + item.box!.h) * 100}%`,
+                    }}
+                    className="absolute z-10 mt-2 w-60 rounded-lg border border-ink-line bg-ink p-3 shadow-xl"
+                  >
+                    <div className="text-sm font-semibold">{item.product.name}</div>
+                    <div className="mt-1.5 font-display text-lg text-brass-bright">{formatPrice(item.product.price)}</div>
+                    <div className="mt-2.5 flex gap-2">
+                      <button
+                        onClick={() => addToCart(item.product)}
+                        className="flex flex-1 items-center justify-center gap-1 rounded-full bg-brass px-3 py-1.5 text-xs font-semibold text-ink"
+                      >
+                        <ShoppingBag size={12} /> Add
+                      </button>
+                      {item.product.productUrl && (
+                        <a
+                          href={item.product.productUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center gap-1 rounded-full border border-ink-line px-3 py-1.5 text-xs font-semibold text-cream-dim hover:border-brass/50"
+                        >
+                          View <ArrowUpRight size={12} />
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
+          </div>
+          {hotspotItems.length > 0 && (
+            <p className="mt-2 text-[10px] text-cream-faint">Click any highlighted piece to view or add it.</p>
+          )}
         </div>
 
         <div>

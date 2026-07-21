@@ -4,7 +4,7 @@ import Link from "next/link";
 import { AlertTriangle, CheckCircle2, Sparkles, Upload, XCircle } from "lucide-react";
 import { useState } from "react";
 import { formatPrice } from "@/lib/products";
-import type { Product, ProductCategory } from "@/lib/types";
+import type { DetectionBox, Product, ProductCategory } from "@/lib/types";
 
 const CATEGORIES: ProductCategory[] = [
   "sofa", "chair", "table", "lighting", "rug", "art", "plant", "storage", "decor", "textile",
@@ -27,6 +27,7 @@ interface GenerateResult {
   totalPrice: number;
   styleTags: string[];
   productIds: string[];
+  itemBoxes: Record<string, DetectionBox>;
   checks: CheckResult[];
 }
 
@@ -116,6 +117,7 @@ export default function LooksStudio({ catalog }: { catalog: Product[] }) {
           styleTags: result.styleTags,
           heroImageBase64: result.imageBase64,
           productIds: result.productIds,
+          itemBoxes: result.itemBoxes,
           totalPrice: result.totalPrice,
         }),
       });
@@ -272,12 +274,33 @@ export default function LooksStudio({ catalog }: { catalog: Product[] }) {
         <div className="space-y-4">
           <div className="card flex min-h-[420px] items-center justify-center overflow-hidden bg-ink-panel p-0">
             {canvasSrc ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={canvasSrc} alt="Room" className="w-full" />
+              <div className="relative w-full">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={canvasSrc} alt="Room" className="w-full" />
+                {result &&
+                  Object.entries(result.itemBoxes).map(([productId, box]) => (
+                    <div
+                      key={productId}
+                      style={{
+                        left: `${box.x * 100}%`,
+                        top: `${box.y * 100}%`,
+                        width: `${box.w * 100}%`,
+                        height: `${box.h * 100}%`,
+                      }}
+                      className="pointer-events-none absolute rounded-md border-2 border-brass-bright/70"
+                    />
+                  ))}
+              </div>
             ) : (
               <div className="p-16 text-center text-sm text-cream-faint">Upload a room photo to start.</div>
             )}
           </div>
+          {result && Object.keys(result.itemBoxes).length < selectedProducts.length && (
+            <p className="text-[10px] text-amber-400">
+              {selectedProducts.length - Object.keys(result.itemBoxes).length} product(s) couldn&apos;t be located in
+              the final image — they&apos;ll still be listed below it, just without a clickable hotspot.
+            </p>
+          )}
 
           {result && (
             <div className="card space-y-2 p-4">
