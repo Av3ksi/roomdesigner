@@ -29,6 +29,7 @@ interface GenerateResult {
   productIds: string[];
   itemBoxes: Record<string, DetectionBox>;
   checks: CheckResult[];
+  autoMatched: { productId: string; name: string }[];
 }
 
 /**
@@ -319,6 +320,23 @@ export default function LooksStudio({ catalog }: { catalog: Product[] }) {
                     {c.note && <span className="text-cream-faint"> — {c.note}</span>}
                     {c.pass === null && <span className="text-cream-faint"> — check unavailable</span>}
                   </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {result && result.autoMatched.length > 0 && (
+            <div className="card space-y-1.5 p-4">
+              <div className="text-xs font-semibold text-cream-dim">
+                Also found in our catalog ({result.autoMatched.length})
+              </div>
+              <p className="text-[10px] text-cream-faint">
+                Extra pieces the showroom restyle staged in were matched against real products we
+                already sell — added as purchasable hotspots too, included in the total above.
+              </p>
+              {result.autoMatched.map((m) => (
+                <div key={m.productId} className="text-xs text-cream-dim">
+                  • {m.name}
                 </div>
               ))}
             </div>

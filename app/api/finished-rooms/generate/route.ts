@@ -3,7 +3,8 @@ import { aiEnabled } from "@/lib/ai/claude";
 import { checkRenderedProductIdentity } from "@/lib/ai/identityCheck";
 import { compositingEnabled, composeSceneWithProducts, reshapeBoxForProduct, type SceneItem } from "@/lib/ai/composite";
 import { suggestPlacements } from "@/lib/ai/placement";
-import { locateExistingObject } from "@/lib/ai/locate";
+import { detectUnaccountedItems, locateExistingObject } from "@/lib/ai/locate";
+import { findBestCatalogMatch } from "@/lib/productSearch";
 import { loadProductCatalog } from "@/lib/productSearchDb";
 import type { DetectionBox, Product } from "@/lib/types";
 
@@ -110,16 +111,47 @@ export async function POST(req: NextRequest) {
       ),
     ]);
 
-    const totalPrice = products.reduce((sum, p) => sum + p.price, 0);
-    const styleTags = Array.from(new Set(products.flatMap((p) => p.styles)));
+    // Showroom-restyle mode stages in extra pieces beyond what was picked
+    // (a bed, a second lamp) for atmosphere — by default unlabeled and
+    // unpurchasable. Try to turn genuine matches into sellable hotspots
+    // too, but ONLY against our own catalog (never an external retailer —
+    // we can only fulfill what our real dropship supplier carries).
+    const autoMatched: { product: Product; box: DetectionBox | null }[] = [];
+    if (styleDirection) {
+      const extras = await detectUnaccountedItems(
+        finalImage,
+        products.map((p) => p.name),
+      );
+      for (const extra of extras) {
+        const match = findBestCatalogMatch(catalog, extra.description);
+        if (!match) continue;
+        // Skip a category already used by an explicit pick — locating a
+        // second instance of the same category can't reliably tell the two
+        // apart (see lib/ai/locate.ts: "if multiple match, pick the most
+        // prominent one"), risking a duplicate hotspot at the same spot.
+        if (seenCategories.has(match.category)) continue;
+        if (autoMatched.some((a) => a.product.id === match.id)) continue;
+        const located = await locateExistingObject(finalImage, match.category);
+        autoMatched.push({ product: match, box: located?.box ?? null });
+        seenCategories.add(match.category);
+      }
+    }
+
+    const allProducts = [...products, ...autoMatched.map((a) => a.product)];
+    const allItemBoxes = { ...itemBoxes };
+    for (const a of autoMatched) if (a.box) allItemBoxes[a.product.id] = a.box;
+
+    const totalPrice = allProducts.reduce((sum, p) => sum + p.price, 0);
+    const styleTags = Array.from(new Set(allProducts.flatMap((p) => p.styles)));
 
     return NextResponse.json({
       imageBase64: result.imageBase64,
       totalPrice,
       styleTags,
-      productIds: products.map((p) => p.id),
-      itemBoxes,
+      productIds: allProducts.map((p) => p.id),
+      itemBoxes: allItemBoxes,
       checks,
+      autoMatched: autoMatched.map((a) => ({ productId: a.product.id, name: a.product.name })),
     });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 500 });

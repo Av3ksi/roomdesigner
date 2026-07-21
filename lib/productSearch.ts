@@ -83,6 +83,35 @@ export function searchProducts(products: Product[], filters: ProductSearchFilter
     .map((s) => s.p);
 }
 
+/**
+ * Matches a free-text description (from Claude vision, describing an
+ * object it saw in a photo — see lib/ai/locate.ts's detectUnaccountedItems)
+ * against OUR OWN catalog, for turning AI-staged extras into purchasable
+ * hotspots. Deliberately its own small scoring pass rather than reusing
+ * searchProducts: that function always returns its `limit` best-effort
+ * results even at score 0 (right for an agent that should get *something*
+ * back), which is wrong here — a random unrelated product silently
+ * attached to a customer's cart is worse than no match at all. Requires a
+ * real minimum keyword overlap; returns null rather than guessing.
+ */
+export function findBestCatalogMatch(products: Product[], description: string): Product | null {
+  const words = description
+    .toLowerCase()
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter((w) => w.length > 3);
+  if (words.length === 0) return null;
+
+  let best: { product: Product; score: number } | null = null;
+  for (const p of products) {
+    const text = `${p.name} ${p.blurb}`.toLowerCase();
+    const score = words.reduce((n, w) => (text.includes(w) ? n + 1 : n), 0);
+    if (score > 0 && (!best || score > best.score)) best = { product: p, score };
+  }
+
+  const threshold = words.length >= 2 ? 2 : 1;
+  return best && best.score >= threshold ? best.product : null;
+}
+
 /** Compact representation sent back to the agent — keeps tool results small. */
 export function toAgentProductSummary(p: Product) {
   return {

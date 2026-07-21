@@ -106,3 +106,87 @@ export async function locateExistingObject(roomPhoto: Buffer, category: ProductC
     return null;
   }
 }
+
+const DETECT_EXTRAS_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["items"],
+  properties: {
+    items: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["description"],
+        properties: { description: { type: "string" } },
+      },
+    },
+  },
+} as const;
+
+export interface UnaccountedItem {
+  /** Short search phrase (German — the catalog is German), e.g. "dunkles Holzbett mit Kopfteil". */
+  description: string;
+}
+
+/**
+ * Finds furniture/decor visible in a finished render that ISN'T one of the
+ * explicitly chosen products — showroom-restyle mode stages in extra
+ * pieces (a bed, a second lamp) for atmosphere, and by default those are
+ * unlabeled and unpurchasable. This is the detection half of turning that
+ * into a sale: describe what else is there, then a caller matches each
+ * description against OUR OWN catalog (lib/productSearch.ts's
+ * findBestCatalogMatch) — never an external retailer. If we don't
+ * genuinely carry something close, it stays as atmosphere; we don't
+ * invent a match or send customers elsewhere to buy it.
+ */
+export async function detectUnaccountedItems(roomPhoto: Buffer, alreadyIncluded: string[]): Promise<UnaccountedItem[]> {
+  if (!aiEnabled()) return [];
+  try {
+    const jpeg = await sharp(roomPhoto)
+      .rotate()
+      .resize(LOCATE_MAX_EDGE, LOCATE_MAX_EDGE, { fit: "inside", withoutEnlargement: true })
+      .jpeg({ quality: 80 })
+      .toBuffer();
+
+    const response = await new Anthropic().messages.create({
+      model: MODEL,
+      max_tokens: 1024,
+      thinking: { type: "adaptive" },
+      system:
+        "You review a staged room photo for an interior design marketplace. Some furniture/decor in the photo are " +
+        "already-catalogued products the customer can buy (listed by the caller); everything else may be additional " +
+        "staging, or other real objects. List up to 6 OTHER distinct furniture or decor items visible that are NOT " +
+        "already covered by the given list, and substantial enough to plausibly be a real, sellable product — skip " +
+        "tiny incidental clutter (a single book, a glass, a laptop). For each, give a short, concrete search phrase " +
+        "(2-5 words, in German, since the retailer's catalog titles are German) naming its type, color and material " +
+        "— specific enough to search a product catalog with.",
+      output_config: {
+        format: { type: "json_schema", schema: DETECT_EXTRAS_SCHEMA as unknown as Record<string, unknown> },
+      },
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: `Already-included products: ${alreadyIncluded.join(", ") || "(none)"}` },
+            { type: "image", source: { type: "base64", media_type: "image/jpeg", data: jpeg.toString("base64") } },
+            { type: "text", text: "List other distinct furniture/decor items visible, as described above." },
+          ],
+        },
+      ],
+    });
+
+    if (response.stop_reason === "refusal") return [];
+    const text = response.content.find((b) => b.type === "text")?.text;
+    if (!text) return [];
+
+    const parsed = JSON.parse(text) as { items?: unknown };
+    if (!Array.isArray(parsed.items)) return [];
+    return parsed.items
+      .filter((i): i is { description: string } => typeof (i as { description?: unknown })?.description === "string")
+      .slice(0, 6);
+  } catch (err) {
+    console.error("[maison] detectUnaccountedItems failed, skipping auto-match:", err);
+    return [];
+  }
+}
