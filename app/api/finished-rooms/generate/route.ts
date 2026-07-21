@@ -151,7 +151,7 @@ export async function POST(req: NextRequest) {
       productIds: allProducts.map((p) => p.id),
       itemBoxes: allItemBoxes,
       checks,
-      autoMatched: autoMatched.map((a) => ({ productId: a.product.id, name: a.product.name })),
+      autoMatched: autoMatched.map((a) => ({ productId: a.product.id, name: a.product.name, price: a.product.price })),
     });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 500 });

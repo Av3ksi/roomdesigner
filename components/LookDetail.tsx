@@ -1,17 +1,29 @@
 "use client";
 
-import { useState } from "react";
-import { ArrowUpRight, ShoppingBag } from "lucide-react";
+import { ShoppingBag } from "lucide-react";
 import { formatPrice } from "@/lib/products";
 import { useMaisonStore } from "@/lib/store";
+import RoomHotspots, { type HotspotItem } from "@/components/RoomHotspots";
 import type { FinishedRoom } from "@/lib/finishedRooms";
 
 export default function LookDetail({ room }: { room: FinishedRoom }) {
   const addToCart = useMaisonStore((s) => s.addToCart);
   const addManyToCart = useMaisonStore((s) => s.addManyToCart);
-  const [openHotspot, setOpenHotspot] = useState<string | null>(null);
 
-  const hotspotItems = room.items.filter((item) => item.box);
+  const hotspots: HotspotItem[] = room.items
+    .filter((item) => item.box)
+    .map((item) => ({
+      id: item.product.id,
+      name: item.product.name,
+      price: item.product.price,
+      box: item.box!,
+      autoMatched: item.autoMatched,
+    }));
+
+  function addById(id: string) {
+    const item = room.items.find((i) => i.product.id === id);
+    if (item) addToCart(item.product);
+  }
 
   return (
     <div className="container-page py-14">
@@ -24,57 +36,9 @@ export default function LookDetail({ room }: { room: FinishedRoom }) {
               alt={room.title}
               className="w-full rounded-2xl border border-ink-line"
             />
-            {hotspotItems.map(({ product, box }) => (
-              <button
-                key={product.id}
-                onClick={() => setOpenHotspot(openHotspot === product.id ? null : product.id)}
-                style={{
-                  left: `${box!.x * 100}%`,
-                  top: `${box!.y * 100}%`,
-                  width: `${box!.w * 100}%`,
-                  height: `${box!.h * 100}%`,
-                }}
-                className="absolute rounded-md border-2 border-brass-bright/60 bg-brass/5 transition hover:bg-brass/15"
-                aria-label={`View ${product.name}`}
-              />
-            ))}
-            {openHotspot &&
-              (() => {
-                const item = hotspotItems.find((i) => i.product.id === openHotspot);
-                if (!item) return null;
-                return (
-                  <div
-                    style={{
-                      left: `${Math.min(item.box!.x * 100, 68)}%`,
-                      top: `${(item.box!.y + item.box!.h) * 100}%`,
-                    }}
-                    className="absolute z-10 mt-2 w-60 rounded-lg border border-ink-line bg-ink p-3 shadow-xl"
-                  >
-                    <div className="text-sm font-semibold">{item.product.name}</div>
-                    <div className="mt-1.5 font-display text-lg text-brass-bright">{formatPrice(item.product.price)}</div>
-                    <div className="mt-2.5 flex gap-2">
-                      <button
-                        onClick={() => addToCart(item.product)}
-                        className="flex flex-1 items-center justify-center gap-1 rounded-full bg-brass px-3 py-1.5 text-xs font-semibold text-ink"
-                      >
-                        <ShoppingBag size={12} /> Add
-                      </button>
-                      {item.product.productUrl && (
-                        <a
-                          href={item.product.productUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="flex items-center gap-1 rounded-full border border-ink-line px-3 py-1.5 text-xs font-semibold text-cream-dim hover:border-brass/50"
-                        >
-                          View <ArrowUpRight size={12} />
-                        </a>
-                      )}
-                    </div>
-                  </div>
-                );
-              })()}
+            <RoomHotspots items={hotspots} onAction={addById} actionLabel="Add to cart" />
           </div>
-          {hotspotItems.length > 0 && (
+          {hotspots.length > 0 && (
             <p className="mt-2 text-[10px] text-cream-faint">Click any highlighted piece to view or add it.</p>
           )}
         </div>

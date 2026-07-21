@@ -139,4 +139,10 @@ async function runSchema(): Promise<void> {
   // hotspots on /looks/[id]. Rows created before this existed just have
   // '{}' and render without hotspots rather than erroring.
   await db`ALTER TABLE finished_rooms ADD COLUMN IF NOT EXISTS item_boxes JSONB NOT NULL DEFAULT '{}'::jsonb`;
+  // Which product_ids were auto-matched from AI staging (lib/ai/locate.ts's
+  // detectUnaccountedItems) rather than hand-picked by the curator — lets
+  // the UI mark them visually distinct (a different hotspot color) so
+  // nobody mistakes "we happened to find something close" for "this was
+  // deliberately styled in".
+  await db`ALTER TABLE finished_rooms ADD COLUMN IF NOT EXISTS auto_matched_ids TEXT[] NOT NULL DEFAULT '{}'`;
 }

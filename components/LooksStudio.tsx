@@ -4,6 +4,7 @@ import Link from "next/link";
 import { AlertTriangle, CheckCircle2, Sparkles, Upload, XCircle } from "lucide-react";
 import { useState } from "react";
 import { formatPrice } from "@/lib/products";
+import RoomHotspots, { type HotspotItem } from "@/components/RoomHotspots";
 import type { DetectionBox, Product, ProductCategory } from "@/lib/types";
 
 const CATEGORIES: ProductCategory[] = [
@@ -29,7 +30,7 @@ interface GenerateResult {
   productIds: string[];
   itemBoxes: Record<string, DetectionBox>;
   checks: CheckResult[];
-  autoMatched: { productId: string; name: string }[];
+  autoMatched: { productId: string; name: string; price: number }[];
 }
 
 /**
@@ -119,6 +120,7 @@ export default function LooksStudio({ catalog }: { catalog: Product[] }) {
           heroImageBase64: result.imageBase64,
           productIds: result.productIds,
           itemBoxes: result.itemBoxes,
+          autoMatchedIds: result.autoMatched.map((a) => a.productId),
           totalPrice: result.totalPrice,
         }),
       });
@@ -134,6 +136,25 @@ export default function LooksStudio({ catalog }: { catalog: Product[] }) {
 
   const canGenerate = Boolean(roomFile) && selectedProducts.length > 0 && !generating;
   const canvasSrc = result ? `data:image/png;base64,${result.imageBase64}` : roomPreviewUrl;
+
+  const hotspots: HotspotItem[] = result
+    ? (() => {
+        const priceById = new Map(selectedProducts.map((p) => [p.id, p.price]));
+        const nameById = new Map(selectedProducts.map((p) => [p.id, p.name]));
+        const autoMatchedIds = new Set(result.autoMatched.map((a) => a.productId));
+        for (const a of result.autoMatched) {
+          priceById.set(a.productId, a.price);
+          nameById.set(a.productId, a.name);
+        }
+        return Object.entries(result.itemBoxes).map(([id, box]) => ({
+          id,
+          name: nameById.get(id) ?? id,
+          price: priceById.get(id) ?? 0,
+          box,
+          autoMatched: autoMatchedIds.has(id),
+        }));
+      })()
+    : [];
 
   return (
     <div className="container-page py-10">
@@ -278,19 +299,7 @@ export default function LooksStudio({ catalog }: { catalog: Product[] }) {
               <div className="relative w-full">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src={canvasSrc} alt="Room" className="w-full" />
-                {result &&
-                  Object.entries(result.itemBoxes).map(([productId, box]) => (
-                    <div
-                      key={productId}
-                      style={{
-                        left: `${box.x * 100}%`,
-                        top: `${box.y * 100}%`,
-                        width: `${box.w * 100}%`,
-                        height: `${box.h * 100}%`,
-                      }}
-                      className="pointer-events-none absolute rounded-md border-2 border-brass-bright/70"
-                    />
-                  ))}
+                <RoomHotspots items={hotspots} />
               </div>
             ) : (
               <div className="p-16 text-center text-sm text-cream-faint">Upload a room photo to start.</div>

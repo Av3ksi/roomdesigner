@@ -13,7 +13,7 @@ export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => null);
   if (!body) return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
 
-  const { title, description, styleTags, heroImageBase64, productIds, itemBoxes, totalPrice } = body;
+  const { title, description, styleTags, heroImageBase64, productIds, itemBoxes, autoMatchedIds, totalPrice } = body;
   if (
     typeof title !== "string" ||
     !title.trim() ||
@@ -34,6 +34,7 @@ export async function POST(req: NextRequest) {
       heroImageBase64,
       productIds,
       itemBoxes: itemBoxes && typeof itemBoxes === "object" ? itemBoxes : undefined,
+      autoMatchedIds: Array.isArray(autoMatchedIds) ? autoMatchedIds.filter((id) => typeof id === "string") : undefined,
       totalPrice,
     });
     return NextResponse.json({ id });

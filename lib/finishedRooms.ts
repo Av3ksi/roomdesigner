@@ -18,6 +18,8 @@ export interface FinishedRoomItem {
   product: Product;
   /** Where this product actually ended up in the final hero image — located post-generation (lib/ai/locate.ts), not the pre-generation placement guess. */
   box: DetectionBox | null;
+  /** Matched from AI staging (lib/ai/locate.ts's detectUnaccountedItems) rather than hand-picked by the curator. */
+  autoMatched: boolean;
 }
 
 export interface FinishedRoom {
@@ -39,9 +41,10 @@ function resolveRow(row: Record<string, unknown>, catalog: Product[]): FinishedR
   const productIds = (row.product_ids as string[] | null) ?? [];
   const products = productIds.map((id) => byId.get(id)).filter((p): p is Product => Boolean(p));
   const itemBoxes = (row.item_boxes as Record<string, unknown> | null) ?? {};
+  const autoMatchedIds = new Set((row.auto_matched_ids as string[] | null) ?? []);
   const items: FinishedRoomItem[] = products.map((product) => {
     const box = itemBoxes[product.id];
-    return { product, box: isValidBox(box) ? box : null };
+    return { product, box: isValidBox(box) ? box : null, autoMatched: autoMatchedIds.has(product.id) };
   });
   return {
     id: row.id as string,
@@ -64,15 +67,17 @@ export async function createFinishedRoom(input: {
   productIds: string[];
   /** productId -> its hotspot box in the hero image, when located successfully. */
   itemBoxes?: Record<string, DetectionBox>;
+  /** Subset of productIds that were auto-matched from AI staging rather than hand-picked. */
+  autoMatchedIds?: string[];
   totalPrice: number;
 }): Promise<string> {
   await ensureSchema();
   const db = sql();
   const rows = await db`
-    INSERT INTO finished_rooms (title, description, style_tags, hero_image_base64, product_ids, item_boxes, total_price)
+    INSERT INTO finished_rooms (title, description, style_tags, hero_image_base64, product_ids, item_boxes, auto_matched_ids, total_price)
     VALUES (
       ${input.title}, ${input.description}, ${input.styleTags}, ${input.heroImageBase64}, ${input.productIds},
-      ${JSON.stringify(input.itemBoxes ?? {})}, ${input.totalPrice}
+      ${JSON.stringify(input.itemBoxes ?? {})}, ${input.autoMatchedIds ?? []}, ${input.totalPrice}
     )
     RETURNING id
   `;
