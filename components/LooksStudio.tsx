@@ -23,6 +23,14 @@ interface CheckResult {
   note: string | null;
 }
 
+interface ExternalItem {
+  name: string;
+  url: string;
+  retailer: string;
+  priceText: string | null;
+  box: DetectionBox | null;
+}
+
 interface GenerateResult {
   imageBase64: string;
   totalPrice: number;
@@ -31,6 +39,7 @@ interface GenerateResult {
   itemBoxes: Record<string, DetectionBox>;
   checks: CheckResult[];
   autoMatched: { productId: string; name: string; price: number }[];
+  externals: ExternalItem[];
 }
 
 /**
@@ -121,6 +130,7 @@ export default function LooksStudio({ catalog }: { catalog: Product[] }) {
           productIds: result.productIds,
           itemBoxes: result.itemBoxes,
           autoMatchedIds: result.autoMatched.map((a) => a.productId),
+          externals: result.externals,
           totalPrice: result.totalPrice,
         }),
       });
@@ -146,13 +156,25 @@ export default function LooksStudio({ catalog }: { catalog: Product[] }) {
           priceById.set(a.productId, a.price);
           nameById.set(a.productId, a.name);
         }
-        return Object.entries(result.itemBoxes).map(([id, box]) => ({
+        const productPins: HotspotItem[] = Object.entries(result.itemBoxes).map(([id, box]) => ({
           id,
           name: nameById.get(id) ?? id,
-          price: priceById.get(id) ?? 0,
+          priceLabel: formatPrice(priceById.get(id) ?? 0),
           box,
-          autoMatched: autoMatchedIds.has(id),
+          kind: autoMatchedIds.has(id) ? "auto" : "catalog",
         }));
+        const externalPins: HotspotItem[] = result.externals
+          .filter((e) => e.box)
+          .map((e, i) => ({
+            id: `ext-${i}`,
+            name: e.name,
+            priceLabel: e.priceText ?? "See price",
+            box: e.box!,
+            kind: "external",
+            url: e.url,
+            retailer: e.retailer,
+          }));
+        return [...productPins, ...externalPins];
       })()
     : [];
 
@@ -347,6 +369,30 @@ export default function LooksStudio({ catalog }: { catalog: Product[] }) {
                 <div key={m.productId} className="text-xs text-cream-dim">
                   • {m.name}
                 </div>
+              ))}
+            </div>
+          )}
+
+          {result && result.externals.length > 0 && (
+            <div className="card space-y-1.5 p-4">
+              <div className="text-xs font-semibold text-cream-dim">
+                Sourced from other stores ({result.externals.length})
+              </div>
+              <p className="text-[10px] text-cream-faint">
+                Staged pieces we don&apos;t carry, matched to a real product elsewhere via web search.
+                These link out (rose pins) and aren&apos;t in the total — no margin until we source them ourselves.
+              </p>
+              {result.externals.map((e, i) => (
+                <a
+                  key={i}
+                  href={e.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="block truncate text-xs text-rose-300 hover:underline"
+                >
+                  • {e.name} — {e.retailer}
+                  {e.priceText ? ` · ${e.priceText}` : ""}
+                </a>
               ))}
             </div>
           )}

@@ -22,6 +22,15 @@ export interface FinishedRoomItem {
   autoMatched: boolean;
 }
 
+/** A staged item we don't carry, sourced to a real external retailer (lib/ai/webProductSearch.ts). Links out; not add-to-cart; not in the total. */
+export interface FinishedRoomExternalItem {
+  name: string;
+  url: string;
+  retailer: string;
+  priceText: string | null;
+  box: DetectionBox | null;
+}
+
 export interface FinishedRoom {
   id: string;
   title: string;
@@ -32,8 +41,24 @@ export interface FinishedRoom {
   products: Product[];
   /** Same products, each paired with its hotspot box when one was located (older rows and unmatched boxes have box: null). */
   items: FinishedRoomItem[];
+  /** Web-sourced items for staged pieces we don't carry — link out, never added to cart. */
+  externals: FinishedRoomExternalItem[];
   totalPrice: number;
   createdAt: string;
+}
+
+function resolveExternals(raw: unknown): FinishedRoomExternalItem[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter((e): e is Record<string, unknown> => typeof e === "object" && e !== null)
+    .filter((e) => typeof e.name === "string" && typeof e.url === "string")
+    .map((e) => ({
+      name: e.name as string,
+      url: e.url as string,
+      retailer: typeof e.retailer === "string" ? e.retailer : "",
+      priceText: typeof e.priceText === "string" ? e.priceText : null,
+      box: isValidBox(e.box) ? e.box : null,
+    }));
 }
 
 function resolveRow(row: Record<string, unknown>, catalog: Product[]): FinishedRoom {
@@ -54,6 +79,7 @@ function resolveRow(row: Record<string, unknown>, catalog: Product[]): FinishedR
     heroImageBase64: row.hero_image_base64 as string,
     products,
     items,
+    externals: resolveExternals(row.external_items),
     totalPrice: Number(row.total_price),
     createdAt: row.created_at as string,
   };
@@ -69,15 +95,17 @@ export async function createFinishedRoom(input: {
   itemBoxes?: Record<string, DetectionBox>;
   /** Subset of productIds that were auto-matched from AI staging rather than hand-picked. */
   autoMatchedIds?: string[];
+  /** Web-sourced external items for staged pieces we don't carry. */
+  externals?: FinishedRoomExternalItem[];
   totalPrice: number;
 }): Promise<string> {
   await ensureSchema();
   const db = sql();
   const rows = await db`
-    INSERT INTO finished_rooms (title, description, style_tags, hero_image_base64, product_ids, item_boxes, auto_matched_ids, total_price)
+    INSERT INTO finished_rooms (title, description, style_tags, hero_image_base64, product_ids, item_boxes, auto_matched_ids, external_items, total_price)
     VALUES (
       ${input.title}, ${input.description}, ${input.styleTags}, ${input.heroImageBase64}, ${input.productIds},
-      ${JSON.stringify(input.itemBoxes ?? {})}, ${input.autoMatchedIds ?? []}, ${input.totalPrice}
+      ${JSON.stringify(input.itemBoxes ?? {})}, ${input.autoMatchedIds ?? []}, ${JSON.stringify(input.externals ?? [])}, ${input.totalPrice}
     )
     RETURNING id
   `;

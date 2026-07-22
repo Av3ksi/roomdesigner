@@ -145,4 +145,8 @@ async function runSchema(): Promise<void> {
   // nobody mistakes "we happened to find something close" for "this was
   // deliberately styled in".
   await db`ALTER TABLE finished_rooms ADD COLUMN IF NOT EXISTS auto_matched_ids TEXT[] NOT NULL DEFAULT '{}'`;
+  // Staged items we don't carry, sourced to a real external retailer via web
+  // search ([{name, url, retailer, priceText, box}]). Not catalog products —
+  // they link out, aren't added to cart, and don't count toward the total.
+  await db`ALTER TABLE finished_rooms ADD COLUMN IF NOT EXISTS external_items JSONB NOT NULL DEFAULT '[]'::jsonb`;
 }

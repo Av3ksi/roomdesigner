@@ -3,13 +3,32 @@ import { aiEnabled } from "@/lib/ai/claude";
 import { checkRenderedProductIdentity } from "@/lib/ai/identityCheck";
 import { compositingEnabled, composeSceneWithProducts, reshapeBoxForProduct, type SceneItem } from "@/lib/ai/composite";
 import { suggestPlacements } from "@/lib/ai/placement";
-import { detectUnaccountedItems, locateExistingObject } from "@/lib/ai/locate";
+import { detectUnaccountedItems, locateExistingObject, locateProductInImage } from "@/lib/ai/locate";
+import { searchWebForProduct, type WebProduct } from "@/lib/ai/webProductSearch";
 import { findBestCatalogMatch } from "@/lib/productSearch";
 import { loadProductCatalog } from "@/lib/productSearchDb";
-import type { DetectionBox, Product } from "@/lib/types";
+import type { DetectionBox, Product, ProductCategory } from "@/lib/types";
 
 // sharp (compositing) needs the Node runtime, not edge.
 export const runtime = "nodejs";
+
+/** An external web product paired with where the item it stands in for sits in the render. */
+interface WebExternalItem extends WebProduct {
+  box: DetectionBox | null;
+}
+
+/** Fetch a catalog match's photo and locate that exact product in the render (null on any failure). */
+async function locateMatchedProduct(finalImage: Buffer, imageUrl: string, category: ProductCategory): Promise<DetectionBox | null> {
+  try {
+    const res = await fetch(imageUrl);
+    if (!res.ok) return null;
+    const photo = Buffer.from(await res.arrayBuffer());
+    const located = await locateProductInImage(finalImage, photo, category);
+    return located?.box ?? null;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Powers the in-app Looks Studio (components/LooksStudio.tsx) — the same
@@ -91,10 +110,10 @@ export async function POST(req: NextRequest) {
     const result = await composeSceneWithProducts(roomPhoto, items, quality, styleDirection);
     const finalImage = Buffer.from(result.imageBase64, "base64");
 
-    // Where each product actually ended up in the FINAL image — the
-    // pre-generation box (items[i].box) is only a placement suggestion, and
-    // showroom-restyle mode is explicitly free to ignore it. Locating
-    // against the finished render is what makes hotspots reliable.
+    // Where each product actually ended up in the FINAL image — located by
+    // matching the product's OWN photo against the render (not "any object
+    // of this category"), so a hotspot can't attach to a different piece the
+    // restyle staged in. A product that isn't visibly present gets no box.
     const itemBoxes: Record<string, DetectionBox> = {};
     const [checks] = await Promise.all([
       Promise.all(
@@ -104,36 +123,43 @@ export async function POST(req: NextRequest) {
         }),
       ),
       Promise.all(
-        products.map(async (product) => {
-          const located = await locateExistingObject(finalImage, product.category);
+        products.map(async (product, i) => {
+          const located = await locateProductInImage(finalImage, items[i].productPhoto, product.category);
           if (located) itemBoxes[product.id] = located.box;
         }),
       ),
     ]);
 
-    // Showroom-restyle mode stages in extra pieces beyond what was picked
-    // (a bed, a second lamp) for atmosphere — by default unlabeled and
-    // unpurchasable. Try to turn genuine matches into sellable hotspots
-    // too, but ONLY against our own catalog (never an external retailer —
-    // we can only fulfill what our real dropship supplier carries).
+    // Showroom-restyle mode stages in extra pieces beyond what was picked (a
+    // bed, a poster). Make each shoppable: first try our OWN catalog (real
+    // dropship margin); if we don't carry it, fall back to a live web search
+    // for a real product page the customer can buy from (a stopgap — no
+    // margin, clearly marked external, until we source it ourselves).
     const autoMatched: { product: Product; box: DetectionBox | null }[] = [];
+    const externals: WebExternalItem[] = [];
     if (styleDirection) {
       const extras = await detectUnaccountedItems(
         finalImage,
         products.map((p) => p.name),
       );
       for (const extra of extras) {
+        // One instance per category — locating a second item of a category
+        // already used can't reliably distinguish the two.
+        if (seenCategories.has(extra.category)) continue;
+        seenCategories.add(extra.category);
+
         const match = findBestCatalogMatch(catalog, extra.description);
-        if (!match) continue;
-        // Skip a category already used by an explicit pick — locating a
-        // second instance of the same category can't reliably tell the two
-        // apart (see lib/ai/locate.ts: "if multiple match, pick the most
-        // prominent one"), risking a duplicate hotspot at the same spot.
-        if (seenCategories.has(match.category)) continue;
-        if (autoMatched.some((a) => a.product.id === match.id)) continue;
-        const located = await locateExistingObject(finalImage, match.category);
-        autoMatched.push({ product: match, box: located?.box ?? null });
-        seenCategories.add(match.category);
+        if (match && !autoMatched.some((a) => a.product.id === match.id)) {
+          const box = match.imageUrl ? await locateMatchedProduct(finalImage, match.imageUrl, match.category) : null;
+          autoMatched.push({ product: match, box });
+          continue;
+        }
+
+        const web = await searchWebForProduct(extra.webQuery);
+        if (web) {
+          const located = await locateExistingObject(finalImage, extra.category);
+          externals.push({ ...web, box: located?.box ?? null });
+        }
       }
     }
 
@@ -152,6 +178,7 @@ export async function POST(req: NextRequest) {
       itemBoxes: allItemBoxes,
       checks,
       autoMatched: autoMatched.map((a) => ({ productId: a.product.id, name: a.product.name, price: a.product.price })),
+      externals,
     });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 500 });

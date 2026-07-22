@@ -1,8 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
 import { dbEnabled } from "@/lib/db";
-import { createFinishedRoom } from "@/lib/finishedRooms";
+import { createFinishedRoom, type FinishedRoomExternalItem } from "@/lib/finishedRooms";
+import { isValidBox } from "@/lib/placementBoxes";
 
 export const runtime = "nodejs";
+
+function sanitizeExternals(raw: unknown[]): FinishedRoomExternalItem[] {
+  return raw
+    .filter((e): e is Record<string, unknown> => typeof e === "object" && e !== null)
+    .filter((e) => typeof e.name === "string" && typeof e.url === "string" && /^https?:\/\//i.test(e.url as string))
+    .map((e) => ({
+      name: e.name as string,
+      url: e.url as string,
+      retailer: typeof e.retailer === "string" ? e.retailer : "",
+      priceText: typeof e.priceText === "string" ? e.priceText : null,
+      box: isValidBox(e.box) ? e.box : null,
+    }));
+}
 
 /** Saves a previously-generated (via /api/finished-rooms/generate) scene as a published, sellable bundle. */
 export async function POST(req: NextRequest) {
@@ -13,7 +27,7 @@ export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => null);
   if (!body) return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
 
-  const { title, description, styleTags, heroImageBase64, productIds, itemBoxes, autoMatchedIds, totalPrice } = body;
+  const { title, description, styleTags, heroImageBase64, productIds, itemBoxes, autoMatchedIds, externals, totalPrice } = body;
   if (
     typeof title !== "string" ||
     !title.trim() ||
@@ -35,6 +49,7 @@ export async function POST(req: NextRequest) {
       productIds,
       itemBoxes: itemBoxes && typeof itemBoxes === "object" ? itemBoxes : undefined,
       autoMatchedIds: Array.isArray(autoMatchedIds) ? autoMatchedIds.filter((id) => typeof id === "string") : undefined,
+      externals: Array.isArray(externals) ? sanitizeExternals(externals) : undefined,
       totalPrice,
     });
     return NextResponse.json({ id });
