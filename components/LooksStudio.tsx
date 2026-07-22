@@ -327,10 +327,10 @@ export default function LooksStudio({ catalog }: { catalog: Product[] }) {
               <div className="p-16 text-center text-sm text-cream-faint">Upload a room photo to start.</div>
             )}
           </div>
-          {result && Object.keys(result.itemBoxes).length < selectedProducts.length && (
+          {result && result.checks.some((c) => c.pass === false) && (
             <p className="text-[10px] text-amber-400">
-              {selectedProducts.length - Object.keys(result.itemBoxes).length} product(s) couldn&apos;t be located in
-              the final image — they&apos;ll still be listed below it, just without a clickable hotspot.
+              {result.checks.filter((c) => c.pass === false).length} picked product(s) weren&apos;t found in the render
+              (substituted or omitted) — see the identity check below. They&apos;re still listed, just without a pin.
             </p>
           )}
 

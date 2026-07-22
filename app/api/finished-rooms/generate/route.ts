@@ -1,13 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { aiEnabled } from "@/lib/ai/claude";
-import { checkRenderedProductIdentity } from "@/lib/ai/identityCheck";
 import { compositingEnabled, composeSceneWithProducts, reshapeBoxForProduct, type SceneItem } from "@/lib/ai/composite";
 import { suggestPlacements } from "@/lib/ai/placement";
-import { detectUnaccountedItems, locateExistingObject, locateProductInImage } from "@/lib/ai/locate";
+import { detectSceneItems } from "@/lib/ai/locate";
 import { searchWebForProduct, type WebProduct } from "@/lib/ai/webProductSearch";
 import { findBestCatalogMatch } from "@/lib/productSearch";
 import { loadProductCatalog } from "@/lib/productSearchDb";
-import type { DetectionBox, Product, ProductCategory } from "@/lib/types";
+import type { DetectionBox, Product } from "@/lib/types";
 
 // sharp (compositing) needs the Node runtime, not edge.
 export const runtime = "nodejs";
@@ -15,19 +14,6 @@ export const runtime = "nodejs";
 /** An external web product paired with where the item it stands in for sits in the render. */
 interface WebExternalItem extends WebProduct {
   box: DetectionBox | null;
-}
-
-/** Fetch a catalog match's photo and locate that exact product in the render (null on any failure). */
-async function locateMatchedProduct(finalImage: Buffer, imageUrl: string, category: ProductCategory): Promise<DetectionBox | null> {
-  try {
-    const res = await fetch(imageUrl);
-    if (!res.ok) return null;
-    const photo = Buffer.from(await res.arrayBuffer());
-    const located = await locateProductInImage(finalImage, photo, category);
-    return located?.box ?? null;
-  } catch {
-    return null;
-  }
 }
 
 /**
@@ -110,62 +96,60 @@ export async function POST(req: NextRequest) {
     const result = await composeSceneWithProducts(roomPhoto, items, quality, styleDirection);
     const finalImage = Buffer.from(result.imageBase64, "base64");
 
-    // Where each product actually ended up in the FINAL image — located by
-    // matching the product's OWN photo against the render (not "any object
-    // of this category"), so a hotspot can't attach to a different piece the
-    // restyle staged in. A product that isn't visibly present gets no box.
+    // ONE detection pass over the finished render: every distinct object,
+    // its box, and whether it's one of the placed products (by 1-based
+    // index) or an extra. This replaces per-product locate calls that
+    // guessed independently and cross-labeled objects.
+    const detected = await detectSceneItems(
+      finalImage,
+      products.map((p, i) => ({ index: i + 1, name: p.name, category: p.category })),
+    );
+
     const itemBoxes: Record<string, DetectionBox> = {};
-    const [checks] = await Promise.all([
-      Promise.all(
-        products.map(async (product, i) => {
-          const check = await checkRenderedProductIdentity(items[i].productPhoto, finalImage, items[i].box);
-          return { productId: product.id, name: product.name, pass: check?.pass ?? null, note: check?.note ?? null };
-        }),
-      ),
-      Promise.all(
-        products.map(async (product, i) => {
-          const located = await locateProductInImage(finalImage, items[i].productPhoto, product.category);
-          if (located) itemBoxes[product.id] = located.box;
-        }),
-      ),
-    ]);
+    const autoMatched: { product: Product; box: DetectionBox }[] = [];
+    const usedProductIds = new Set<string>();
+    // Extras that need a web search — collected, then run in parallel.
+    const webCandidates: { box: DetectionBox; query: string }[] = [];
 
-    // Showroom-restyle mode stages in extra pieces beyond what was picked (a
-    // bed, a poster). Make each shoppable: first try our OWN catalog (real
-    // dropship margin); if we don't carry it, fall back to a live web search
-    // for a real product page the customer can buy from (a stopgap — no
-    // margin, clearly marked external, until we source it ourselves).
-    const autoMatched: { product: Product; box: DetectionBox | null }[] = [];
-    const externals: WebExternalItem[] = [];
-    if (styleDirection) {
-      const extras = await detectUnaccountedItems(
-        finalImage,
-        products.map((p) => p.name),
-      );
-      for (const extra of extras) {
-        // One instance per category — locating a second item of a category
-        // already used can't reliably distinguish the two.
-        if (seenCategories.has(extra.category)) continue;
-        seenCategories.add(extra.category);
-
-        const match = findBestCatalogMatch(catalog, extra.description);
-        if (match && !autoMatched.some((a) => a.product.id === match.id)) {
-          const box = match.imageUrl ? await locateMatchedProduct(finalImage, match.imageUrl, match.category) : null;
-          autoMatched.push({ product: match, box });
-          continue;
+    for (const d of detected) {
+      // Is this object one of the products the designer placed?
+      if (d.pickedIndex >= 1 && d.pickedIndex <= products.length) {
+        const p = products[d.pickedIndex - 1];
+        if (!usedProductIds.has(p.id)) {
+          itemBoxes[p.id] = d.box;
+          usedProductIds.add(p.id);
         }
-
-        const web = await searchWebForProduct(extra.webQuery);
-        if (web) {
-          const located = await locateExistingObject(finalImage, extra.category);
-          externals.push({ ...web, box: located?.box ?? null });
-        }
+        continue;
       }
+      // An extra — try our own catalog first (real margin).
+      const match = findBestCatalogMatch(catalog, d.description);
+      if (match && !usedProductIds.has(match.id)) {
+        autoMatched.push({ product: match, box: d.box });
+        usedProductIds.add(match.id);
+        continue;
+      }
+      // Not ours — queue a web search so the piece is still shoppable.
+      if (webCandidates.length < 5) webCandidates.push({ box: d.box, query: d.webQuery });
     }
+
+    const webResults = await Promise.all(webCandidates.map((c) => searchWebForProduct(c.query)));
+    const externals: WebExternalItem[] = [];
+    webResults.forEach((web, i) => {
+      if (web) externals.push({ ...web, box: webCandidates[i].box });
+    });
+
+    // QA per placed product, derived for free from the detection pass:
+    // detected → placed correctly; not detected → wasn't rendered / substituted.
+    const checks = products.map((product) => ({
+      productId: product.id,
+      name: product.name,
+      pass: usedProductIds.has(product.id),
+      note: usedProductIds.has(product.id) ? null : "Not found in the render — it may have been substituted or omitted.",
+    }));
 
     const allProducts = [...products, ...autoMatched.map((a) => a.product)];
     const allItemBoxes = { ...itemBoxes };
-    for (const a of autoMatched) if (a.box) allItemBoxes[a.product.id] = a.box;
+    for (const a of autoMatched) allItemBoxes[a.product.id] = a.box;
 
     const totalPrice = allProducts.reduce((sum, p) => sum + p.price, 0);
     const styleTags = Array.from(new Set(allProducts.flatMap((p) => p.styles)));

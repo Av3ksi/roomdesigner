@@ -269,3 +269,129 @@ export async function detectUnaccountedItems(roomPhoto: Buffer, alreadyIncluded:
     return [];
   }
 }
+
+const SCENE_ITEM_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["items"],
+  properties: {
+    items: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["box", "description", "webQuery", "category", "pickedIndex"],
+        properties: {
+          box: {
+            type: "object",
+            additionalProperties: false,
+            required: ["x", "y", "w", "h"],
+            properties: { x: { type: "number" }, y: { type: "number" }, w: { type: "number" }, h: { type: "number" } },
+          },
+          description: { type: "string" },
+          webQuery: { type: "string" },
+          category: { type: "string", enum: CATEGORY_VALUES as unknown as string[] },
+          pickedIndex: { type: "integer" },
+        },
+      },
+    },
+  },
+} as const;
+
+export interface DetectedSceneItem {
+  box: DetectionBox;
+  /** German phrase for matching our catalog. */
+  description: string;
+  /** English phrase for a web product search. */
+  webQuery: string;
+  category: ProductCategory;
+  /** 1-based index of the picked product this object IS, or 0 if it's an additional staged item. */
+  pickedIndex: number;
+}
+
+export interface PickedProductRef {
+  index: number; // 1-based
+  name: string;
+  category: ProductCategory;
+}
+
+/**
+ * ONE vision pass over the finished render that finds every distinct
+ * sellable object and, for each, its bounding box plus whether it is one of
+ * the products the designer explicitly placed (by 1-based index) or an
+ * extra the restyle staged in. This replaces the earlier approach of a
+ * separate locate call per product — which guessed each object
+ * independently and cross-labeled them (a sofa's hotspot landing on a
+ * coffee table). A single coherent pass assigns each visible object exactly
+ * once, so every piece in the room can get a correct, clickable pin.
+ */
+export async function detectSceneItems(render: Buffer, picked: PickedProductRef[]): Promise<DetectedSceneItem[]> {
+  if (!aiEnabled()) return [];
+  try {
+    const jpeg = await sharp(render)
+      .rotate()
+      .resize(LOCATE_MAX_EDGE, LOCATE_MAX_EDGE, { fit: "inside", withoutEnlargement: true })
+      .jpeg({ quality: 82 })
+      .toBuffer();
+
+    const pickedList = picked.map((p) => `${p.index}. ${p.name} (${p.category})`).join("\n");
+
+    const response = await new Anthropic().messages.create({
+      model: MODEL,
+      max_tokens: 4096,
+      thinking: { type: "adaptive" },
+      system:
+        "You catalog every purchasable object in a staged interior render for a 'shop the look' feature. You are given " +
+        "a numbered list of the products the designer explicitly placed, then the render. List EVERY distinct, " +
+        "substantial furniture or decor item visible — sofa, chair, table, rug, lamp, wall art, plant, storage, " +
+        "cushions, bed, etc. Skip tiny incidental clutter (a single book, a glass, a laptop). For EACH item return: " +
+        "`box` (x, y, w, h — relative to the render, 0–1, origin top-left, tight around the object); `category` (best " +
+        "fit from the allowed list); `description` (a short German phrase — type, color, material — for matching a " +
+        "German catalog); `webQuery` (the same in English, 2-6 words); and `pickedIndex` — the number of the placed " +
+        "product this object IS (the same physical item), or 0 if it is an additional item not in the list. Assign " +
+        "each placed product to at most one object; if a placed product isn't visible in the render, simply don't " +
+        "reference its number.",
+      output_config: {
+        format: { type: "json_schema", schema: SCENE_ITEM_SCHEMA as unknown as Record<string, unknown> },
+      },
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: `Products the designer placed:\n${pickedList || "(none)"}` },
+            { type: "image", source: { type: "base64", media_type: "image/jpeg", data: jpeg.toString("base64") } },
+            { type: "text", text: "List every distinct sellable object visible, as described." },
+          ],
+        },
+      ],
+    });
+
+    if (response.stop_reason === "refusal") return [];
+    const text = response.content.find((b) => b.type === "text")?.text;
+    if (!text) return [];
+    const parsed = JSON.parse(text) as { items?: unknown };
+    if (!Array.isArray(parsed.items)) return [];
+
+    return parsed.items
+      .filter((i): i is Record<string, unknown> => typeof i === "object" && i !== null)
+      .filter(
+        (i) =>
+          isValidBox(i.box) &&
+          typeof i.description === "string" &&
+          typeof i.webQuery === "string" &&
+          typeof i.category === "string" &&
+          (CATEGORY_VALUES as readonly string[]).includes(i.category),
+      )
+      .map((i) => ({
+        box: clampBox(i.box as DetectionBox),
+        description: i.description as string,
+        webQuery: i.webQuery as string,
+        category: i.category as ProductCategory,
+        pickedIndex: typeof i.pickedIndex === "number" && Number.isFinite(i.pickedIndex) ? Math.round(i.pickedIndex) : 0,
+      }))
+      .slice(0, 20);
+  } catch (err) {
+    console.error("[maison] detectSceneItems failed:", err);
+    return [];
+  }
+}
