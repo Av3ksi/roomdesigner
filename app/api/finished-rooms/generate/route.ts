@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { aiEnabled } from "@/lib/ai/claude";
+import { aiEnabled, describeAiError } from "@/lib/ai/claude";
 import { compositingEnabled, composeSceneWithProducts, reshapeBoxForProduct, type SceneItem } from "@/lib/ai/composite";
-import { suggestPlacements } from "@/lib/ai/placement";
+import { suggestPlacementsStrict } from "@/lib/ai/placement";
 import { detectSceneItems } from "@/lib/ai/locate";
 import { searchWebForProduct, type WebProduct } from "@/lib/ai/webProductSearch";
 import { findBestCatalogMatch } from "@/lib/productSearch";
@@ -76,10 +76,11 @@ export async function POST(req: NextRequest) {
   const roomPhoto = Buffer.from(await roomFile.arrayBuffer());
 
   try {
-    const placement = await suggestPlacements(roomPhoto);
-    if (!placement) {
-      return NextResponse.json({ error: "Room placement analysis failed — try again." }, { status: 502 });
-    }
+    // Strict: this is a paid curator tool, so a failed analysis must say WHY
+    // (bad key, no credits, overloaded) rather than silently fall back to
+    // context-blind default boxes. It also runs BEFORE the OpenAI render, so a
+    // dead key fails fast and cheap instead of after paying for an image.
+    const placement = await suggestPlacementsStrict(roomPhoto);
 
     // Fetch every product photo and reshape its placement box together — one
     // slow network round-trip per product otherwise stacks up before the
@@ -167,6 +168,9 @@ export async function POST(req: NextRequest) {
       externals,
     });
   } catch (err) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 500 });
+    // describeAiError turns a raw Anthropic failure (no credits, bad key,
+    // overloaded) into one actionable sentence instead of a stack-y blob or a
+    // misleading "try again".
+    return NextResponse.json({ error: describeAiError(err) }, { status: 502 });
   }
 }

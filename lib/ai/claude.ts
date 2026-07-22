@@ -18,6 +18,32 @@ function client(): Anthropic {
   return new Anthropic();
 }
 
+/**
+ * Turns a raw Anthropic SDK error into one plain sentence a curator can act
+ * on. The graceful-degradation paths swallow errors into null on purpose,
+ * but the paid curator tools (e.g. Looks Studio) need to say WHAT went wrong
+ * instead of a blanket "try again" — retrying a zero-balance account or a
+ * rejected key just wastes another render. Falls through to the raw message
+ * for anything unrecognized.
+ */
+export function describeAiError(err: unknown): string {
+  const status = err instanceof Anthropic.APIError ? err.status : undefined;
+  const raw = err instanceof Error ? err.message : String(err);
+  if (/credit balance is too low/i.test(raw)) {
+    return "Your Anthropic API credit balance is too low. Add credits at console.anthropic.com → Plans & Billing, then try again — this is billed separately from any Claude subscription.";
+  }
+  if (status === 401 || /authentication|invalid x-api-key/i.test(raw)) {
+    return "The Anthropic API key was rejected. Check ANTHROPIC_API_KEY in your .env is current and correct.";
+  }
+  if (status === 429) {
+    return "Hit the Anthropic rate limit. Wait a moment, then try again.";
+  }
+  if (status === 529 || /overloaded/i.test(raw)) {
+    return "The Anthropic API is temporarily overloaded. Give it a minute and try again.";
+  }
+  return raw;
+}
+
 const STYLE_IDS = STYLES.map((s) => s.id);
 
 /** JSON schema Claude's vision analysis must conform to (mirrors RoomAnalysis sans `engine`). */

@@ -116,56 +116,76 @@ function isValidRoomDimensions(value: unknown): value is RoomDimensionsEstimate 
   return ["widthM", "depthM", "heightM"].every((k) => typeof v[k] === "number" && Number.isFinite(v[k] as number) && (v[k] as number) > 0);
 }
 
+/**
+ * The actual vision call. Throws on any failure — callers decide whether to
+ * swallow it into a graceful fallback (suggestPlacements) or surface the
+ * reason to the user (suggestPlacementsStrict).
+ */
+async function runPlacement(roomPhoto: Buffer): Promise<PlacementResult> {
+  const jpeg = await sharp(roomPhoto)
+    .rotate() // respect EXIF orientation so coordinates match what the user sees
+    .resize(ANALYSIS_MAX_EDGE, ANALYSIS_MAX_EDGE, { fit: "inside", withoutEnlargement: true })
+    .jpeg({ quality: 80 })
+    .toBuffer();
+
+  const response = await new Anthropic().messages.create({
+    model: MODEL,
+    max_tokens: 4096,
+    thinking: { type: "adaptive" },
+    system: PLACEMENT_SYSTEM,
+    output_config: {
+      format: {
+        type: "json_schema",
+        schema: PLACEMENT_SCHEMA as unknown as Record<string, unknown>,
+      },
+    },
+    messages: [
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "Room photograph:" },
+          { type: "image", source: { type: "base64", media_type: "image/jpeg", data: jpeg.toString("base64") } },
+          { type: "text", text: "Return the placement box and wallAngleDeg for every category, plus the room's estimated dimensions." },
+        ],
+      },
+    ],
+  });
+
+  if (response.stop_reason === "refusal") throw new Error("Placement analysis was refused for this image.");
+  const text = response.content.find((b) => b.type === "text")?.text;
+  if (!text) throw new Error("Placement analysis returned no result.");
+
+  const parsed = JSON.parse(text) as Record<string, unknown>;
+  const placements = {} as PlacementMap;
+  for (const category of CATEGORIES) {
+    const item = parsed[category];
+    // A malformed single category shouldn't sink the other nine.
+    placements[category] = isValidPlacementItem(item)
+      ? { box: clampBox(item), wallAngleDeg: item.wallAngleDeg }
+      : { box: DEFAULT_CATEGORY_BOX[category], wallAngleDeg: 0 };
+  }
+
+  return {
+    placements,
+    roomDimensions: isValidRoomDimensions(parsed.roomDimensions) ? parsed.roomDimensions : null,
+  };
+}
+
+/**
+ * Strict variant for paid curator tools (Looks Studio) that must not silently
+ * degrade to context-blind default boxes: throws the underlying error so the
+ * caller can show WHY (bad key, no credits, overloaded) instead of "try
+ * again". Use suggestPlacements for the graceful-degradation paths.
+ */
+export async function suggestPlacementsStrict(roomPhoto: Buffer): Promise<PlacementResult> {
+  if (!aiEnabled()) throw new Error("ANTHROPIC_API_KEY not configured on the server.");
+  return runPlacement(roomPhoto);
+}
+
 export async function suggestPlacements(roomPhoto: Buffer): Promise<PlacementResult | null> {
   if (!aiEnabled()) return null;
   try {
-    const jpeg = await sharp(roomPhoto)
-      .rotate() // respect EXIF orientation so coordinates match what the user sees
-      .resize(ANALYSIS_MAX_EDGE, ANALYSIS_MAX_EDGE, { fit: "inside", withoutEnlargement: true })
-      .jpeg({ quality: 80 })
-      .toBuffer();
-
-    const response = await new Anthropic().messages.create({
-      model: MODEL,
-      max_tokens: 4096,
-      thinking: { type: "adaptive" },
-      system: PLACEMENT_SYSTEM,
-      output_config: {
-        format: {
-          type: "json_schema",
-          schema: PLACEMENT_SCHEMA as unknown as Record<string, unknown>,
-        },
-      },
-      messages: [
-        {
-          role: "user",
-          content: [
-            { type: "text", text: "Room photograph:" },
-            { type: "image", source: { type: "base64", media_type: "image/jpeg", data: jpeg.toString("base64") } },
-            { type: "text", text: "Return the placement box and wallAngleDeg for every category, plus the room's estimated dimensions." },
-          ],
-        },
-      ],
-    });
-
-    if (response.stop_reason === "refusal") return null;
-    const text = response.content.find((b) => b.type === "text")?.text;
-    if (!text) return null;
-
-    const parsed = JSON.parse(text) as Record<string, unknown>;
-    const placements = {} as PlacementMap;
-    for (const category of CATEGORIES) {
-      const item = parsed[category];
-      // A malformed single category shouldn't sink the other nine.
-      placements[category] = isValidPlacementItem(item)
-        ? { box: clampBox(item), wallAngleDeg: item.wallAngleDeg }
-        : { box: DEFAULT_CATEGORY_BOX[category], wallAngleDeg: 0 };
-    }
-
-    return {
-      placements,
-      roomDimensions: isValidRoomDimensions(parsed.roomDimensions) ? parsed.roomDimensions : null,
-    };
+    return await runPlacement(roomPhoto);
   } catch (err) {
     console.error("[maison] Claude placement analysis failed, falling back to defaults:", err);
     return null;
