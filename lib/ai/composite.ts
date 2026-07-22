@@ -398,11 +398,22 @@ export async function composeSceneWithProducts(
   form.append("model", MODEL);
   form.append("image[]", roomImage.blob, roomImage.filename);
 
+  // Prepare each product's blob and its one-line description up front, all at
+  // once. describeProductForPrompt is a separate Claude call per item; run
+  // sequentially they stack (8 items → 8 round-trips before the render even
+  // starts), which is the bulk of the pre-render wait. Fetch them together,
+  // then append images IN ORDER so reference-image numbering stays stable.
+  const prepared = await Promise.all(
+    items.map(async (item) => ({
+      blob: await toImageBlob(item.productPhoto),
+      description: await describeProductForPrompt(item.productPhoto),
+    })),
+  );
+
   const itemLines: string[] = [];
   for (const [i, item] of items.entries()) {
-    const productImage = await toImageBlob(item.productPhoto);
+    const { blob: productImage, description } = prepared[i];
     form.append("image[]", productImage.blob, productImage.filename);
-    const description = await describeProductForPrompt(item.productPhoto);
     const wallAngleNote =
       item.wallAngleDeg && Math.abs(item.wallAngleDeg) > 2
         ? ` The surface behind it recedes at about ${Math.round(item.wallAngleDeg)}° (${item.wallAngleDeg > 0 ? "away to the right" : "away to the left"}) — align it flush with that plane, not facing the camera head-on.`

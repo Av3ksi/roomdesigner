@@ -81,17 +81,19 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Room placement analysis failed — try again." }, { status: 502 });
     }
 
-    const items: SceneItem[] = [];
-    for (const product of products) {
-      const productRes = await fetch(product.imageUrl!);
-      if (!productRes.ok) {
-        return NextResponse.json({ error: `Failed to fetch photo for "${product.name}".` }, { status: 502 });
-      }
-      const productPhoto = Buffer.from(await productRes.arrayBuffer());
-      const suggestion = placement.placements[product.category];
-      const box = await reshapeBoxForProduct(suggestion.box, productPhoto);
-      items.push({ productPhoto, category: product.category, box, wallAngleDeg: suggestion.wallAngleDeg });
-    }
+    // Fetch every product photo and reshape its placement box together — one
+    // slow network round-trip per product otherwise stacks up before the
+    // render starts. A failed fetch throws and is handled by the outer catch.
+    const items: SceneItem[] = await Promise.all(
+      products.map(async (product): Promise<SceneItem> => {
+        const productRes = await fetch(product.imageUrl!);
+        if (!productRes.ok) throw new Error(`Failed to fetch photo for "${product.name}".`);
+        const productPhoto = Buffer.from(await productRes.arrayBuffer());
+        const suggestion = placement.placements[product.category];
+        const box = await reshapeBoxForProduct(suggestion.box, productPhoto);
+        return { productPhoto, category: product.category, box, wallAngleDeg: suggestion.wallAngleDeg };
+      }),
+    );
 
     const result = await composeSceneWithProducts(roomPhoto, items, quality, styleDirection);
     const finalImage = Buffer.from(result.imageBase64, "base64");
