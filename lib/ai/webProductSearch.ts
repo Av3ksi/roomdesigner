@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { MODEL, aiEnabled } from "./claude";
+import type { TargetMarket } from "@/lib/targetMarkets";
 
 /**
  * Finds a real, purchasable product on the open web for something the
@@ -23,25 +24,6 @@ export interface WebProduct {
   /** Price in the retailer's own currency string when the model could read one, else null. */
   priceText: string | null;
 }
-
-/**
- * Markets this search is scoped to. Maison's own catalog, pricing, and
- * supplier feed are all Swiss/DACH (CHF, VidaXL CH/DE) — a customer here is
- * in Europe, not the US, so an external "shop the look" link defaulting to
- * amazon.com or a US-only retailer is actively bad: wrong currency, often
- * no shipping at all. Deliberately scoped to Europe only, per the business's
- * actual market, rather than building out full global geo-targeting.
- */
-export type TargetMarket = "CH" | "DE" | "AT" | "FR" | "IT" | "EU";
-
-export const TARGET_MARKETS: { id: TargetMarket; label: string }[] = [
-  { id: "CH", label: "Switzerland" },
-  { id: "DE", label: "Germany" },
-  { id: "AT", label: "Austria" },
-  { id: "FR", label: "France" },
-  { id: "IT", label: "Italy" },
-  { id: "EU", label: "Europe (general)" },
-];
 
 /**
  * Market-specific retailer guidance for the search prompt. Switzerland is

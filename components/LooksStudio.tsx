@@ -5,7 +5,7 @@ import { AlertTriangle, CheckCircle2, Sparkles, Upload, XCircle } from "lucide-r
 import { useState } from "react";
 import { formatPrice } from "@/lib/products";
 import RoomHotspots, { type HotspotItem } from "@/components/RoomHotspots";
-import { TARGET_MARKETS, type TargetMarket } from "@/lib/ai/webProductSearch";
+import { TARGET_MARKETS, type TargetMarket } from "@/lib/targetMarkets";
 import type { DetectionBox, Product, ProductCategory } from "@/lib/types";
 
 const CATEGORIES: ProductCategory[] = [
