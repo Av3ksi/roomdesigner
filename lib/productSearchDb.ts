@@ -69,3 +69,55 @@ async function loadProductCatalogUncached(): Promise<Product[]> {
   const catalog = await fetchVidaxlCatalog();
   return catalog.products;
 }
+
+export interface MarketplacePage {
+  products: Product[];
+  totalCount: number;
+}
+
+/**
+ * Paginated, filtered catalog page for the public Marketplace — unlike
+ * loadProductCatalog() above (which loads everything for the search/
+ * matching scorers to rank), a shop grid must never ship tens of thousands
+ * of products to the browser. Filters in SQL against the indexed category
+ * column and the styles array; falls back to slicing the in-memory catalog
+ * when the DB isn't configured or the query fails.
+ */
+export async function loadMarketplacePage(opts: {
+  category?: ProductCategory;
+  styleId?: string;
+  page: number;
+  pageSize: number;
+}): Promise<MarketplacePage> {
+  const { category, styleId, page, pageSize } = opts;
+  const offset = Math.max(0, page - 1) * pageSize;
+
+  if (dbEnabled()) {
+    try {
+      await ensureSchema();
+      const db = sql();
+      const rows = await db`
+        SELECT * FROM products
+        WHERE (${category ?? null}::text IS NULL OR category = ${category ?? null})
+          AND (${styleId ?? null}::text IS NULL OR ${styleId ?? null} = ANY(styles))
+        ORDER BY updated_at DESC, id
+        LIMIT ${pageSize} OFFSET ${offset}
+      `;
+      const countRows = await db`
+        SELECT COUNT(*)::int AS count FROM products
+        WHERE (${category ?? null}::text IS NULL OR category = ${category ?? null})
+          AND (${styleId ?? null}::text IS NULL OR ${styleId ?? null} = ANY(styles))
+      `;
+      const totalCount = Number(countRows[0]?.count ?? 0);
+      if (totalCount > 0) return { products: rows.map(rowToProduct), totalCount };
+    } catch {
+      // DB reachable but query failed — fall through to the in-memory fallback.
+    }
+  }
+
+  const all = await loadProductCatalog();
+  const filtered = all.filter(
+    (p) => (!category || p.category === category) && (!styleId || p.styles.includes(styleId)),
+  );
+  return { products: filtered.slice(offset, offset + pageSize), totalCount: filtered.length };
+}

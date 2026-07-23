@@ -4,7 +4,7 @@ import { Heart, ShoppingBag, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import ProductDetailPanel from "@/components/ProductDetailPanel";
-import ProductGlyph from "@/components/room/ProductGlyph";
+import ProductThumb from "@/components/room/ProductThumb";
 import { formatPrice } from "@/lib/products";
 import { useMaisonStore } from "@/lib/store";
 import type { Product } from "@/lib/types";
@@ -65,7 +65,7 @@ export default function Wishlist() {
                 onKeyDown={(e) => e.key === "Enter" && setDetailProduct(p)}
                 className="relative block aspect-[5/4] w-full cursor-pointer overflow-hidden"
               >
-                <ProductGlyph product={p} className="h-full w-full transition duration-500 group-hover:scale-105" />
+                <ProductThumb product={p} className="h-full w-full transition duration-500 group-hover:scale-105" />
                 <button
                   onClick={(e) => {
                     e.stopPropagation();

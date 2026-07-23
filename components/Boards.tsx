@@ -2,7 +2,7 @@
 
 import { ArrowLeft, LayoutGrid, Pencil, Plus, ShoppingBag, Trash2, X } from "lucide-react";
 import { useState } from "react";
-import ProductGlyph from "@/components/room/ProductGlyph";
+import ProductThumb from "@/components/room/ProductThumb";
 import { formatPrice } from "@/lib/products";
 import { useMaisonStore } from "@/lib/store";
 
@@ -50,7 +50,7 @@ export default function Boards() {
             {openBoard.products.map((p) => (
               <div key={p.id} className="card group overflow-hidden">
                 <div className="relative aspect-[5/4] overflow-hidden">
-                  <ProductGlyph product={p} className="h-full w-full" />
+                  <ProductThumb product={p} className="h-full w-full" />
                   <button
                     onClick={() => removeFromBoard(openBoard.id, p.id)}
                     className="absolute right-2.5 top-2.5 rounded-full border border-ink-line bg-ink/80 p-1.5 text-cream-dim opacity-0 backdrop-blur transition group-hover:opacity-100 hover:text-red-400"
@@ -116,7 +116,7 @@ export default function Boards() {
               <button onClick={() => setOpenId(b.id)} className="block w-full text-left">
                 <div className="grid aspect-[3/2] grid-cols-2 gap-0.5 overflow-hidden bg-ink-panel">
                   {b.products.slice(0, 4).map((p) => (
-                    <ProductGlyph key={p.id} product={p} className="h-full w-full" />
+                    <ProductThumb key={p.id} product={p} className="h-full w-full" />
                   ))}
                   {b.products.length === 0 && (
                     <div className="col-span-2 flex items-center justify-center text-cream-faint">
