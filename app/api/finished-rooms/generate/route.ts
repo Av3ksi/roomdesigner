@@ -131,8 +131,11 @@ export async function POST(req: NextRequest) {
         usedProductIds.add(match.id);
         continue;
       }
-      // Not ours — queue a web search so the piece is still shoppable.
-      if (webCandidates.length < 5) webCandidates.push({ box: d.box, query: d.webQuery });
+      // Not ours — queue a web search so the piece is still shoppable. Capped
+      // low: each candidate is a full web-search call (fees + retrieved page
+      // content billed as input tokens), and these are no-margin stopgap links
+      // anyway — the piece we actually profit on is our own catalog.
+      if (webCandidates.length < 3) webCandidates.push({ box: d.box, query: d.webQuery });
     }
 
     const webResults = await Promise.all(webCandidates.map((c) => searchWebForProduct(c.query)));

@@ -25,7 +25,11 @@ export interface WebProduct {
 }
 
 // web_search_20260209 requires Opus 4.6+/Sonnet 5/4.6 — MODEL is claude-opus-4-8, which qualifies.
-const WEB_SEARCH_TOOL = { type: "web_search_20260209", name: "web_search", max_uses: 4 } as const;
+// max_uses caps search rounds PER product. Each round carries a per-search fee AND pulls the
+// retrieved page content into context as (billed) input tokens — the single biggest variable cost
+// in the pipeline. 2 rounds is enough to find a decent match for a stopgap external link; going
+// higher mostly buys marginally better matches on no-margin items.
+const WEB_SEARCH_TOOL = { type: "web_search_20260209", name: "web_search", max_uses: 2 } as const;
 
 function firstJsonObject(text: string): Record<string, unknown> | null {
   // The model ends with a JSON object; grab the last {...} block and parse it.
