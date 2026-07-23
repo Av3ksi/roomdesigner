@@ -24,6 +24,59 @@ export interface WebProduct {
   priceText: string | null;
 }
 
+/**
+ * Markets this search is scoped to. Maison's own catalog, pricing, and
+ * supplier feed are all Swiss/DACH (CHF, VidaXL CH/DE) — a customer here is
+ * in Europe, not the US, so an external "shop the look" link defaulting to
+ * amazon.com or a US-only retailer is actively bad: wrong currency, often
+ * no shipping at all. Deliberately scoped to Europe only, per the business's
+ * actual market, rather than building out full global geo-targeting.
+ */
+export type TargetMarket = "CH" | "DE" | "AT" | "FR" | "IT" | "EU";
+
+export const TARGET_MARKETS: { id: TargetMarket; label: string }[] = [
+  { id: "CH", label: "Switzerland" },
+  { id: "DE", label: "Germany" },
+  { id: "AT", label: "Austria" },
+  { id: "FR", label: "France" },
+  { id: "IT", label: "Italy" },
+  { id: "EU", label: "Europe (general)" },
+];
+
+/**
+ * Market-specific retailer guidance for the search prompt. Switzerland is
+ * called out specially and NOT treated as interchangeable with "EU": it's
+ * outside the EU customs union, so plenty of .de/.fr retailers either won't
+ * ship there or add steep customs fees at the border — a link that's fine
+ * for a German customer can be a bad (or undeliverable) suggestion for a
+ * Swiss one. AliExpress ships reliably to Switzerland, which is why it's
+ * called out as a good default there specifically.
+ */
+const MARKET_GUIDANCE: Record<TargetMarket, string> = {
+  CH:
+    "The customer is in Switzerland. Switzerland is NOT in the EU customs union, so many German/French " +
+    "retailers either don't ship there or add steep customs fees — verify shipping-to-Switzerland before " +
+    "picking a listing, don't assume a .de or .fr site ships there. AliExpress ships reliably to Switzerland " +
+    "and is a good default for inexpensive decor (posters, small accessories). Also good: digitec.ch, " +
+    "galaxus.ch, or a supplier's own .ch site if one exists. Prefer prices in CHF; EUR is acceptable if that's " +
+    "all the listing shows.",
+  DE: "The customer is in Germany. Prefer amazon.de, aliexpress.com, home24.de, lampenwelt.de, or another " +
+    "retailer that ships within Germany. Prefer prices in EUR.",
+  AT: "The customer is in Austria. Prefer amazon.de (ships to Austria), aliexpress.com, or another retailer " +
+    "confirmed to ship to Austria. Prefer prices in EUR.",
+  FR: "The customer is in France. Prefer amazon.fr, aliexpress.com, la redoute, manomano, or another retailer " +
+    "that ships within France. Prefer prices in EUR.",
+  IT: "The customer is in Italy. Prefer amazon.it, aliexpress.com, or another retailer that ships within Italy. " +
+    "Prefer prices in EUR.",
+  EU: "The customer is somewhere in Europe (exact country unknown). Prefer retailers that ship broadly across " +
+    "the EU — amazon (any .de/.fr/.it/.es storefront), aliexpress.com, or a major European home-goods " +
+    "retailer. Prefer prices in EUR.",
+};
+
+const MARKET_EXCLUSION =
+  "Never pick amazon.com or any other US-only retailer/listing unless it explicitly states it ships to " +
+  "Europe — a US-only link is not something this customer can actually buy.";
+
 // web_search_20260209 requires Opus 4.6+/Sonnet 5/4.6 — MODEL is claude-opus-4-8, which qualifies.
 // max_uses caps search rounds PER product. Each round carries a per-search fee AND pulls the
 // retrieved page content into context as (billed) input tokens — the single biggest variable cost
@@ -42,7 +95,7 @@ function firstJsonObject(text: string): Record<string, unknown> | null {
   }
 }
 
-export async function searchWebForProduct(query: string): Promise<WebProduct | null> {
+export async function searchWebForProduct(query: string, market: TargetMarket = "CH"): Promise<WebProduct | null> {
   if (!aiEnabled()) return null;
   try {
     const response = await new Anthropic().messages.create({
@@ -55,9 +108,10 @@ export async function searchWebForProduct(query: string): Promise<WebProduct | n
       system:
         "You find one real, in-stock, purchasable product that matches a description, for a 'shop the look' feature. " +
         "Search the web, pick a single concrete product page from a reputable retailer (not a category/listing page, " +
-        "not a marketplace search URL, not a blog). Prefer retailers that ship broadly. When you have it, end your " +
-        'reply with ONLY a JSON object on its own line: {"name": "...", "url": "https://...", "retailer": "...", ' +
-        '"priceText": "CHF 49" or null}. If you cannot find a genuine product page, end with {"name": null}.',
+        `not a marketplace search URL, not a blog). ${MARKET_GUIDANCE[market]} ${MARKET_EXCLUSION} ` +
+        'When you have it, end your reply with ONLY a JSON object on its own line: {"name": "...", ' +
+        '"url": "https://...", "retailer": "...", "priceText": "CHF 49" or null}. If you cannot find a genuine ' +
+        'product page that actually ships to the customer, end with {"name": null}.',
       messages: [
         { role: "user", content: `Find a real product to buy that matches: "${query}". Return the JSON object as instructed.` },
       ],

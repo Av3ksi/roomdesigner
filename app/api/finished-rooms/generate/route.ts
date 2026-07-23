@@ -3,7 +3,7 @@ import { aiEnabled, describeAiError } from "@/lib/ai/claude";
 import { compositingEnabled, composeSceneWithProducts, reshapeBoxForProduct, type SceneItem } from "@/lib/ai/composite";
 import { suggestPlacementsStrict } from "@/lib/ai/placement";
 import { detectSceneItems } from "@/lib/ai/locate";
-import { searchWebForProduct, type WebProduct } from "@/lib/ai/webProductSearch";
+import { searchWebForProduct, TARGET_MARKETS, type TargetMarket, type WebProduct } from "@/lib/ai/webProductSearch";
 import { findBestCatalogMatch } from "@/lib/productSearch";
 import { loadProductCatalog } from "@/lib/productSearchDb";
 import type { DetectionBox, Product } from "@/lib/types";
@@ -54,6 +54,12 @@ export async function POST(req: NextRequest) {
   // products instead of leaving the photo untouched — showroom mode.
   const styleDirectionRaw = form.get("styleDirection");
   const styleDirection = typeof styleDirectionRaw === "string" && styleDirectionRaw.trim() ? styleDirectionRaw.trim() : undefined;
+
+  // Which market web-sourced externals (posters, etc. not in our own
+  // catalog) should target — see lib/ai/webProductSearch.ts. Defaults to
+  // Switzerland, this business's home market.
+  const marketRaw = form.get("targetMarket");
+  const targetMarket: TargetMarket = TARGET_MARKETS.some((m) => m.id === marketRaw) ? (marketRaw as TargetMarket) : "CH";
 
   const catalog = await loadProductCatalog();
   const byId = new Map(catalog.map((p) => [p.id, p]));
@@ -138,7 +144,7 @@ export async function POST(req: NextRequest) {
       if (webCandidates.length < 3) webCandidates.push({ box: d.box, query: d.webQuery });
     }
 
-    const webResults = await Promise.all(webCandidates.map((c) => searchWebForProduct(c.query)));
+    const webResults = await Promise.all(webCandidates.map((c) => searchWebForProduct(c.query, targetMarket)));
     const externals: WebExternalItem[] = [];
     webResults.forEach((web, i) => {
       if (web) externals.push({ ...web, box: webCandidates[i].box });

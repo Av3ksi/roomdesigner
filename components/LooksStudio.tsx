@@ -5,6 +5,7 @@ import { AlertTriangle, CheckCircle2, Sparkles, Upload, XCircle } from "lucide-r
 import { useState } from "react";
 import { formatPrice } from "@/lib/products";
 import RoomHotspots, { type HotspotItem } from "@/components/RoomHotspots";
+import { TARGET_MARKETS, type TargetMarket } from "@/lib/ai/webProductSearch";
 import type { DetectionBox, Product, ProductCategory } from "@/lib/types";
 
 const CATEGORIES: ProductCategory[] = [
@@ -59,6 +60,7 @@ export default function LooksStudio({ catalog }: { catalog: Product[] }) {
   const [description, setDescription] = useState("");
   const [styleDirection, setStyleDirection] = useState("");
   const [quality, setQuality] = useState<"low" | "medium" | "high">("medium");
+  const [targetMarket, setTargetMarket] = useState<TargetMarket>("CH");
   const [generating, setGenerating] = useState(false);
   const [result, setResult] = useState<GenerateResult | null>(null);
   const [publishing, setPublishing] = useState(false);
@@ -100,6 +102,7 @@ export default function LooksStudio({ catalog }: { catalog: Product[] }) {
       form.append("room", roomFile);
       form.append("productIds", JSON.stringify(selectedProducts.map((p) => p.id)));
       form.append("quality", quality);
+      form.append("targetMarket", targetMarket);
       if (styleDirection.trim()) form.append("styleDirection", styleDirection.trim());
 
       const res = await fetch("/api/finished-rooms/generate", { method: "POST", body: form });
@@ -260,6 +263,27 @@ export default function LooksStudio({ catalog }: { catalog: Product[] }) {
               <option value="medium">Medium (recommended for publishing)</option>
               <option value="high">High (most expensive)</option>
             </select>
+          </div>
+
+          <div>
+            <label className="mb-1.5 block text-xs font-semibold text-cream-dim">
+              Target market <span className="font-normal text-cream-faint">(web-sourced extras)</span>
+            </label>
+            <select
+              value={targetMarket}
+              onChange={(e) => setTargetMarket(e.target.value as TargetMarket)}
+              className="w-full rounded-lg border border-ink-line bg-ink-panel px-2.5 py-1.5 text-xs text-cream-dim focus:border-brass/50 focus:outline-none"
+            >
+              {TARGET_MARKETS.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.label}
+                </option>
+              ))}
+            </select>
+            <p className="mt-1 text-[10px] text-cream-faint">
+              Who this Look is for — controls which country the web-sourced extras (posters, items not in our
+              catalog) are searched to actually ship to.
+            </p>
           </div>
 
           <button
