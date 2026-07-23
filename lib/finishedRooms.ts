@@ -1,0 +1,146 @@
+import { dbEnabled, ensureSchema, sql } from "./db";
+import { loadProductCatalog } from "./productSearchDb";
+import { isValidBox } from "./placementBoxes";
+import type { DetectionBox, Product } from "./types";
+
+/**
+ * "Shop the whole look" — curated, fixed room bundles composited once
+ * (scripts/compose-finished-room.ts or /looks/studio) and sold as a single
+ * complete design, the IKEA-showroom model rather than the Designer chat's
+ * build-your-own-room. Read paths degrade to an empty list when the DB
+ * isn't configured, same as every other persistence-backed feature here;
+ * there's no in-memory fallback because there's no sensible fake content
+ * for "curated real designs" the way the supplier catalog has a sample
+ * feed.
+ */
+
+export interface FinishedRoomItem {
+  product: Product;
+  /** Where this product actually ended up in the final hero image — located post-generation (lib/ai/locate.ts), not the pre-generation placement guess. */
+  box: DetectionBox | null;
+  /** Matched from AI staging (lib/ai/locate.ts's detectUnaccountedItems) rather than hand-picked by the curator. */
+  autoMatched: boolean;
+}
+
+/** A staged item we don't carry, sourced to a real external retailer (lib/ai/webProductSearch.ts). Links out; not add-to-cart; not in the total. */
+export interface FinishedRoomExternalItem {
+  name: string;
+  url: string;
+  retailer: string;
+  priceText: string | null;
+  box: DetectionBox | null;
+}
+
+export interface FinishedRoom {
+  id: string;
+  title: string;
+  description: string;
+  styleTags: string[];
+  heroImageBase64: string;
+  /** Resolved against the live/DB catalog at read time — a product_id with no current match is simply omitted, not an error. */
+  products: Product[];
+  /** Same products, each paired with its hotspot box when one was located (older rows and unmatched boxes have box: null). */
+  items: FinishedRoomItem[];
+  /** Web-sourced items for staged pieces we don't carry — link out, never added to cart. */
+  externals: FinishedRoomExternalItem[];
+  totalPrice: number;
+  createdAt: string;
+}
+
+function resolveExternals(raw: unknown): FinishedRoomExternalItem[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter((e): e is Record<string, unknown> => typeof e === "object" && e !== null)
+    .filter((e) => typeof e.name === "string" && typeof e.url === "string")
+    .map((e) => ({
+      name: e.name as string,
+      url: e.url as string,
+      retailer: typeof e.retailer === "string" ? e.retailer : "",
+      priceText: typeof e.priceText === "string" ? e.priceText : null,
+      box: isValidBox(e.box) ? e.box : null,
+    }));
+}
+
+function resolveRow(row: Record<string, unknown>, catalog: Product[]): FinishedRoom {
+  const byId = new Map(catalog.map((p) => [p.id, p]));
+  const productIds = (row.product_ids as string[] | null) ?? [];
+  const products = productIds.map((id) => byId.get(id)).filter((p): p is Product => Boolean(p));
+  const itemBoxes = (row.item_boxes as Record<string, unknown> | null) ?? {};
+  const autoMatchedIds = new Set((row.auto_matched_ids as string[] | null) ?? []);
+  const items: FinishedRoomItem[] = products.map((product) => {
+    const box = itemBoxes[product.id];
+    return { product, box: isValidBox(box) ? box : null, autoMatched: autoMatchedIds.has(product.id) };
+  });
+  return {
+    id: row.id as string,
+    title: row.title as string,
+    description: row.description as string,
+    styleTags: (row.style_tags as string[] | null) ?? [],
+    heroImageBase64: row.hero_image_base64 as string,
+    products,
+    items,
+    externals: resolveExternals(row.external_items),
+    totalPrice: Number(row.total_price),
+    createdAt: row.created_at as string,
+  };
+}
+
+export async function createFinishedRoom(input: {
+  title: string;
+  description: string;
+  styleTags: string[];
+  heroImageBase64: string;
+  productIds: string[];
+  /** productId -> its hotspot box in the hero image, when located successfully. */
+  itemBoxes?: Record<string, DetectionBox>;
+  /** Subset of productIds that were auto-matched from AI staging rather than hand-picked. */
+  autoMatchedIds?: string[];
+  /** Web-sourced external items for staged pieces we don't carry. */
+  externals?: FinishedRoomExternalItem[];
+  totalPrice: number;
+}): Promise<string> {
+  await ensureSchema();
+  const db = sql();
+  const rows = await db`
+    INSERT INTO finished_rooms (title, description, style_tags, hero_image_base64, product_ids, item_boxes, auto_matched_ids, external_items, total_price)
+    VALUES (
+      ${input.title}, ${input.description}, ${input.styleTags}, ${input.heroImageBase64}, ${input.productIds},
+      ${JSON.stringify(input.itemBoxes ?? {})}, ${input.autoMatchedIds ?? []}, ${JSON.stringify(input.externals ?? [])}, ${input.totalPrice}
+    )
+    RETURNING id
+  `;
+  return rows[0].id as string;
+}
+
+export async function listFinishedRooms(): Promise<FinishedRoom[]> {
+  if (!dbEnabled()) return [];
+  try {
+    await ensureSchema();
+    const db = sql();
+    const [rows, catalog] = await Promise.all([
+      db`SELECT * FROM finished_rooms WHERE published = true ORDER BY created_at DESC`,
+      loadProductCatalog(),
+    ]);
+    return rows.map((r) => resolveRow(r, catalog));
+  } catch (err) {
+    console.error("[maison] listFinishedRooms failed:", err);
+    return [];
+  }
+}
+
+export async function getFinishedRoom(id: string): Promise<FinishedRoom | null> {
+  if (!dbEnabled()) return null;
+  try {
+    await ensureSchema();
+    const db = sql();
+    const [rows, catalog] = await Promise.all([
+      db`SELECT * FROM finished_rooms WHERE id = ${id}`,
+      loadProductCatalog(),
+    ]);
+    if (!rows.length) return null;
+    return resolveRow(rows[0], catalog);
+  } catch (err) {
+    console.error("[maison] getFinishedRoom failed:", err);
+    return null;
+  }
+}

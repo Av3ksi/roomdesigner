@@ -2,7 +2,7 @@
 
 import { Minus, Plus, ShoppingBag, Trash2, X } from "lucide-react";
 import { useRouter } from "next/navigation";
-import ProductGlyph from "@/components/room/ProductGlyph";
+import ProductThumb from "@/components/room/ProductThumb";
 import { formatPrice } from "@/lib/products";
 import { cartTotal, useMaisonStore } from "@/lib/store";
 
@@ -50,7 +50,7 @@ export default function CartDrawer() {
               {cart.map(({ product, qty }) => (
                 <li key={product.id} className="card flex gap-4 p-3">
                   <div className="h-20 w-24 shrink-0 overflow-hidden rounded-lg">
-                    <ProductGlyph product={product} className="h-full w-full" />
+                    <ProductThumb product={product} className="h-full w-full" />
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-start justify-between gap-2">

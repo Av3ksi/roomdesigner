@@ -1,10 +1,11 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { Heart, Plus, Star } from "lucide-react";
+import { useState } from "react";
+import Link from "next/link";
+import { ChevronLeft, ChevronRight, Heart, Plus, Star } from "lucide-react";
 import ProductDetailPanel from "@/components/ProductDetailPanel";
-import ProductGlyph from "@/components/room/ProductGlyph";
-import { formatPrice, PRODUCTS } from "@/lib/products";
+import ProductThumb from "@/components/room/ProductThumb";
+import { formatPrice } from "@/lib/products";
 import { STYLES } from "@/lib/styles";
 import { useMaisonStore } from "@/lib/store";
 import type { Product, ProductCategory } from "@/lib/types";
@@ -23,23 +24,37 @@ const CATEGORIES: { id: ProductCategory | "all"; label: string }[] = [
   { id: "decor", label: "Decor" },
 ];
 
-export default function Marketplace() {
-  const [category, setCategory] = useState<ProductCategory | "all">("all");
-  const [styleId, setStyleId] = useState<string>("all");
+/** Builds a marketplace URL for a given filter/page combo, dropping "all"/1 defaults from the query string. */
+function marketplaceHref(category: ProductCategory | "all", styleId: string, page: number): string {
+  const params = new URLSearchParams();
+  if (category !== "all") params.set("category", category);
+  if (styleId !== "all") params.set("style", styleId);
+  if (page > 1) params.set("page", String(page));
+  const qs = params.toString();
+  return qs ? `/marketplace?${qs}` : "/marketplace";
+}
+
+export default function Marketplace({
+  products,
+  totalCount,
+  page,
+  pageSize,
+  category,
+  styleId,
+}: {
+  products: Product[];
+  totalCount: number;
+  page: number;
+  pageSize: number;
+  category: ProductCategory | "all";
+  styleId: string;
+}) {
   const [detailProduct, setDetailProduct] = useState<Product | null>(null);
   const addToCart = useMaisonStore((s) => s.addToCart);
   const toggleWishlist = useMaisonStore((s) => s.toggleWishlist);
   const isWishlisted = useMaisonStore((s) => s.isWishlisted);
 
-  const filtered = useMemo(
-    () =>
-      PRODUCTS.filter(
-        (p) =>
-          (category === "all" || p.category === category) &&
-          (styleId === "all" || p.styles.includes(styleId)),
-      ),
-    [category, styleId],
-  );
+  const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
 
   return (
     <div className="container-page py-14">
@@ -56,9 +71,9 @@ export default function Marketplace() {
 
       <div className="mt-10 flex flex-wrap items-center gap-2">
         {CATEGORIES.map((c) => (
-          <button
+          <Link
             key={c.id}
-            onClick={() => setCategory(c.id)}
+            href={marketplaceHref(c.id, styleId, 1)}
             className={`rounded-full border px-3.5 py-1.5 text-xs font-semibold transition ${
               category === c.id
                 ? "border-brass bg-brass/10 text-brass-bright"
@@ -66,12 +81,14 @@ export default function Marketplace() {
             }`}
           >
             {c.label}
-          </button>
+          </Link>
         ))}
         <span className="mx-2 hidden h-5 w-px bg-ink-line sm:block" />
         <select
           value={styleId}
-          onChange={(e) => setStyleId(e.target.value)}
+          onChange={(e) => {
+            window.location.href = marketplaceHref(category, e.target.value, 1);
+          }}
           className="rounded-full border border-ink-line bg-ink-soft px-3.5 py-1.5 text-xs font-semibold text-cream-dim focus:border-brass/60 focus:outline-none"
           aria-label="Filter by style"
         >
@@ -83,12 +100,12 @@ export default function Marketplace() {
           ))}
         </select>
         <span className="ml-auto text-xs text-cream-faint">
-          {filtered.length} piece{filtered.length === 1 ? "" : "s"}
+          {totalCount.toLocaleString()} piece{totalCount === 1 ? "" : "s"}
         </span>
       </div>
 
       <div className="mt-8 grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-        {filtered.map((p) => (
+        {products.map((p) => (
           <div key={p.id} className="card group overflow-hidden transition hover:border-brass/50">
             <div
               role="button"
@@ -97,7 +114,7 @@ export default function Marketplace() {
               onKeyDown={(e) => e.key === "Enter" && setDetailProduct(p)}
               className="relative block aspect-[5/4] w-full cursor-pointer overflow-hidden text-left"
             >
-              <ProductGlyph product={p} className="h-full w-full transition duration-500 group-hover:scale-105" />
+              <ProductThumb product={p} className="h-full w-full transition duration-500 group-hover:scale-105" />
               <button
                 onClick={(e) => {
                   e.stopPropagation();
@@ -138,6 +155,36 @@ export default function Marketplace() {
           </div>
         ))}
       </div>
+
+      {products.length === 0 && (
+        <p className="mt-8 text-sm text-cream-faint">No pieces match these filters yet.</p>
+      )}
+
+      {totalPages > 1 && (
+        <div className="mt-10 flex items-center justify-center gap-4">
+          <Link
+            href={marketplaceHref(category, styleId, page - 1)}
+            aria-disabled={page <= 1}
+            className={`flex items-center gap-1 rounded-full border border-ink-line px-3.5 py-1.5 text-xs font-semibold text-cream-dim transition ${
+              page <= 1 ? "pointer-events-none opacity-30" : "hover:border-brass/40"
+            }`}
+          >
+            <ChevronLeft size={14} /> Prev
+          </Link>
+          <span className="text-xs text-cream-faint">
+            Page {page} of {totalPages}
+          </span>
+          <Link
+            href={marketplaceHref(category, styleId, page + 1)}
+            aria-disabled={page >= totalPages}
+            className={`flex items-center gap-1 rounded-full border border-ink-line px-3.5 py-1.5 text-xs font-semibold text-cream-dim transition ${
+              page >= totalPages ? "pointer-events-none opacity-30" : "hover:border-brass/40"
+            }`}
+          >
+            Next <ChevronRight size={14} />
+          </Link>
+        </div>
+      )}
 
       {detailProduct && (
         <ProductDetailPanel

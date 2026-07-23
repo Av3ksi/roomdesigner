@@ -7,6 +7,8 @@ import { useState } from "react";
 import { cartCount, useMaisonStore } from "@/lib/store";
 
 const LINKS = [
+  { href: "/designer", label: "Designer" },
+  { href: "/looks", label: "Complete Rooms" },
   { href: "/studio", label: "Studio" },
   { href: "/styles", label: "Styles" },
   { href: "/marketplace", label: "Marketplace" },
@@ -76,7 +78,7 @@ export default function Nav() {
               </span>
             )}
           </button>
-          <Link href="/studio" className="btn-primary hidden !px-5 !py-2.5 md:inline-flex">
+          <Link href="/designer" className="btn-primary hidden !px-5 !py-2.5 md:inline-flex">
             <Sparkles size={15} />
             Design my room
           </Link>
@@ -104,7 +106,7 @@ export default function Nav() {
               </Link>
             ))}
             <Link
-              href="/studio"
+              href="/designer"
               onClick={() => setOpen(false)}
               className="btn-primary mt-2 justify-center"
             >
