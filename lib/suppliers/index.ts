@@ -9,5 +9,5 @@ import type { SupplierAdapter } from "./types";
  */
 export const SUPPLIERS: SupplierAdapter[] = [vidaxlAdapter];
 
-export { vidaxlAdapter, fetchVidaxlCatalog, vidaxlEnabled } from "./vidaxl";
+export { vidaxlAdapter, fetchVidaxlCatalog, vidaxlEnabled, mapVidaxlSampleFeed } from "./vidaxl";
 export type { SupplierAdapter, SupplierCatalogResult, RawSupplierProduct } from "./types";

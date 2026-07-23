@@ -17,9 +17,15 @@ This is a two-pass workflow by design:
 Usage:
     python3 ingest-vidaxl-feed.py /path/to/vidaXL_ch_de_dropshipping.csv /path/to/vidaXL_ch_de_dropshipping_offer.csv
 
-Writes (into the current directory):
-    vidaxl_catalog.json    -- trimmed, matched, in-stock products
-    category_report.txt    -- every top-level category seen, with counts
+Writes:
+    scripts/data/vidaxl-full.json          -- the FULL matched catalog
+                                              (gitignored; seed into Postgres
+                                              via scripts/seed-products.ts)
+    lib/suppliers/data/vidaxl-sample.json  -- a small category-balanced sample
+                                              (committed; bundled fallback for
+                                              when Postgres isn't seeded)
+    category_report.txt                    -- every top-level category seen,
+                                              with counts (current directory)
 """
 
 import csv
@@ -58,20 +64,27 @@ SUBCATEGORY_DENYLIST = [
 # MAX_PER_SUBCATEGORY now prevents the flood on its own, so linens are
 # allowed back in, capped like everything else.
 
-# Möbel alone matched 242k+ products before stock/price filtering. The
-# original 200-item cap proved the workflow end to end but turned out too
-# small in practice: scanning the CSV in file order, it exhausted the cap
-# on early subcategories (storage, decor) before ever reaching rows for
-# lighting, rugs, art or plants later in the file -- a real "complete
-# room" bundle needs those categories, so raise the cap enough that a full
-# scan actually reaches a representative spread of the whole catalog.
-MAX_MATCHES = 3000
+# Overall ceiling across the whole run. High enough that MAX_PER_SUBCATEGORY
+# (not this) is the binding constraint -- we want depth per category, and the
+# full catalog lives in Postgres now, not a bundled JSON, so size isn't a
+# concern here.
+MAX_MATCHES = 60000
 
-# The first real run's SKU-ordered scan exhausted the whole 200-item cap on
-# towels alone before reaching any other subcategory -- cap how many
-# products can come from any single second-level category so the sample
-# actually covers a spread of furniture types instead of one product line.
-MAX_PER_SUBCATEGORY = 25
+# How many products to keep per second-level category for the FULL catalog
+# (seeded into Postgres). This was 25 -- the binding cap that pinned the
+# whole dataset at ~800 products, with nearly every subcategory stuck at
+# exactly 25. Raising it to 400 is the core "make the catalog bigger" lever:
+# it pulls 10-30x more real VidaXL inventory per category. The bigger the
+# catalog, the more room items the AI matches to OUR products (margin) rather
+# than web-sourcing them (no margin) -- see the finished-rooms detection flow.
+MAX_PER_SUBCATEGORY = 400
+
+# The BUNDLED sample (lib/suppliers/data/vidaxl-sample.json) is only a
+# fallback for when Postgres isn't seeded -- it ships in the repo and the
+# Next build, so it must stay small. Keep just a few per subcategory: enough
+# to demo every category end to end, small enough not to bloat git or the
+# bundle. The real breadth is in the DB, seeded from the full file below.
+MAX_SAMPLE_PER_SUBCATEGORY = 3
 
 
 def load_offer_feed(path):
@@ -133,7 +146,9 @@ def main():
     top_level_counts = Counter()
     subcategory_counts = Counter()
     matched_subcategory_counts = Counter()
+    sample_subcategory_counts = Counter()
     matched = []
+    sample = []  # small, category-balanced subset for the bundled fallback
     total_seen = 0
     image_columns = None
 
@@ -179,7 +194,7 @@ def main():
                 continue  # the whole point of this feed over the REST API is real photos
 
             matched_subcategory_counts[subcategory] += 1
-            matched.append({
+            product = {
                 "sku": sku,
                 "title": row.get("Title", ""),
                 "productUrl": row.get("Link", ""),
@@ -195,7 +210,13 @@ def main():
                 "images": images,
                 "ean": row.get("EAN", ""),
                 "packaging": row.get("Parcel_or_pallet", ""),
-            })
+            }
+            matched.append(product)
+
+            # Keep the first few of each subcategory for the bundled fallback sample.
+            if sample_subcategory_counts[subcategory] < MAX_SAMPLE_PER_SUBCATEGORY:
+                sample_subcategory_counts[subcategory] += 1
+                sample.append(product)
 
             if len(matched) >= MAX_MATCHES:
                 stopped_early = True
@@ -206,20 +227,26 @@ def main():
     else:
         print(f"\nScanned the whole file: {total_seen:,} rows, {len(matched):,} matched.")
 
-    with open("vidaxl_catalog.json", "w", encoding="utf-8") as f:
-        json.dump(matched, f, ensure_ascii=False, indent=2)
-    print("Wrote vidaxl_catalog.json")
+    script_dir = os.path.dirname(os.path.abspath(__file__))
 
-    # Also write straight into the app's bundled sample dataset -- the manual
-    # "now copy the output into lib/suppliers/data/" step was repeatedly
-    # forgotten/mistyped in practice. Path resolved from this script's own
-    # location so it works no matter where the script is run from.
-    app_data_path = os.path.join(
-        os.path.dirname(os.path.abspath(__file__)), "..", "lib", "suppliers", "data", "vidaxl-sample.json"
-    )
-    with open(app_data_path, "w", encoding="utf-8") as f:
+    # FULL catalog -> scripts/data/vidaxl-full.json. This is what
+    # scripts/seed-products.ts loads into Postgres. It's gitignored and never
+    # bundled into the Next build, so it can be tens of thousands of products
+    # without bloating the repo. This is the real catalog.
+    full_dir = os.path.join(script_dir, "data")
+    os.makedirs(full_dir, exist_ok=True)
+    full_path = os.path.join(full_dir, "vidaxl-full.json")
+    with open(full_path, "w", encoding="utf-8") as f:
         json.dump(matched, f, ensure_ascii=False, indent=2)
-    print(f"Wrote {os.path.normpath(app_data_path)} (the app now uses this dataset directly)")
+    print(f"Wrote {os.path.normpath(full_path)} ({len(matched):,} products) -- seed it with: npx tsx scripts/seed-products.ts")
+
+    # SMALL, category-balanced sample -> lib/suppliers/data/vidaxl-sample.json.
+    # This ships in the repo and the build as a fallback for when Postgres
+    # isn't seeded, so it's kept deliberately small.
+    sample_path = os.path.join(script_dir, "..", "lib", "suppliers", "data", "vidaxl-sample.json")
+    with open(sample_path, "w", encoding="utf-8") as f:
+        json.dump(sample, f, ensure_ascii=False, indent=2)
+    print(f"Wrote {os.path.normpath(sample_path)} ({len(sample):,} products, bundled fallback)")
 
     with open("category_report.txt", "w", encoding="utf-8") as f:
         if stopped_early:

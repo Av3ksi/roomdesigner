@@ -27,15 +27,35 @@ function rowToProduct(row: Record<string, unknown>): Product {
   };
 }
 
+// The finished-rooms matcher and the designer search both need the WHOLE
+// catalog in memory to score against (they rank every product by relevance),
+// so we can't push that work into SQL — but re-fetching every row from Neon
+// on each request is wasteful once the catalog is tens of thousands of rows.
+// Cache the loaded catalog per warm serverless instance for a short window;
+// the catalog only changes when the seed script re-runs, so a few minutes of
+// staleness is harmless and turns N row-fetches per request into ~zero.
+let catalogCache: { products: Product[]; loadedAt: number } | null = null;
+const CATALOG_CACHE_TTL_MS = 5 * 60 * 1000;
+
 /**
  * Prefers the Postgres catalog (seeded via scripts/seed-products.ts) so
  * search scales past an in-memory JSON scan against the live supplier
  * fetch on every request. Falls back to fetchVidaxlCatalog() whenever the
  * DB isn't configured, hasn't been seeded yet, or errors — the scoring
  * logic in lib/productSearch.ts stays exactly as tested either way; only
- * where the Product[] array comes from changes.
+ * where the Product[] array comes from changes. Result is cached in-process
+ * for CATALOG_CACHE_TTL_MS (see above).
  */
 export async function loadProductCatalog(): Promise<Product[]> {
+  if (catalogCache && Date.now() - catalogCache.loadedAt < CATALOG_CACHE_TTL_MS) {
+    return catalogCache.products;
+  }
+  const products = await loadProductCatalogUncached();
+  catalogCache = { products, loadedAt: Date.now() };
+  return products;
+}
+
+async function loadProductCatalogUncached(): Promise<Product[]> {
   if (dbEnabled()) {
     try {
       await ensureSchema();

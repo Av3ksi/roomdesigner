@@ -30,3 +30,8 @@ yarn-error.log*
 # python (scripts/)
 __pycache__/
 *.pyc
+
+# full ingested catalog — seeded into Postgres, never bundled or committed
+scripts/data/vidaxl-full.json
+vidaxl_catalog.json
+category_report.txt

@@ -1,3 +1,4 @@
+import type { Product } from "../types";
 import type { SupplierAdapter, SupplierCatalogResult, RawSupplierProduct } from "./types";
 import { mapSupplierProduct } from "./mapping";
 import sampleFeedData from "./data/vidaxl-sample.json";
@@ -113,6 +114,20 @@ function sampleToRaw(p: VidaxlSampleProduct): RawSupplierProduct {
 
 const SAMPLE_FEED: RawSupplierProduct[] = (sampleFeedData as VidaxlSampleProduct[]).map(sampleToRaw);
 const SAMPLE_BY_SKU = new Map(SAMPLE_FEED.map((p) => [p.sku, p]));
+
+/**
+ * Maps an ingested VidaXL feed (the shape scripts/ingest-vidaxl-feed.py
+ * writes) into Maison Products, through the exact same sampleToRaw +
+ * mapSupplierProduct + price>0 filter used for the bundled sample. The seed
+ * script (scripts/seed-products.ts) uses this to load the FULL catalog file
+ * — which is far too big to bundle as a build-time import — straight into
+ * Postgres, without duplicating any of the mapping/pricing logic.
+ */
+export function mapVidaxlSampleFeed(items: unknown[]): Product[] {
+  return (items as VidaxlSampleProduct[])
+    .map((p) => mapSupplierProduct(sampleToRaw(p), SUPPLIER_ID, SUPPLIER_LABEL))
+    .filter((p) => p.price > 0);
+}
 
 // Confirmed against a real category_report.txt run over VidaXL's bulk
 // feed — see the module doc comment above.
