@@ -403,12 +403,14 @@ export async function composeSceneWithProducts(
   // sequentially they stack (8 items → 8 round-trips before the render even
   // starts), which is the bulk of the pre-render wait. Fetch them together,
   // then append images IN ORDER so reference-image numbering stays stable.
+  const descriptionsStart = Date.now();
   const prepared = await Promise.all(
     items.map(async (item) => ({
       blob: await toImageBlob(item.productPhoto),
       description: await describeProductForPrompt(item.productPhoto),
     })),
   );
+  console.log(`[maison] timing: product descriptions (${items.length}x, parallel) took ${Date.now() - descriptionsStart}ms`);
 
   const itemLines: string[] = [];
   for (const [i, item] of items.entries()) {
@@ -427,7 +429,7 @@ export async function composeSceneWithProducts(
   if (restyle) {
     // No mask: the whole image may change (walls, lighting, floor mood),
     // constrained to the room's real architecture by the prompt instead.
-    console.log("[maison] composeSceneWithProducts restyle", { width, height, itemCount: items.length, styleDirection });
+    console.log("[maison] composeSceneWithProducts restyle", { width, height, itemCount: items.length, quality, styleDirection });
     form.append(
       "prompt",
       "The first image is a photo of a real room. Every image after it is a real product photo. Transform this " +
@@ -450,7 +452,7 @@ export async function composeSceneWithProducts(
       w: union.w + MASK_PADDING * 2,
       h: union.h + MASK_PADDING * 2,
     });
-    console.log("[maison] composeSceneWithProducts mask", { width, height, itemCount: items.length, maskRegion });
+    console.log("[maison] composeSceneWithProducts mask", { width, height, itemCount: items.length, quality, maskRegion });
     const maskPng = await buildMaskPng(width, height, maskRegion);
     form.append("mask", new Blob([new Uint8Array(maskPng)], { type: "image/png" }), "mask.png");
     form.append(
@@ -470,11 +472,20 @@ export async function composeSceneWithProducts(
   form.append("size", "auto");
   form.append("n", "1");
 
+  // This is the real render — a full-image edit/restyle across every
+  // reference photo, run entirely on OpenAI's infrastructure. It's typically
+  // the single biggest chunk of a generate call's wall time (well past the
+  // ~30-90s the UI copy quotes at "high" quality with several items —
+  // restyle mode is also slower than a masked edit since the whole image is
+  // regenerated, not just a region) — timed explicitly so a slow run shows
+  // exactly how much of it was this step versus the Claude calls around it.
+  const renderStart = Date.now();
   const res = await fetch("https://api.openai.com/v1/images/edits", {
     method: "POST",
     headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}` },
     body: form,
   });
+  console.log(`[maison] timing: OpenAI image render (quality=${quality}, ${restyle ? "restyle" : "mask"}) took ${Date.now() - renderStart}ms`);
 
   if (!res.ok) {
     const errText = await res.text();

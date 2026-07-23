@@ -82,37 +82,63 @@ export async function POST(req: NextRequest) {
 
   const roomPhoto = Buffer.from(await roomFile.arrayBuffer());
 
+  // Per-step wall-clock timing for the whole pipeline — the only way to tell
+  // "which of the ~10 AI calls in a generate actually took the time" instead
+  // of guessing. Every step logs "[maison] timing: <step> took Nms"; grep the
+  // dev server output for "timing:" after a slow run to see the breakdown.
+  const requestStart = Date.now();
+  const timings: Record<string, number> = {};
+  async function timed<T>(label: string, fn: () => Promise<T>): Promise<T> {
+    const start = Date.now();
+    try {
+      return await fn();
+    } finally {
+      const ms = Date.now() - start;
+      timings[label] = ms;
+      console.log(`[maison] timing: ${label} took ${ms}ms`);
+    }
+  }
+
   try {
     // Strict: this is a paid curator tool, so a failed analysis must say WHY
     // (bad key, no credits, overloaded) rather than silently fall back to
     // context-blind default boxes. It also runs BEFORE the OpenAI render, so a
     // dead key fails fast and cheap instead of after paying for an image.
-    const placement = await suggestPlacementsStrict(roomPhoto);
+    const placement = await timed("placement analysis", () => suggestPlacementsStrict(roomPhoto));
 
     // Fetch every product photo and reshape its placement box together — one
     // slow network round-trip per product otherwise stacks up before the
     // render starts. A failed fetch throws and is handled by the outer catch.
-    const items: SceneItem[] = await Promise.all(
-      products.map(async (product): Promise<SceneItem> => {
-        const productRes = await fetch(product.imageUrl!);
-        if (!productRes.ok) throw new Error(`Failed to fetch photo for "${product.name}".`);
-        const productPhoto = Buffer.from(await productRes.arrayBuffer());
-        const suggestion = placement.placements[product.category];
-        const box = await reshapeBoxForProduct(suggestion.box, productPhoto);
-        return { productPhoto, category: product.category, box, wallAngleDeg: suggestion.wallAngleDeg };
-      }),
+    const items: SceneItem[] = await timed("product photo fetch + reshape (parallel)", () =>
+      Promise.all(
+        products.map(async (product): Promise<SceneItem> => {
+          const productRes = await fetch(product.imageUrl!);
+          if (!productRes.ok) throw new Error(`Failed to fetch photo for "${product.name}".`);
+          const productPhoto = Buffer.from(await productRes.arrayBuffer());
+          const suggestion = placement.placements[product.category];
+          const box = await reshapeBoxForProduct(suggestion.box, productPhoto);
+          return { productPhoto, category: product.category, box, wallAngleDeg: suggestion.wallAngleDeg };
+        }),
+      ),
     );
 
-    const result = await composeSceneWithProducts(roomPhoto, items, quality, styleDirection);
+    // Includes the parallel product-description Claude calls AND the OpenAI
+    // render itself — each has its own inner timing log (see composite.ts) so
+    // this total can be split into "our AI calls" vs "OpenAI's render time".
+    const result = await timed("composeSceneWithProducts (descriptions + OpenAI render)", () =>
+      composeSceneWithProducts(roomPhoto, items, quality, styleDirection),
+    );
     const finalImage = Buffer.from(result.imageBase64, "base64");
 
     // ONE detection pass over the finished render: every distinct object,
     // its box, and whether it's one of the placed products (by 1-based
     // index) or an extra. This replaces per-product locate calls that
     // guessed independently and cross-labeled objects.
-    const detected = await detectSceneItems(
-      finalImage,
-      products.map((p, i) => ({ index: i + 1, name: p.name, category: p.category })),
+    const detected = await timed("detectSceneItems", () =>
+      detectSceneItems(
+        finalImage,
+        products.map((p, i) => ({ index: i + 1, name: p.name, category: p.category })),
+      ),
     );
 
     const itemBoxes: Record<string, DetectionBox> = {};
@@ -145,7 +171,9 @@ export async function POST(req: NextRequest) {
       if (webCandidates.length < 3) webCandidates.push({ box: d.box, query: d.webQuery });
     }
 
-    const webResults = await Promise.all(webCandidates.map((c) => searchWebForProduct(c.query, targetMarket)));
+    const webResults = await timed(`web search (${webCandidates.length}x, parallel)`, () =>
+      Promise.all(webCandidates.map((c) => searchWebForProduct(c.query, targetMarket))),
+    );
     const externals: WebExternalItem[] = [];
     webResults.forEach((web, i) => {
       if (web) externals.push({ ...web, box: webCandidates[i].box });
@@ -166,6 +194,8 @@ export async function POST(req: NextRequest) {
 
     const totalPrice = allProducts.reduce((sum, p) => sum + p.price, 0);
     const styleTags = Array.from(new Set(allProducts.flatMap((p) => p.styles)));
+
+    console.log(`[maison] timing: TOTAL generate request took ${Date.now() - requestStart}ms`, timings);
 
     return NextResponse.json({
       imageBase64: result.imageBase64,
