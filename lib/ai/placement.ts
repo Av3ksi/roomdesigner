@@ -149,6 +149,13 @@ async function runPlacement(roomPhoto: Buffer): Promise<PlacementResult> {
         ],
       },
     ],
+  }, {
+    // See lib/ai/webProductSearch.ts for why: the SDK default (10 min timeout
+    // x up to 3 attempts) turns one stuck call into up to 30 minutes. This is
+    // a single-turn vision call — normally seconds, rarely more than a
+    // minute — so fail fast instead of blocking the whole generate request.
+    timeout: 90_000,
+    maxRetries: 1,
   });
 
   if (response.stop_reason === "refusal") throw new Error("Placement analysis was refused for this image.");

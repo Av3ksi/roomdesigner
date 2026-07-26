@@ -97,6 +97,16 @@ export async function searchWebForProduct(query: string, market: TargetMarket = 
       messages: [
         { role: "user", content: `Find a real product to buy that matches: "${query}". Return the JSON object as instructed.` },
       ],
+    }, {
+      // The SDK default (10 min timeout x up to 3 attempts with retries =
+      // up to 30 min for ONE call) is what turned a single stuck search into
+      // a 24-minute generate request. A real web search (a couple of rounds,
+      // reading a few pages) normally finishes well under a minute; if it
+      // hasn't in 2, something's actually wrong — fail fast and let this
+      // function's existing fallback (return null, degrade gracefully) kick
+      // in instead of blocking the whole response for up to half an hour.
+      timeout: 120_000,
+      maxRetries: 1,
     });
 
     if (response.stop_reason === "refusal") return null;

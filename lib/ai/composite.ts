@@ -148,6 +148,13 @@ async function describeProductForPrompt(productPhoto: Buffer): Promise<string | 
           content: [{ type: "image", source: { type: "base64", media_type: "image/jpeg", data: jpeg.toString("base64") } }],
         },
       ],
+    }, {
+      // See lib/ai/webProductSearch.ts for why: the SDK default (10 min
+      // timeout x up to 3 attempts) turns one stuck call into up to 30
+      // minutes. This is a tiny, single-turn, no-thinking call — normally a
+      // couple of seconds — so fail fast instead of blocking the render.
+      timeout: 45_000,
+      maxRetries: 1,
     });
 
     const text = response.content.find((b) => b.type === "text")?.text;
