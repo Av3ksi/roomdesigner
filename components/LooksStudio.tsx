@@ -41,6 +41,8 @@ interface GenerateResult {
   checks: CheckResult[];
   autoMatched: { productId: string; name: string; price: number }[];
   externals: ExternalItem[];
+  /** Real detected objects we deliberately didn't source — still pinned, just not shoppable. */
+  unavailable: { box: DetectionBox; description: string }[];
 }
 
 /**
@@ -177,7 +179,14 @@ export default function LooksStudio({ catalog }: { catalog: Product[] }) {
             url: e.url,
             retailer: e.retailer,
           }));
-        return [...productPins, ...externalPins];
+        const unavailablePins: HotspotItem[] = result.unavailable.map((u, i) => ({
+          id: `unavail-${i}`,
+          name: u.description,
+          priceLabel: "",
+          box: u.box,
+          kind: "unavailable",
+        }));
+        return [...productPins, ...externalPins, ...unavailablePins];
       })()
     : [];
 
@@ -351,6 +360,12 @@ export default function LooksStudio({ catalog }: { catalog: Product[] }) {
               <div className="p-16 text-center text-sm text-cream-faint">Upload a room photo to start.</div>
             )}
           </div>
+          {hotspots.length > 0 && (
+            <p className="text-[10px] text-cream-faint">
+              Brass = placed product, blue = auto-matched to our catalog, rose = sourced externally, slate = detected
+              but not sourced (past the search cap).
+            </p>
+          )}
           {result && result.checks.some((c) => c.pass === false) && (
             <p className="text-[10px] text-amber-400">
               {result.checks.filter((c) => c.pass === false).length} picked product(s) weren&apos;t found in the render

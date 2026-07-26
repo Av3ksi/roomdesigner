@@ -8,14 +8,16 @@ export interface HotspotItem {
   id: string;
   name: string;
   box: DetectionBox;
-  /** Pre-formatted price label, e.g. "CHF 473" or a retailer's own "£29". */
+  /** Pre-formatted price label, e.g. "CHF 473" or a retailer's own "£29". Unused for kind: "unavailable". */
   priceLabel: string;
   /**
-   * catalog  = hand-picked, one of our own products (add to cart)
-   * auto     = staged extra matched to one of our own products (add to cart, marked)
-   * external = staged extra sourced to another retailer (link out, no cart)
+   * catalog     = hand-picked, one of our own products (add to cart)
+   * auto        = staged extra matched to one of our own products (add to cart, marked)
+   * external    = staged extra sourced to another retailer (link out, no cart)
+   * unavailable = a real object the AI detected in the render that isn't sourced anywhere —
+   *               still gets a pin so every visible object is clickable, just honestly not shoppable yet
    */
-  kind: "catalog" | "auto" | "external";
+  kind: "catalog" | "auto" | "external" | "unavailable";
   /** External retailer product URL — only on kind: "external". */
   url?: string;
   /** Retailer name for external items. */
@@ -26,15 +28,19 @@ const PIN_COLOR: Record<HotspotItem["kind"], string> = {
   catalog: "bg-brass-bright",
   auto: "bg-sky-400",
   external: "bg-rose-400",
+  unavailable: "bg-slate-400",
 };
 
 /**
  * Small circular "shop the look" pins, clickable, color-coded by source:
  * brass = our own hand-picked product, sky = an extra matched to our own
  * catalog, rose = an extra we don't carry, sourced to another retailer
- * (links out, never added to cart). Shared by the Looks Studio preview and
- * the published /looks/[id] page. onAction fires add-to-cart for catalog/
- * auto pins only; external pins always link out regardless.
+ * (links out, never added to cart), slate = a real detected object we
+ * chose not to source (past the web-search cap) — still pinned so nothing
+ * in the room is silently invisible, just honestly marked as not shoppable
+ * yet. Shared by the Looks Studio preview and the published /looks/[id]
+ * page. onAction fires add-to-cart for catalog/auto pins only; external
+ * pins always link out; unavailable pins have no action at all.
  */
 export default function RoomHotspots({
   items,
@@ -67,7 +73,12 @@ export default function RoomHotspots({
           className="absolute z-10 w-60 rounded-lg border border-ink-line bg-ink p-3 text-left shadow-xl"
         >
           <div className="text-xs font-semibold text-cream">{open.name}</div>
-          <div className="mt-1 font-display text-base text-brass-bright">{open.priceLabel}</div>
+
+          {open.kind === "unavailable" ? (
+            <div className="mt-1 text-[10px] text-cream-faint">Not sourced yet — not available to buy here.</div>
+          ) : (
+            <div className="mt-1 font-display text-base text-brass-bright">{open.priceLabel}</div>
+          )}
 
           {open.kind === "auto" && (
             <div className="mt-1 text-[10px] text-sky-300">Matched from styling — not hand-picked for this look.</div>
@@ -89,7 +100,7 @@ export default function RoomHotspots({
                 View at {open.retailer || "retailer"} <ArrowUpRight size={12} />
               </a>
             )
-          ) : (
+          ) : open.kind === "unavailable" ? null : (
             onAction && (
               <button
                 onClick={() => onAction(open.id)}

@@ -145,7 +145,13 @@ export async function POST(req: NextRequest) {
     const autoMatched: { product: Product; box: DetectionBox }[] = [];
     const usedProductIds = new Set<string>();
     // Extras that need a web search — collected, then run in parallel.
-    const webCandidates: { box: DetectionBox; query: string }[] = [];
+    const webCandidates: { box: DetectionBox; query: string; description: string }[] = [];
+    // Real detected objects we deliberately don't source (past the web-search
+    // cap) or that the search came up empty for. Previously these were
+    // silently dropped — nothing rendered them invisible on purpose, but the
+    // effect was "not everything is pressable." Still surfaced as a pin (see
+    // RoomHotspots' "unavailable" kind), just honestly not shoppable.
+    const unavailable: { box: DetectionBox; description: string }[] = [];
 
     for (const d of detected) {
       // Is this object one of the products the designer placed?
@@ -167,8 +173,11 @@ export async function POST(req: NextRequest) {
       // Not ours — queue a web search so the piece is still shoppable. Capped
       // low: each candidate is a full web-search call (fees + retrieved page
       // content billed as input tokens), and these are no-margin stopgap links
-      // anyway — the piece we actually profit on is our own catalog.
-      if (webCandidates.length < 3) webCandidates.push({ box: d.box, query: d.webQuery });
+      // anyway — the piece we actually profit on is our own catalog. Anything
+      // past the cap still gets a pin, just marked unavailable instead of
+      // disappearing.
+      if (webCandidates.length < 3) webCandidates.push({ box: d.box, query: d.webQuery, description: d.description });
+      else unavailable.push({ box: d.box, description: d.description });
     }
 
     const webResults = await timed(`web search (${webCandidates.length}x, parallel)`, () =>
@@ -177,6 +186,7 @@ export async function POST(req: NextRequest) {
     const externals: WebExternalItem[] = [];
     webResults.forEach((web, i) => {
       if (web) externals.push({ ...web, box: webCandidates[i].box });
+      else unavailable.push({ box: webCandidates[i].box, description: webCandidates[i].description });
     });
 
     // QA per placed product, derived for free from the detection pass:
@@ -206,6 +216,7 @@ export async function POST(req: NextRequest) {
       checks,
       autoMatched: autoMatched.map((a) => ({ productId: a.product.id, name: a.product.name, price: a.product.price })),
       externals,
+      unavailable,
     });
   } catch (err) {
     // describeAiError turns a raw Anthropic failure (no credits, bad key,

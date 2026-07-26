@@ -439,15 +439,20 @@ export async function composeSceneWithProducts(
     console.log("[maison] composeSceneWithProducts restyle", { width, height, itemCount: items.length, quality, styleDirection });
     form.append(
       "prompt",
-      "The first image is a photo of a real room. Every image after it is a real product photo. Transform this " +
-        "room into a professionally designed, magazine-quality interior in this style: " +
+      "The first image is a photo of a real room. Every image after it is a real product photo. Edit this exact " +
+        "room photo according to this direction: " +
         `${styleDirection!.trim()}. ` +
-        "Keep the room's actual architecture exactly as photographed — same walls, window and door positions, " +
-        "ceiling height, camera angle and perspective — but you may repaint walls (accent walls welcome), change " +
-        "the floor or add a rug consistent with the style, adjust the lighting mood (warm lamps, natural light), " +
-        "and add tasteful small staging accents (cushions, books, a plant, wall art) so the space feels lived-in " +
-        "and aspirational. The featured products are the heroes of the scene: use the EXACT product shown in each " +
-        "reference image — never substitute a different piece for any of them, and never omit one. " +
+        "This is a real customer's real room, not a stock photo to reimagine — preserve it as closely as possible. " +
+        "Keep the room's actual architecture EXACTLY as photographed: same walls, wall color, window and door " +
+        "positions, ceiling height, floor material, camera angle and perspective. Keep every piece of existing " +
+        "furniture and every existing decor item exactly where and how it is, unless the direction above " +
+        "explicitly says to change or remove it. Do not repaint walls, change the floor, add a rug, adjust the " +
+        "lighting mood, or add any cushions, books, plants, wall art, or other staging accents UNLESS the " +
+        "direction above explicitly asks for that specific thing — add nothing else, no matter how tastefully it " +
+        "would round out the scene. The only things you should add or change are: the placed products below, and " +
+        "whatever is explicitly named in the direction above. The featured products are the heroes of the scene: " +
+        "use the EXACT product shown in each reference image — never substitute a different piece for any of " +
+        "them, and never omit one. " +
         itemLines.join(" ") +
         " Consistent scale, perspective and lighting across everything; realistic contact shadows where items touch the floor.",
     );
