@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { MODEL, aiEnabled } from "./claude";
 import type { TargetMarket } from "@/lib/targetMarkets";
+import type { ProductCategory } from "@/lib/types";
 
 /**
  * Finds a real, purchasable product on the open web for something the
@@ -23,6 +24,15 @@ export interface WebProduct {
   retailer: string;
   /** Price in the retailer's own currency string when the model could read one, else null. */
   priceText: string | null;
+  /**
+   * Direct URL of the product's real photo, when the model could find one on
+   * the product page (via web_fetch). Needed to actually composite the real
+   * item into a render as a reference image — without this, an "add a
+   * poster"-type request only reaches the image model as a text hint, which
+   * it may ignore or invent something ungrounded for. Null if no reliable
+   * image URL was found — the caller should treat the item as link-only.
+   */
+  imageUrl: string | null;
 }
 
 /**
@@ -59,12 +69,13 @@ const MARKET_EXCLUSION =
   "Never pick amazon.com or any other US-only retailer/listing unless it explicitly states it ships to " +
   "Europe — a US-only link is not something this customer can actually buy.";
 
-// web_search_20260209 requires Opus 4.6+/Sonnet 5/4.6 — MODEL is claude-opus-4-8, which qualifies.
-// max_uses caps search rounds PER product. Each round carries a per-search fee AND pulls the
-// retrieved page content into context as (billed) input tokens — the single biggest variable cost
-// in the pipeline. 2 rounds is enough to find a decent match for a stopgap external link; going
-// higher mostly buys marginally better matches on no-margin items.
+// web_search_20260209 / web_fetch_20260209 require Opus 4.6+/Sonnet 5/4.6 — MODEL is
+// claude-opus-4-8, which qualifies. max_uses caps rounds PER product; each round carries a fee
+// AND pulls retrieved content into context as (billed) input tokens — the single biggest variable
+// cost in the pipeline. web_fetch is what lets the model actually open the product page it found
+// and read off the real photo URL, rather than guessing one from the search snippet alone.
 const WEB_SEARCH_TOOL = { type: "web_search_20260209", name: "web_search", max_uses: 2 } as const;
+const WEB_FETCH_TOOL = { type: "web_fetch_20260209", name: "web_fetch", max_uses: 2 } as const;
 
 function firstJsonObject(text: string): Record<string, unknown> | null {
   // The model ends with a JSON object; grab the last {...} block and parse it.
@@ -84,16 +95,22 @@ export async function searchWebForProduct(query: string, market: TargetMarket = 
       model: MODEL,
       max_tokens: 2048,
       thinking: { type: "adaptive" },
-      // Cast: web_search_20260209 isn't in this SDK version's tool union types yet,
-      // but the server accepts it and it's the current tool version for opus-4-8.
-      tools: [WEB_SEARCH_TOOL as unknown as Anthropic.Tool],
+      // Cast: web_search_20260209 / web_fetch_20260209 aren't in this SDK version's tool
+      // union types yet, but the server accepts them and they're the current tool versions
+      // for opus-4-8.
+      tools: [WEB_SEARCH_TOOL as unknown as Anthropic.Tool, WEB_FETCH_TOOL as unknown as Anthropic.Tool],
       system:
-        "You find one real, in-stock, purchasable product that matches a description, for a 'shop the look' feature. " +
+        "You find one real, in-stock, purchasable product that matches a description, for a 'shop the look' feature " +
+        "that composites the ACTUAL product photo into a room render — so the real photo matters as much as the link. " +
         "Search the web, pick a single concrete product page from a reputable retailer (not a category/listing page, " +
         `not a marketplace search URL, not a blog). ${MARKET_GUIDANCE[market]} ${MARKET_EXCLUSION} ` +
+        "Once you've picked a product page, use web_fetch to open it and find the direct URL of its main product " +
+        "photo (an <img> src, an Open Graph og:image, or a product-schema image field — not a logo, icon, or " +
+        "unrelated thumbnail). " +
         'When you have it, end your reply with ONLY a JSON object on its own line: {"name": "...", ' +
-        '"url": "https://...", "retailer": "...", "priceText": "CHF 49" or null}. If you cannot find a genuine ' +
-        'product page that actually ships to the customer, end with {"name": null}.',
+        '"url": "https://...", "retailer": "...", "priceText": "CHF 49" or null, "imageUrl": "https://..." or null ' +
+        'if you could not confidently find the real product photo URL}. If you cannot find a genuine product page ' +
+        'that actually ships to the customer, end with {"name": null}.',
       messages: [
         { role: "user", content: `Find a real product to buy that matches: "${query}". Return the JSON object as instructed.` },
       ],
@@ -121,14 +138,117 @@ export async function searchWebForProduct(query: string, market: TargetMarket = 
     const url = typeof parsed.url === "string" ? parsed.url.trim() : "";
     if (!name || !/^https?:\/\//i.test(url)) return null;
 
+    const imageUrl = typeof parsed.imageUrl === "string" ? parsed.imageUrl.trim() : "";
+
     return {
       name,
       url,
       retailer: typeof parsed.retailer === "string" && parsed.retailer.trim() ? parsed.retailer.trim() : new URL(url).hostname.replace(/^www\./, ""),
       priceText: typeof parsed.priceText === "string" && parsed.priceText.trim() ? parsed.priceText.trim() : null,
+      imageUrl: /^https?:\/\//i.test(imageUrl) ? imageUrl : null,
     };
   } catch (err) {
     console.error("[maison] web product search failed:", err);
     return null;
+  }
+}
+
+const CATEGORIES: ProductCategory[] = [
+  "sofa", "chair", "table", "lighting", "rug", "art", "plant", "storage", "decor", "textile",
+];
+
+export interface RequestedExtra {
+  category: ProductCategory;
+  /** English phrase to feed into searchWebForProduct. */
+  webQuery: string;
+}
+
+const REQUESTED_EXTRAS_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["items"],
+  properties: {
+    items: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["category", "webQuery"],
+        properties: {
+          category: { type: "string", enum: CATEGORIES },
+          webQuery: { type: "string" },
+        },
+      },
+    },
+  },
+} as const;
+
+/**
+ * Parses a free-text style direction for any SPECIFIC item the curator
+ * wants added ("add a poster", "put a floor lamp in the corner") — as
+ * opposed to pure mood/aesthetic language ("make it cozy", "warmer tones")
+ * that describes how to treat what's already there, not a new object to
+ * source.
+ *
+ * This exists because composeSceneWithProducts only ever gets real
+ * reference photos for the products the curator explicitly picked — a
+ * poster mentioned only in free text reaches the image model as a
+ * description, not a photo, which it may ignore (especially now that the
+ * restyle prompt is deliberately conservative about adding anything not
+ * explicitly named) or render as something ungrounded/hallucinated. Running
+ * this BEFORE compositing lets the caller source a REAL photo for each
+ * named item via searchWebForProduct and feed it in as a proper reference
+ * image, exactly like a catalog product — not a guess made after the fact.
+ */
+export async function extractRequestedExtras(
+  styleDirection: string,
+  coveredCategories: ProductCategory[],
+): Promise<RequestedExtra[]> {
+  if (!aiEnabled() || !styleDirection.trim()) return [];
+  try {
+    const response = await new Anthropic().messages.create({
+      model: MODEL,
+      max_tokens: 512,
+      system:
+        "You read a free-text room styling direction and pull out any SPECIFIC, NAMED physical item the person " +
+        "wants added to the room — e.g. 'add a poster', 'put in a floor lamp', 'a small side table would be nice'. " +
+        "Do NOT include pure mood, color, or lighting-quality language with no new object named — 'make it cozy', " +
+        "'warmer tones', 'more natural light' describe how to treat the existing room, not something to source and " +
+        "add. For each real named item, return its closest category from the allowed list and a short English web " +
+        `search query (2-6 words) to find a real purchasable version of it. Skip these categories — already ` +
+        `covered by a hand-picked product: ${coveredCategories.length ? coveredCategories.join(", ") : "(none)"}. ` +
+        "If nothing concrete is requested, return an empty items array.",
+      output_config: {
+        format: { type: "json_schema", schema: REQUESTED_EXTRAS_SCHEMA as unknown as Record<string, unknown> },
+      },
+      messages: [{ role: "user", content: `Style direction: "${styleDirection.trim()}"` }],
+    }, {
+      // Tiny, single-turn, no-thinking, no-tools call — normally a couple of
+      // seconds. See searchWebForProduct above for why an explicit timeout
+      // matters at all.
+      timeout: 45_000,
+      maxRetries: 1,
+    });
+
+    if (response.stop_reason === "refusal") return [];
+    const text = response.content.find((b) => b.type === "text")?.text;
+    if (!text) return [];
+    const parsed = JSON.parse(text) as { items?: unknown };
+    if (!Array.isArray(parsed.items)) return [];
+
+    return parsed.items
+      .filter((i): i is Record<string, unknown> => typeof i === "object" && i !== null)
+      .filter(
+        (i) =>
+          typeof i.category === "string" &&
+          (CATEGORIES as readonly string[]).includes(i.category) &&
+          typeof i.webQuery === "string" &&
+          i.webQuery.trim(),
+      )
+      .map((i) => ({ category: i.category as ProductCategory, webQuery: (i.webQuery as string).trim() }))
+      .slice(0, 5);
+  } catch (err) {
+    console.error("[maison] extractRequestedExtras failed:", err);
+    return [];
   }
 }

@@ -3,11 +3,11 @@ import { aiEnabled, describeAiError } from "@/lib/ai/claude";
 import { compositingEnabled, composeSceneWithProducts, reshapeBoxForProduct, type SceneItem } from "@/lib/ai/composite";
 import { suggestPlacementsStrict } from "@/lib/ai/placement";
 import { detectSceneItems } from "@/lib/ai/locate";
-import { searchWebForProduct, type WebProduct } from "@/lib/ai/webProductSearch";
+import { searchWebForProduct, extractRequestedExtras, type WebProduct } from "@/lib/ai/webProductSearch";
 import { TARGET_MARKETS, type TargetMarket } from "@/lib/targetMarkets";
 import { findBestCatalogMatch } from "@/lib/productSearch";
 import { loadProductCatalog } from "@/lib/productSearchDb";
-import type { DetectionBox, Product } from "@/lib/types";
+import type { DetectionBox, Product, ProductCategory } from "@/lib/types";
 
 // sharp (compositing) needs the Node runtime, not edge.
 export const runtime = "nodejs";
@@ -109,7 +109,7 @@ export async function POST(req: NextRequest) {
     // Fetch every product photo and reshape its placement box together — one
     // slow network round-trip per product otherwise stacks up before the
     // render starts. A failed fetch throws and is handled by the outer catch.
-    const items: SceneItem[] = await timed("product photo fetch + reshape (parallel)", () =>
+    const productItems: SceneItem[] = await timed("product photo fetch + reshape (parallel)", () =>
       Promise.all(
         products.map(async (product): Promise<SceneItem> => {
           const productRes = await fetch(product.imageUrl!);
@@ -122,6 +122,43 @@ export async function POST(req: NextRequest) {
       ),
     );
 
+    // A style direction can name a specific item to add ("add a poster")
+    // that isn't one of the hand-picked products — historically that only
+    // reached the image model as a text hint, which it could ignore or
+    // invent something ungrounded for (especially now that the restyle
+    // prompt is deliberately conservative about adding anything not
+    // explicitly named — see composite.ts). Parse it, source a REAL photo
+    // for each named item via the same web search used for post-render
+    // extras, and feed it into the render as a proper reference image, just
+    // like a catalog product. Only fires when a style direction is given —
+    // extractRequestedExtras returns [] for an empty one.
+    const requestedExtras = await timed("extractRequestedExtras", () =>
+      extractRequestedExtras(styleDirection ?? "", Array.from(seenCategories) as ProductCategory[]),
+    );
+    const preSourcedExternals = (
+      await timed(`pre-source requested extras (${requestedExtras.length}x, parallel)`, () =>
+        Promise.all(
+          requestedExtras.map(async (extra) => {
+            const web = await searchWebForProduct(extra.webQuery, targetMarket);
+            if (!web || !web.imageUrl) return null;
+            try {
+              const photoRes = await fetch(web.imageUrl);
+              if (!photoRes.ok) return null;
+              const productPhoto = Buffer.from(await photoRes.arrayBuffer());
+              const suggestion = placement.placements[extra.category];
+              const box = await reshapeBoxForProduct(suggestion.box, productPhoto);
+              const sceneItem: SceneItem = { productPhoto, category: extra.category, box, wallAngleDeg: suggestion.wallAngleDeg };
+              return { category: extra.category, web, sceneItem };
+            } catch {
+              return null; // couldn't fetch the photo — skip, not fatal
+            }
+          }),
+        ),
+      )
+    ).filter((e): e is { category: ProductCategory; web: WebProduct; sceneItem: SceneItem } => e !== null);
+
+    const items: SceneItem[] = [...productItems, ...preSourcedExternals.map((e) => e.sceneItem)];
+
     // Includes the parallel product-description Claude calls AND the OpenAI
     // render itself — each has its own inner timing log (see composite.ts) so
     // this total can be split into "our AI calls" vs "OpenAI's render time".
@@ -132,18 +169,20 @@ export async function POST(req: NextRequest) {
 
     // ONE detection pass over the finished render: every distinct object,
     // its box, and whether it's one of the placed products (by 1-based
-    // index) or an extra. This replaces per-product locate calls that
+    // index), a pre-sourced extra we explicitly asked to be placed, or an
+    // unaccounted-for addition. This replaces per-product locate calls that
     // guessed independently and cross-labeled objects.
     const detected = await timed("detectSceneItems", () =>
-      detectSceneItems(
-        finalImage,
-        products.map((p, i) => ({ index: i + 1, name: p.name, category: p.category })),
-      ),
+      detectSceneItems(finalImage, [
+        ...products.map((p, i) => ({ index: i + 1, name: p.name, category: p.category })),
+        ...preSourcedExternals.map((e, i) => ({ index: products.length + i + 1, name: e.web.name, category: e.category })),
+      ]),
     );
 
     const itemBoxes: Record<string, DetectionBox> = {};
     const autoMatched: { product: Product; box: DetectionBox }[] = [];
     const usedProductIds = new Set<string>();
+    const usedPreSourcedIndices = new Set<number>();
     // Extras that need a web search — collected, then run in parallel.
     const webCandidates: { box: DetectionBox; query: string; description: string }[] = [];
     // Real detected objects we deliberately don't source (past the web-search
@@ -152,6 +191,10 @@ export async function POST(req: NextRequest) {
     // effect was "not everything is pressable." Still surfaced as a pin (see
     // RoomHotspots' "unavailable" kind), just honestly not shoppable.
     const unavailable: { box: DetectionBox; description: string }[] = [];
+    // Pre-sourced externals (poster, etc.) that actually got rendered —
+    // resolved with their real on-image box from detection, same as a
+    // catalog product, rather than the pre-render placement guess.
+    const preSourcedFound: WebExternalItem[] = [];
 
     for (const d of detected) {
       // Is this object one of the products the designer placed?
@@ -160,6 +203,15 @@ export async function POST(req: NextRequest) {
         if (!usedProductIds.has(p.id)) {
           itemBoxes[p.id] = d.box;
           usedProductIds.add(p.id);
+        }
+        continue;
+      }
+      // Is this one of the extras we explicitly pre-sourced and asked to be placed?
+      const preSourcedIdx = d.pickedIndex - products.length - 1;
+      if (preSourcedIdx >= 0 && preSourcedIdx < preSourcedExternals.length) {
+        if (!usedPreSourcedIndices.has(preSourcedIdx)) {
+          preSourcedFound.push({ ...preSourcedExternals[preSourcedIdx].web, box: d.box });
+          usedPreSourcedIndices.add(preSourcedIdx);
         }
         continue;
       }
@@ -183,7 +235,7 @@ export async function POST(req: NextRequest) {
     const webResults = await timed(`web search (${webCandidates.length}x, parallel)`, () =>
       Promise.all(webCandidates.map((c) => searchWebForProduct(c.query, targetMarket))),
     );
-    const externals: WebExternalItem[] = [];
+    const externals: WebExternalItem[] = [...preSourcedFound];
     webResults.forEach((web, i) => {
       if (web) externals.push({ ...web, box: webCandidates[i].box });
       else unavailable.push({ box: webCandidates[i].box, description: webCandidates[i].description });
@@ -197,6 +249,17 @@ export async function POST(req: NextRequest) {
       pass: usedProductIds.has(product.id),
       note: usedProductIds.has(product.id) ? null : "Not found in the render — it may have been substituted or omitted.",
     }));
+    // Same QA, but for style-direction extras we found a real photo for and
+    // asked to be placed (e.g. "add a poster") — so the curator can tell a
+    // silently-dropped request apart from one that just wasn't sourceable.
+    for (const [i, extra] of preSourcedExternals.entries()) {
+      checks.push({
+        productId: `extra-${i}`,
+        name: extra.web.name,
+        pass: usedPreSourcedIndices.has(i),
+        note: usedPreSourcedIndices.has(i) ? null : "Found and sent to the render, but not visible in the result — it may not have rendered.",
+      });
+    }
 
     const allProducts = [...products, ...autoMatched.map((a) => a.product)];
     const allItemBoxes = { ...itemBoxes };
