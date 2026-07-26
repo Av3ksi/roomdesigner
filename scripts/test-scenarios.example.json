@@ -1,0 +1,10 @@
+[
+  {
+    "name": "REPLACE_WITH_A_SHORT_NAME — e.g. poster + green sofa regression check",
+    "roomPhotoPath": "REPLACE_WITH_YOUR_REAL_ROOM_PHOTO_PATH.jpg",
+    "productIds": ["REPLACE_WITH_A_REAL_PRODUCT_ID", "REPLACE_WITH_ANOTHER_REAL_PRODUCT_ID"],
+    "styleDirection": "add a poster",
+    "quality": "low",
+    "targetMarket": "CH"
+  }
+]

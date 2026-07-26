@@ -35,3 +35,7 @@ __pycache__/
 scripts/data/vidaxl-full.json
 vidaxl_catalog.json
 category_report.txt
+
+# personal local test scenarios (your own room photo paths) — copy from
+# scripts/test-scenarios.example.json, never committed
+scripts/test-scenarios.json
