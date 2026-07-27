@@ -70,6 +70,30 @@ async function loadProductCatalogUncached(): Promise<Product[]> {
   return catalog.products;
 }
 
+/**
+ * Trusted, server-side price lookup for checkout — never trust a price the
+ * client sends. Queries the DB directly by id rather than going through the
+ * cached full-catalog load, since a checkout with a handful of ids doesn't
+ * need the whole-catalog scan. Falls back to filtering the supplier feed
+ * when the DB isn't configured, same fallback story as loadProductCatalog.
+ */
+export async function getProductsByIds(ids: string[]): Promise<Product[]> {
+  if (ids.length === 0) return [];
+  if (dbEnabled()) {
+    try {
+      await ensureSchema();
+      const db = sql();
+      const rows = await db`SELECT * FROM products WHERE id = ANY(${ids})`;
+      if (rows.length > 0) return rows.map(rowToProduct);
+    } catch {
+      // DB reachable but query failed — fall through to the feed fallback.
+    }
+  }
+  const catalog = await fetchVidaxlCatalog();
+  const idSet = new Set(ids);
+  return catalog.products.filter((p) => idSet.has(p.id));
+}
+
 export interface MarketplacePage {
   products: Product[];
   totalCount: number;
