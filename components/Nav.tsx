@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { Heart, Menu, ShoppingBag, Sparkles, X } from "lucide-react";
 import { useState } from "react";
 import { cartCount, useMaisonStore } from "@/lib/store";
+import AccountWidget from "@/components/AccountWidget";
 
 const LINKS = [
   { href: "/designer", label: "Designer" },
@@ -54,6 +55,7 @@ export default function Nav() {
         </nav>
 
         <div className="flex items-center gap-3">
+          <AccountWidget />
           <Link
             href="/wishlist"
             className="relative rounded-full border border-ink-line p-2.5 text-cream-dim transition hover:border-brass/50 hover:text-brass-bright"
@@ -112,6 +114,13 @@ export default function Nav() {
             >
               <Sparkles size={15} />
               Design my room
+            </Link>
+            <Link
+              href="/account"
+              onClick={() => setOpen(false)}
+              className="rounded-lg px-3 py-2.5 text-sm text-cream-dim hover:bg-ink-panel hover:text-cream"
+            >
+              Account
             </Link>
           </div>
         </div>
