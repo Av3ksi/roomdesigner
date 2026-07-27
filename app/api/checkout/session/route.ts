@@ -99,6 +99,9 @@ export async function POST(req: NextRequest) {
     mode: "payment",
     line_items: lineItems,
     customer_email: email,
+    // Restricted to the European markets this store actually serves — also
+    // what lib/vidaxlOrders.ts needs to have anywhere to ship to.
+    shipping_address_collection: { allowed_countries: ["CH", "DE", "AT", "FR", "IT"] },
     success_url: `${origin}/checkout/success?session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${origin}/checkout`,
     metadata: { sessionId, userId: userId ?? "" },
@@ -110,6 +113,7 @@ export async function POST(req: NextRequest) {
     email,
     stripeCheckoutSessionId: checkoutSession.id,
     productIds: products.map((p) => p.id),
+    lineItems: products.map((p) => ({ productId: p.id, qty: qtyById.get(p.id) ?? 1 })),
     totalPrice,
   });
 

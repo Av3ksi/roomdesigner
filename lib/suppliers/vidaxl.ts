@@ -155,12 +155,17 @@ interface VidaxlProductsResponse {
   pagination: { offset: number; limit: number; total: number };
 }
 
-function vidaxlAuthHeader(): string {
+/** Exported so lib/vidaxlOrders.ts (order placement) can reuse the same auth without duplicating it. */
+export function vidaxlAuthHeader(): string {
   // .trim() guards against a trailing newline/space from pasting the token
   // into .env — invisible in an editor, but enough to fail Basic auth.
   const email = (process.env.VIDAXL_ACCOUNT_EMAIL ?? "").trim();
   const token = (process.env.VIDAXL_API_KEY ?? "").trim();
   return `Basic ${Buffer.from(`${email}:${token}`).toString("base64")}`;
+}
+
+export function vidaxlBaseUrl(): string {
+  return (process.env.VIDAXL_API_URL ?? "").trim().replace(/\/+$/, "");
 }
 
 function sleep(ms: number): Promise<void> {
@@ -176,7 +181,7 @@ async function fetchProductsPage(baseUrl: string, offset: number): Promise<Vidax
 }
 
 async function fetchLive(): Promise<RawSupplierProduct[]> {
-  const baseUrl = (process.env.VIDAXL_API_URL ?? "").trim().replace(/\/+$/, "");
+  const baseUrl = vidaxlBaseUrl();
   const matched: RawSupplierProduct[] = [];
 
   for (let page = 0; page < MAX_PAGES_TO_SCAN && matched.length < TARGET_LIVE_PRODUCT_COUNT; page++) {

@@ -6,6 +6,20 @@ import { dbEnabled, ensureSchema, sql } from "./db";
  * Created at Stripe Checkout Session creation time, updated by the Stripe
  * webhook and then by the VidaXL fulfillment step.
  */
+export interface OrderLineItem {
+  productId: string;
+  qty: number;
+}
+
+export interface ShippingAddress {
+  line1: string;
+  line2?: string;
+  city?: string;
+  postal_code?: string;
+  state?: string;
+  country: string;
+}
+
 export interface OrderRecord {
   id: string;
   userId: string | null;
@@ -14,9 +28,12 @@ export interface OrderRecord {
   stripeCheckoutSessionId: string;
   stripePaymentIntentId: string | null;
   productIds: string[];
+  lineItems: OrderLineItem[];
   totalPrice: number;
   currency: string;
   status: string;
+  shippingName: string | null;
+  shippingAddress: ShippingAddress | null;
   vidaxlOrderId: string | null;
   vidaxlOrderError: string | null;
   createdAt: string;
@@ -31,9 +48,12 @@ function rowToOrder(row: Record<string, unknown>): OrderRecord {
     stripeCheckoutSessionId: row.stripe_checkout_session_id as string,
     stripePaymentIntentId: (row.stripe_payment_intent_id as string | null) ?? null,
     productIds: (row.product_ids as string[] | null) ?? [],
+    lineItems: (row.line_items as OrderLineItem[] | null) ?? [],
     totalPrice: Number(row.total_price),
     currency: row.currency as string,
     status: row.status as string,
+    shippingName: (row.shipping_name as string | null) ?? null,
+    shippingAddress: (row.shipping_address as ShippingAddress | null) ?? null,
     vidaxlOrderId: (row.vidaxl_order_id as string | null) ?? null,
     vidaxlOrderError: (row.vidaxl_order_error as string | null) ?? null,
     createdAt: new Date(row.created_at as string).toISOString(),
@@ -47,6 +67,7 @@ export async function createPendingOrder(input: {
   email: string;
   stripeCheckoutSessionId: string;
   productIds: string[];
+  lineItems: OrderLineItem[];
   totalPrice: number;
   currency?: string;
 }): Promise<void> {
@@ -54,8 +75,8 @@ export async function createPendingOrder(input: {
   await ensureSchema();
   const db = sql();
   await db`
-    INSERT INTO orders (user_id, session_id, email, stripe_checkout_session_id, product_ids, total_price, currency, status)
-    VALUES (${input.userId}, ${input.sessionId}, ${input.email}, ${input.stripeCheckoutSessionId}, ${input.productIds}, ${input.totalPrice}, ${input.currency ?? "chf"}, 'pending')
+    INSERT INTO orders (user_id, session_id, email, stripe_checkout_session_id, product_ids, line_items, total_price, currency, status)
+    VALUES (${input.userId}, ${input.sessionId}, ${input.email}, ${input.stripeCheckoutSessionId}, ${input.productIds}, ${JSON.stringify(input.lineItems)}, ${input.totalPrice}, ${input.currency ?? "chf"}, 'pending')
     ON CONFLICT (stripe_checkout_session_id) DO NOTHING
   `;
 }
@@ -69,13 +90,19 @@ export async function createPendingOrder(input: {
  */
 export async function markOrderPaid(
   stripeCheckoutSessionId: string,
-  stripePaymentIntentId: string | null
+  stripePaymentIntentId: string | null,
+  shipping: { name: string; address: ShippingAddress } | null
 ): Promise<OrderRecord | null> {
   if (!dbEnabled()) return null;
   await ensureSchema();
   const db = sql();
   const rows = await db`
-    UPDATE orders SET status = 'paid', stripe_payment_intent_id = ${stripePaymentIntentId}, updated_at = now()
+    UPDATE orders SET
+      status = 'paid',
+      stripe_payment_intent_id = ${stripePaymentIntentId},
+      shipping_name = ${shipping?.name ?? null},
+      shipping_address = ${shipping ? JSON.stringify(shipping.address) : null},
+      updated_at = now()
     WHERE stripe_checkout_session_id = ${stripeCheckoutSessionId} AND status = 'pending'
     RETURNING *
   `;

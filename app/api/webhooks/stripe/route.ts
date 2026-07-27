@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import type Stripe from "stripe";
 import { stripe, stripeEnabled } from "@/lib/stripe";
-import { markOrderPaid } from "@/lib/orders";
+import { markOrderPaid, setOrderFulfillment, type ShippingAddress } from "@/lib/orders";
 import { orderConfirmationEmailHtml, sendEmail } from "@/lib/email";
 import { getProductsByIds } from "@/lib/productSearchDb";
 import { formatPrice } from "@/lib/products";
+import { createVidaxlOrder, vidaxlEnabled } from "@/lib/vidaxlOrders";
 
 export const runtime = "nodejs";
 
@@ -34,8 +35,10 @@ export async function POST(req: NextRequest) {
     const session = event.data.object as Stripe.Checkout.Session;
     const paymentIntentId =
       typeof session.payment_intent === "string" ? session.payment_intent : session.payment_intent?.id ?? null;
+    const shippingDetails = session.collected_information?.shipping_details;
+    const shipping = shippingDetails ? { name: shippingDetails.name, address: shippingDetails.address as ShippingAddress } : null;
 
-    const order = await markOrderPaid(session.id, paymentIntentId);
+    const order = await markOrderPaid(session.id, paymentIntentId, shipping);
     // null means either this order was already marked paid (a retried
     // webhook delivery — Stripe resends until it gets a 2xx) or it doesn't
     // exist; either way there's nothing left to do.
@@ -50,6 +53,24 @@ export async function POST(req: NextRequest) {
           itemNames: products.map((p) => p.name),
         }),
       });
+
+      // Best-effort, attempted once per successful payment (not retried by
+      // this webhook — a Stripe retry would see status 'paid' and skip
+      // markOrderPaid entirely). A failure here doesn't touch the customer;
+      // it just means an ops person needs to place the supplier order
+      // manually, same as before this existed.
+      if (vidaxlEnabled()) {
+        try {
+          const result = await createVidaxlOrder(order, products);
+          await setOrderFulfillment(order.id, { status: "fulfilled", vidaxlOrderId: result.vidaxlOrderId });
+        } catch (err) {
+          console.error("[maison] VidaXL order creation failed:", err);
+          await setOrderFulfillment(order.id, {
+            status: "fulfillment_failed",
+            vidaxlOrderError: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
     }
   }
 

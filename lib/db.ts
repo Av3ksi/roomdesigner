@@ -216,4 +216,13 @@ async function runSchema(): Promise<void> {
   await db`CREATE INDEX IF NOT EXISTS idx_orders_user ON orders(user_id)`;
   await db`CREATE INDEX IF NOT EXISTS idx_orders_session ON orders(session_id)`;
   await db`CREATE INDEX IF NOT EXISTS idx_orders_stripe_session ON orders(stripe_checkout_session_id)`;
+
+  // Per-product quantities ([{productId, qty}]) — product_ids alone can't
+  // tell "2 of this sofa" from "1 of this sofa", which VidaXL fulfillment
+  // needs to get right. Populated at checkout-session creation time.
+  await db`ALTER TABLE orders ADD COLUMN IF NOT EXISTS line_items JSONB NOT NULL DEFAULT '[]'::jsonb`;
+  // Ship-to name/address — only known once Stripe Checkout collects it, so
+  // these land via the webhook (markOrderPaid), not at session creation.
+  await db`ALTER TABLE orders ADD COLUMN IF NOT EXISTS shipping_name TEXT`;
+  await db`ALTER TABLE orders ADD COLUMN IF NOT EXISTS shipping_address JSONB`;
 }
