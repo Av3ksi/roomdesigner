@@ -29,12 +29,21 @@ const COLUMNS: { title: string; links: { label: string; href: string }[] }[] = [
       { label: "API", href: "/" },
     ],
   },
+  {
+    title: "Legal",
+    links: [
+      { label: "Terms of Service", href: "/legal/terms" },
+      { label: "Privacy Policy", href: "/legal/privacy" },
+      { label: "Returns Policy", href: "/legal/returns" },
+      { label: "Imprint", href: "/legal/imprint" },
+    ],
+  },
 ];
 
 export default function Footer() {
   return (
     <footer className="border-t border-ink-line/70 bg-ink-soft">
-      <div className="container-page grid gap-10 py-14 md:grid-cols-[1.4fr_repeat(3,1fr)]">
+      <div className="container-page grid gap-10 py-14 md:grid-cols-[1.2fr_repeat(4,1fr)]">
         <div>
           <div className="font-display text-2xl text-cream">Maison</div>
           <p className="mt-3 max-w-xs text-sm leading-relaxed text-cream-faint">
