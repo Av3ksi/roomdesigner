@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { compositingEnabled, removeExistingObject } from "@/lib/ai/composite";
 import { locateExistingObject } from "@/lib/ai/locate";
 import { aiEnabled } from "@/lib/ai/claude";
+import { clientIp, enforceRateLimit } from "@/lib/rateLimit";
+import { getOrCreateSessionId } from "@/lib/session";
 import type { ProductCategory } from "@/lib/types";
 
 // sharp (compositing) needs the Node runtime, not edge.
@@ -21,6 +23,15 @@ export async function POST(req: NextRequest) {
   if (!compositingEnabled()) {
     return NextResponse.json({ error: "OPENAI_API_KEY not configured on the server." }, { status: 501 });
   }
+
+  const limited = await enforceRateLimit({
+    name: "remove-object",
+    sessionId: await getOrCreateSessionId(),
+    ip: clientIp(req),
+    sessionLimit: 10,
+    ipLimit: 30,
+  });
+  if (limited) return NextResponse.json({ error: limited.error }, { status: 429 });
 
   const form = await req.formData().catch(() => null);
   const roomFile = form?.get("room");

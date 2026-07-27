@@ -149,4 +149,71 @@ async function runSchema(): Promise<void> {
   // search ([{name, url, retailer, priceText, box}]). Not catalog products —
   // they link out, aren't added to cart, and don't count toward the total.
   await db`ALTER TABLE finished_rooms ADD COLUMN IF NOT EXISTS external_items JSONB NOT NULL DEFAULT '[]'::jsonb`;
+
+  // Which finished rooms were curated by us (Looks Studio) vs. published by
+  // a customer for inspiration (see app/publish) — same table, since both
+  // are "a real room + real products, shown for inspiration," just a
+  // different author and moderation posture.
+  await db`ALTER TABLE finished_rooms ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'curated'`;
+  await db`ALTER TABLE finished_rooms ADD COLUMN IF NOT EXISTS user_id UUID`;
+
+  // Abuse/cost protection for the paid AI endpoints — see lib/rateLimit.ts.
+  // One row per limiter key (e.g. "generate:session-id"); a single UPSERT
+  // atomically resets-if-expired or increments, so concurrent requests from
+  // the same key can't race past the limit.
+  await db`
+    CREATE TABLE IF NOT EXISTS rate_limits (
+      key TEXT PRIMARY KEY,
+      window_start TIMESTAMPTZ NOT NULL,
+      count INT NOT NULL
+    )
+  `;
+
+  // Real accounts — email only, no passwords to hash/store/leak. Login is a
+  // one-time link emailed via Resend (see lib/auth.ts).
+  await db`
+    CREATE TABLE IF NOT EXISTS users (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      email TEXT NOT NULL UNIQUE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `;
+  await db`
+    CREATE TABLE IF NOT EXISTS login_tokens (
+      token TEXT PRIMARY KEY,
+      email TEXT NOT NULL,
+      expires_at TIMESTAMPTZ NOT NULL,
+      used_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `;
+  await db`CREATE INDEX IF NOT EXISTS idx_login_tokens_email ON login_tokens(email)`;
+
+  // One row per real checkout — created when a Stripe Checkout Session
+  // starts, updated to "paid" by the webhook once Stripe confirms payment,
+  // then "fulfilling"/"fulfilled"/"fulfillment_failed" as the VidaXL order
+  // is placed (lib/vidaxlOrders.ts). user_id is nullable — guest checkout
+  // (an email captured at checkout time) is supported, not just logged-in
+  // purchases.
+  await db`
+    CREATE TABLE IF NOT EXISTS orders (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      user_id UUID,
+      session_id TEXT NOT NULL,
+      email TEXT NOT NULL,
+      stripe_checkout_session_id TEXT NOT NULL UNIQUE,
+      stripe_payment_intent_id TEXT,
+      product_ids TEXT[] NOT NULL DEFAULT '{}',
+      total_price NUMERIC NOT NULL,
+      currency TEXT NOT NULL DEFAULT 'chf',
+      status TEXT NOT NULL DEFAULT 'pending',
+      vidaxl_order_id TEXT,
+      vidaxl_order_error TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `;
+  await db`CREATE INDEX IF NOT EXISTS idx_orders_user ON orders(user_id)`;
+  await db`CREATE INDEX IF NOT EXISTS idx_orders_session ON orders(session_id)`;
+  await db`CREATE INDEX IF NOT EXISTS idx_orders_stripe_session ON orders(stripe_checkout_session_id)`;
 }

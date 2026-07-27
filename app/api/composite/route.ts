@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { compositeProductIntoRoom, compositingEnabled } from "@/lib/ai/composite";
 import { checkRenderedProductIdentity } from "@/lib/ai/identityCheck";
+import { clientIp, enforceRateLimit } from "@/lib/rateLimit";
+import { getOrCreateSessionId } from "@/lib/session";
 import type { ProductCategory } from "@/lib/types";
 
 // sharp (used by lib/ai/composite.ts) needs the Node runtime, not edge.
@@ -15,6 +17,15 @@ export async function POST(req: NextRequest) {
   if (!compositingEnabled()) {
     return NextResponse.json({ error: "OPENAI_API_KEY not configured on the server." }, { status: 501 });
   }
+
+  const limited = await enforceRateLimit({
+    name: "composite",
+    sessionId: await getOrCreateSessionId(),
+    ip: clientIp(req),
+    sessionLimit: 10,
+    ipLimit: 30,
+  });
+  if (limited) return NextResponse.json({ error: limited.error }, { status: 429 });
 
   // formData() itself throws on a missing/non-multipart body — that's a
   // caller mistake (400), not a server failure (500).

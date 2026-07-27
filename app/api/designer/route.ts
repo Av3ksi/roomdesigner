@@ -3,6 +3,7 @@ import { aiEnabled } from "@/lib/ai/claude";
 import { runDesignerTurn, type ChatTurn, type Constraint, type RoomContext } from "@/lib/ai/designer";
 import { dbEnabled } from "@/lib/db";
 import { loadProductCatalog } from "@/lib/productSearchDb";
+import { clientIp, enforceRateLimit } from "@/lib/rateLimit";
 import { appendMessage, createRoom, getRoomOwner, saveConstraints, saveRoomContext } from "@/lib/roomPersistence";
 import { getOrCreateSessionId } from "@/lib/session";
 
@@ -35,6 +36,16 @@ export async function POST(req: NextRequest) {
   if (!aiEnabled()) {
     return NextResponse.json({ error: "ANTHROPIC_API_KEY not configured on the server." }, { status: 501 });
   }
+
+  const sessionId = await getOrCreateSessionId();
+  const limited = await enforceRateLimit({
+    name: "designer",
+    sessionId,
+    ip: clientIp(req),
+    sessionLimit: 20,
+    ipLimit: 60,
+  });
+  if (limited) return NextResponse.json({ error: limited.error }, { status: 429 });
 
   const form = await req.formData().catch(() => null);
   const message = form?.get("message");

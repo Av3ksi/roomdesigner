@@ -7,6 +7,8 @@ import { searchWebForProduct, extractRequestedExtras, type WebProduct } from "@/
 import { TARGET_MARKETS, type TargetMarket } from "@/lib/targetMarkets";
 import { findBestCatalogMatch } from "@/lib/productSearch";
 import { loadProductCatalog } from "@/lib/productSearchDb";
+import { clientIp, enforceRateLimit } from "@/lib/rateLimit";
+import { getOrCreateSessionId } from "@/lib/session";
 import type { DetectionBox, Product, ProductCategory } from "@/lib/types";
 
 // sharp (compositing) needs the Node runtime, not edge.
@@ -32,6 +34,17 @@ export async function POST(req: NextRequest) {
   if (!compositingEnabled()) {
     return NextResponse.json({ error: "OPENAI_API_KEY not configured on the server." }, { status: 501 });
   }
+
+  // Heaviest endpoint in the app — full Claude pipeline plus a real OpenAI
+  // image render — so the tightest limit of any route here.
+  const limited = await enforceRateLimit({
+    name: "finished-rooms-generate",
+    sessionId: await getOrCreateSessionId(),
+    ip: clientIp(req),
+    sessionLimit: 5,
+    ipLimit: 15,
+  });
+  if (limited) return NextResponse.json({ error: limited.error }, { status: 429 });
 
   const form = await req.formData().catch(() => null);
   const roomFile = form?.get("room");

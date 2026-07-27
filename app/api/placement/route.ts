@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { suggestPlacements, type PlacementMap } from "@/lib/ai/placement";
 import { DEFAULT_CATEGORY_BOX } from "@/lib/placementBoxes";
+import { clientIp, enforceRateLimit } from "@/lib/rateLimit";
+import { getOrCreateSessionId } from "@/lib/session";
 
 // sharp (used for the pre-analysis downscale) needs the Node runtime.
 export const runtime = "nodejs";
@@ -25,6 +27,15 @@ export async function POST(req: NextRequest) {
   if (!(roomFile instanceof File)) {
     return NextResponse.json({ error: "Missing room photo." }, { status: 400 });
   }
+
+  const limited = await enforceRateLimit({
+    name: "placement",
+    sessionId: await getOrCreateSessionId(),
+    ip: clientIp(req),
+    sessionLimit: 20,
+    ipLimit: 60,
+  });
+  if (limited) return NextResponse.json({ error: limited.error }, { status: 429 });
 
   const roomBuffer = Buffer.from(await roomFile.arrayBuffer());
   const suggested = await suggestPlacements(roomBuffer);
