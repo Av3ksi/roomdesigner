@@ -44,6 +44,10 @@ export interface FinishedRoom {
   /** Web-sourced items for staged pieces we don't carry — link out, never added to cart. */
   externals: FinishedRoomExternalItem[];
   totalPrice: number;
+  /** 'curated' (Looks Studio, our own compositing) or 'user' (a customer's own room, /publish). */
+  source: string;
+  /** Set only for source: 'user' — who published it. */
+  userId: string | null;
   createdAt: string;
 }
 
@@ -81,6 +85,8 @@ function resolveRow(row: Record<string, unknown>, catalog: Product[]): FinishedR
     items,
     externals: resolveExternals(row.external_items),
     totalPrice: Number(row.total_price),
+    source: (row.source as string | null) ?? "curated",
+    userId: (row.user_id as string | null) ?? null,
     createdAt: row.created_at as string,
   };
 }
@@ -98,14 +104,18 @@ export async function createFinishedRoom(input: {
   /** Web-sourced external items for staged pieces we don't carry. */
   externals?: FinishedRoomExternalItem[];
   totalPrice: number;
+  /** 'curated' (default, Looks Studio) or 'user' (a customer's own room, /publish). */
+  source?: string;
+  userId?: string | null;
 }): Promise<string> {
   await ensureSchema();
   const db = sql();
   const rows = await db`
-    INSERT INTO finished_rooms (title, description, style_tags, hero_image_base64, product_ids, item_boxes, auto_matched_ids, external_items, total_price)
+    INSERT INTO finished_rooms (title, description, style_tags, hero_image_base64, product_ids, item_boxes, auto_matched_ids, external_items, total_price, source, user_id)
     VALUES (
       ${input.title}, ${input.description}, ${input.styleTags}, ${input.heroImageBase64}, ${input.productIds},
-      ${JSON.stringify(input.itemBoxes ?? {})}, ${input.autoMatchedIds ?? []}, ${JSON.stringify(input.externals ?? [])}, ${input.totalPrice}
+      ${JSON.stringify(input.itemBoxes ?? {})}, ${input.autoMatchedIds ?? []}, ${JSON.stringify(input.externals ?? [])}, ${input.totalPrice},
+      ${input.source ?? "curated"}, ${input.userId ?? null}
     )
     RETURNING id
   `;

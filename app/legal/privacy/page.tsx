@@ -18,6 +18,7 @@ export default function PrivacyPage() {
         <li>If you create an account: your email address, used only to send you a one-time login link and order updates.</li>
         <li>Room photos you upload, and the products you select, to generate a design.</li>
         <li>At checkout: your email, shipping address, and order contents. Payment card details are handled entirely by our payment processor (Stripe) — we never see or store your card number.</li>
+        <li>If you publish a room for inspiration: the photo, title, description and tagged products you submit are shown publicly on the site. Your name and email are not shown alongside it.</li>
       </ul>
 
       <h2>Your room photos and AI processing</h2>

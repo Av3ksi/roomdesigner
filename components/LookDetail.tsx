@@ -60,7 +60,7 @@ export default function LookDetail({ room }: { room: FinishedRoom }) {
         </div>
 
         <div>
-          <div className="eyebrow mb-3">Complete Room</div>
+          <div className="eyebrow mb-3">{room.source === "user" ? "Published by a customer" : "Complete Room"}</div>
           <h1 className="font-display text-3xl leading-tight sm:text-4xl">{room.title}</h1>
           {room.description && <p className="mt-4 text-cream-dim">{room.description}</p>}
 

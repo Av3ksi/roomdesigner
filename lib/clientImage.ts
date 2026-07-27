@@ -103,3 +103,21 @@ export function detectImageMimeFromBase64(base64: string): string {
   if (base64.startsWith("UklGR")) return "image/webp";
   return "image/jpeg";
 }
+
+/**
+ * Downscales an arbitrary upload to a reasonable size before it goes
+ * anywhere (an AI edit endpoint, or straight into Postgres as base64) — a
+ * phone photo can be 10+ MB, far more than any of these need.
+ */
+export async function fileToDownscaledJpeg(file: File, maxDimension = 1568): Promise<{ dataUrl: string; base64: string }> {
+  const bitmap = await createImageBitmap(file);
+  const scale = Math.min(1, maxDimension / Math.max(bitmap.width, bitmap.height));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+  canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("Canvas unavailable");
+  ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
+  return { dataUrl, base64: dataUrl.split(",")[1] ?? "" };
+}

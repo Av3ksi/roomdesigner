@@ -14,13 +14,18 @@ import type { FinishedRoom } from "@/lib/finishedRooms";
 export default function Looks({ rooms }: { rooms: FinishedRoom[] }) {
   return (
     <div className="container-page py-14">
-      <div className="max-w-2xl">
-        <div className="eyebrow mb-3">Complete Rooms</div>
-        <h1 className="font-display text-4xl leading-tight sm:text-5xl">Shop the whole look.</h1>
-        <p className="mt-4 text-cream-dim">
-          Real rooms, styled with real products, photographed once — pick a look you love and add
-          every piece to your cart in one click.
-        </p>
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div className="max-w-2xl">
+          <div className="eyebrow mb-3">Complete Rooms</div>
+          <h1 className="font-display text-4xl leading-tight sm:text-5xl">Shop the whole look.</h1>
+          <p className="mt-4 text-cream-dim">
+            Real rooms, styled with real products, photographed once — pick a look you love and add
+            every piece to your cart in one click.
+          </p>
+        </div>
+        <Link href="/publish" className="btn-primary shrink-0">
+          Publish your room
+        </Link>
       </div>
 
       {rooms.length === 0 ? (
@@ -35,12 +40,19 @@ export default function Looks({ rooms }: { rooms: FinishedRoom[] }) {
               href={`/looks/${room.id}`}
               className="card group overflow-hidden p-0 transition hover:border-brass/40"
             >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={`data:image/png;base64,${room.heroImageBase64}`}
-                alt={room.title}
-                className="aspect-[4/3] w-full object-cover"
-              />
+              <div className="relative">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={`data:image/png;base64,${room.heroImageBase64}`}
+                  alt={room.title}
+                  className="aspect-[4/3] w-full object-cover"
+                />
+                {room.source === "user" && (
+                  <span className="absolute left-3 top-3 rounded-full bg-ink/80 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-cream-dim backdrop-blur-sm">
+                    Customer room
+                  </span>
+                )}
+              </div>
               <div className="p-5">
                 <div className="flex items-start justify-between gap-3">
                   <h2 className="font-display text-xl">{room.title}</h2>
