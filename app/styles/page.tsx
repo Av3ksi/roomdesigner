@@ -59,7 +59,7 @@ export default function StylesPage() {
                   Typical room budget {style.budgetBand}
                 </span>
               </div>
-              <Link href="/studio" className="btn-ghost mt-7">
+              <Link href="/designer" className="btn-ghost mt-7">
                 Design my room in {style.name} <ArrowRight size={14} />
               </Link>
             </div>

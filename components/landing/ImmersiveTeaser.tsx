@@ -42,7 +42,7 @@ export default function ImmersiveTeaser() {
               </div>
             ))}
           </div>
-          <Link href="/studio" className="btn-primary mt-8 !px-8 !py-3.5 !text-base">
+          <Link href="/designer" className="btn-primary mt-8 !px-8 !py-3.5 !text-base">
             Enter your room <ArrowRight size={17} />
           </Link>
         </Reveal>

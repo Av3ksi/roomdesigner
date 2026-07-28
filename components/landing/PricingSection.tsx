@@ -88,7 +88,7 @@ export default function PricingSection() {
                 ))}
               </ul>
               <Link
-                href="/studio"
+                href="/designer"
                 className={`${p.featured ? "btn-primary" : "btn-ghost"} mt-7 w-full justify-center`}
               >
                 {p.cta}

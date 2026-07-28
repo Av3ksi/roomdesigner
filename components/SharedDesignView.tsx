@@ -51,7 +51,7 @@ export default function SharedDesignView() {
         <p className="mt-3 text-cream-dim">
           The share link is missing or malformed — ask for a fresh one.
         </p>
-        <Link href="/studio" className="btn-primary mt-6 inline-flex">
+        <Link href="/designer" className="btn-primary mt-6 inline-flex">
           Design your own room
         </Link>
       </div>

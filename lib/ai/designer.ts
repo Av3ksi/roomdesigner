@@ -1,6 +1,8 @@
 import Anthropic from "@anthropic-ai/sdk";
+import sharp from "sharp";
 import { MODEL, aiEnabled } from "./claude";
 import { suggestPlacements, type PlacementMap, type RoomDimensionsEstimate } from "./placement";
+import { detectSceneItems } from "./locate";
 import { searchProducts, toAgentProductSummary } from "../productSearch";
 import { DEFAULT_CATEGORY_BOX, clampBox, isValidBox } from "../placementBoxes";
 import type { DetectionBox, Product, ProductCategory } from "../types";
@@ -57,6 +59,10 @@ export interface RemoveProposal {
   kind: "remove";
   category: ProductCategory;
   rationale: string;
+  /** A specific item name, when this came from the upfront room inventory rather than a chat guess (e.g. "dark oak coffee table" instead of just "table"). */
+  description?: string;
+  /** Exact detected box, when known (the room-inventory checklist) — lets removal skip the blind locate-by-category call. */
+  box?: DetectionBox;
 }
 
 export type EditProposal = AddProposal | RemoveProposal;
@@ -257,6 +263,47 @@ async function executeTool(name: string, input: Record<string, unknown>, state: 
 
 const MAX_AGENT_ITERATIONS = 8;
 
+/**
+ * The tool-calling loop shared by a normal chat turn and the upload kickoff
+ * below — only the system prompt (rebuilt fresh each iteration, since tool
+ * calls mid-turn change state.roomContext/constraints) and initial message
+ * differ between the two.
+ */
+async function runAgentLoop(
+  state: AgentState,
+  messages: Anthropic.MessageParam[],
+  buildSystem: (state: AgentState) => string,
+  tools: Anthropic.Tool[] = TOOLS,
+): Promise<string> {
+  const client = new Anthropic();
+  let reply = "";
+  for (let i = 0; i < MAX_AGENT_ITERATIONS; i++) {
+    const response = await client.messages.create({
+      model: MODEL,
+      max_tokens: 4096,
+      thinking: { type: "adaptive" },
+      system: buildSystem(state),
+      tools,
+      messages,
+    });
+
+    const toolUses = response.content.filter((b): b is Anthropic.ToolUseBlock => b.type === "tool_use");
+    const textBlocks = response.content.filter((b): b is Anthropic.TextBlock => b.type === "text");
+    if (textBlocks.length) reply = textBlocks.map((b) => b.text).join("\n");
+
+    if (response.stop_reason !== "tool_use" || toolUses.length === 0) break;
+
+    messages.push({ role: "assistant", content: response.content });
+    const results: Anthropic.ToolResultBlockParam[] = [];
+    for (const tu of toolUses) {
+      const output = await executeTool(tu.name, tu.input as Record<string, unknown>, state);
+      results.push({ type: "tool_result", tool_use_id: tu.id, content: output });
+    }
+    messages.push({ role: "user", content: results });
+  }
+  return reply;
+}
+
 export async function runDesignerTurn(
   history: ChatTurn[],
   userMessage: string,
@@ -275,42 +322,105 @@ export async function runDesignerTurn(
     proposals: [],
   };
 
-  const client = new Anthropic();
   const messages: Anthropic.MessageParam[] = [
     ...history.map((t) => ({ role: t.role, content: t.content })),
     { role: "user" as const, content: userMessage },
   ];
 
-  let reply = "";
-  for (let i = 0; i < MAX_AGENT_ITERATIONS; i++) {
-    const response = await client.messages.create({
-      model: MODEL,
-      max_tokens: 4096,
-      thinking: { type: "adaptive" },
-      system: buildSystemPrompt(state.constraints, Boolean(roomPhoto), state.roomContext),
-      tools: TOOLS,
-      messages,
-    });
-
-    const toolUses = response.content.filter((b): b is Anthropic.ToolUseBlock => b.type === "tool_use");
-    const textBlocks = response.content.filter((b): b is Anthropic.TextBlock => b.type === "text");
-    if (textBlocks.length) reply = textBlocks.map((b) => b.text).join("\n");
-
-    if (response.stop_reason !== "tool_use" || toolUses.length === 0) break;
-
-    messages.push({ role: "assistant", content: response.content });
-    const results: Anthropic.ToolResultBlockParam[] = [];
-    for (const tu of toolUses) {
-      const output = await executeTool(tu.name, tu.input as Record<string, unknown>, state);
-      results.push({ type: "tool_result", tool_use_id: tu.id, content: output });
-    }
-    messages.push({ role: "user", content: results });
-  }
+  const reply = await runAgentLoop(state, messages, (s) => buildSystemPrompt(s.constraints, Boolean(roomPhoto), s.roomContext));
 
   return {
     reply: reply || "…",
     proposals: state.proposals,
     constraints: state.constraints,
     roomContext: state.roomContext,
+  };
+}
+
+export interface InventoryItem {
+  box: DetectionBox;
+  description: string;
+  category: ProductCategory;
+}
+
+export interface DesignerKickoffResult extends DesignerTurnResult {
+  /** Every real object the vision pass found already in the room, for a "here's what's changeable" checklist. */
+  inventory: InventoryItem[];
+}
+
+const KICKOFF_MAX_CONTEXT_EDGE = 1024;
+const KICKOFF_TOOLS = TOOLS.filter((t) => t.name !== "remove_existing_object");
+
+async function toContextJpegBase64(photo: Buffer): Promise<string> {
+  const jpeg = await sharp(photo)
+    .rotate()
+    .resize(KICKOFF_MAX_CONTEXT_EDGE, KICKOFF_MAX_CONTEXT_EDGE, { fit: "inside", withoutEnlargement: true })
+    .jpeg({ quality: 80 })
+    .toBuffer();
+  return jpeg.toString("base64");
+}
+
+function buildKickoffSystemPrompt(state: AgentState): string {
+  const dims = state.roomContext?.roomDimensions;
+  return `You are Maison's AI interior designer — warm, specific, honest, never salesy. This is the FIRST look at a room the client just uploaded — they haven't said anything yet, so don't ask what they want or wait for a request.
+
+Instead: call get_room_placement to understand the room's geometry${dims ? ` (already estimated: ${dims.widthM}×${dims.depthM}m, ${dims.heightM}m ceiling)` : ""}, then search_products (German keywords — the catalog is German) for real catalog pieces that would genuinely elevate THIS room, and propose_edit for 2–4 of them — spanning different categories where it makes sense (e.g. a rug, a piece of wall art, a plant, not four sofas). Check dimensionsCm against the room when relevant.
+
+A separate part of the app already shows the client every existing object in their photo as a checklist they control directly — don't call remove_existing_object here, focus only on additions that would make the room more stylish.
+
+Your final text reply: 2–3 warm, specific sentences — what you noticed about the room, and a brief lead-in to what you suggested below. The client sees your suggestions as cards they can accept or ignore.`;
+}
+
+/**
+ * Runs automatically the moment a room photo is uploaded, before any chat
+ * message — the "auto-suggest" half of the unified Designer flow. Two things
+ * happen in parallel: a deterministic full-room inventory (detectSceneItems,
+ * same call the finished-rooms hotspot pipeline uses) finds every real
+ * object already in the photo for the checklist, while the agent looks at
+ * the room (plus any extra angle photos / floor plan, included as additional
+ * vision context only — the composite/render step never touches them) and
+ * proactively proposes a few catalog additions via the normal propose_edit
+ * tool, exactly like a chat-driven proposal.
+ */
+export async function runDesignerKickoff(
+  catalog: Product[],
+  primaryPhoto: Buffer,
+  extraPhotos: Buffer[],
+  floorplanPhoto: Buffer | null,
+): Promise<DesignerKickoffResult> {
+  if (!aiEnabled()) throw new Error("ANTHROPIC_API_KEY not configured");
+
+  const state: AgentState = { catalog, roomPhoto: primaryPhoto, roomContext: null, constraints: [], proposals: [] };
+
+  const [inventoryItems, primaryJpeg, extraJpegs, floorplanJpeg] = await Promise.all([
+    detectSceneItems(primaryPhoto, []),
+    toContextJpegBase64(primaryPhoto),
+    Promise.all(extraPhotos.map(toContextJpegBase64)),
+    floorplanPhoto ? toContextJpegBase64(floorplanPhoto) : Promise.resolve(null),
+  ]);
+
+  const content: Anthropic.ContentBlockParam[] = [
+    { type: "text", text: "Primary room photo:" },
+    { type: "image", source: { type: "base64", media_type: "image/jpeg", data: primaryJpeg } },
+  ];
+  extraJpegs.forEach((jpeg, i) => {
+    content.push({ type: "text", text: `Additional angle ${i + 1}:` });
+    content.push({ type: "image", source: { type: "base64", media_type: "image/jpeg", data: jpeg } });
+  });
+  if (floorplanJpeg) {
+    content.push({ type: "text", text: "Floor plan:" });
+    content.push({ type: "image", source: { type: "base64", media_type: "image/jpeg", data: floorplanJpeg } });
+  }
+  content.push({ type: "text", text: "Take a first look at this room and suggest a few real products that would make it more stylish." });
+
+  const messages: Anthropic.MessageParam[] = [{ role: "user", content }];
+  const reply = await runAgentLoop(state, messages, buildKickoffSystemPrompt, KICKOFF_TOOLS);
+
+  return {
+    reply: reply || "…",
+    proposals: state.proposals,
+    constraints: state.constraints,
+    roomContext: state.roomContext,
+    inventory: inventoryItems.map((i) => ({ box: i.box, description: i.description, category: i.category })),
   };
 }

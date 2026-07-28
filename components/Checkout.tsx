@@ -191,7 +191,7 @@ export default function Checkout() {
             </div>
           ))}
         </div>
-        <Link href="/studio" className="btn-primary mt-8">
+        <Link href="/designer" className="btn-primary mt-8">
           Design another room
         </Link>
       </div>
@@ -205,11 +205,11 @@ export default function Checkout() {
         <ShoppingBag size={36} className="text-ink-line" />
         <h1 className="font-display mt-5 text-3xl">Your room list is empty.</h1>
         <p className="mt-2 max-w-sm text-sm text-cream-faint">
-          Generate a design in the Studio and add the whole look with one
+          Generate a design in the Designer and add the whole look with one
           click — every piece lands here.
         </p>
-        <Link href="/studio" className="btn-primary mt-7">
-          Open the Studio
+        <Link href="/designer" className="btn-primary mt-7">
+          Open the Designer
         </Link>
       </div>
     );

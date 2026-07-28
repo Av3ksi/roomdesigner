@@ -155,7 +155,7 @@ export default function SupplierCatalogPreview({ catalog }: { catalog: SupplierC
         <AlertTriangle size={16} className="mt-0.5 shrink-0 text-brass" />
         <div className="text-sm text-cream-dim">
           <span className="font-semibold text-cream">Not wired into the live marketplace yet.</span>{" "}
-          Merging supplier products into the main catalog (used by the Studio's concept generation)
+          Merging supplier products into the main catalog (used by the Designer's concept generation)
           is a deliberate next step, not automatic — the generation logic references specific
           curated product IDs today, so this needs a considered merge rather than a silent swap.
         </div>

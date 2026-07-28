@@ -56,8 +56,8 @@ export default function ConsultationBooking() {
           <span className="font-semibold text-brass-bright">{preferredSlot}</span> by email within 24
           hours — this is a request, not yet a confirmed booking.
         </p>
-        <Link href="/studio" className="btn-primary mt-8">
-          Back to the Studio
+        <Link href="/designer" className="btn-primary mt-8">
+          Back to the Designer
         </Link>
       </div>
     );

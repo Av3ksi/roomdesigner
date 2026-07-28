@@ -76,7 +76,7 @@ export default function Hero() {
           </div>
 
           <div className="mt-8 flex flex-wrap items-center gap-4">
-            <Link href="/studio" className="btn-primary !px-8 !py-3.5 !text-base">
+            <Link href="/designer" className="btn-primary !px-8 !py-3.5 !text-base">
               Upload my room <ArrowRight size={17} />
             </Link>
             <Link href="/styles" className="btn-ghost !px-8 !py-3.5 !text-base">

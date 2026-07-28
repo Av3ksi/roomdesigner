@@ -26,7 +26,7 @@ export default function Wishlist() {
             Pieces you keep coming back to.
           </h1>
           <p className="mt-4 text-cream-dim">
-            Saved from the Studio, the 3D room and the Marketplace — ready
+            Saved from the Designer, the 3D room and the Marketplace — ready
             whenever you are.
           </p>
         </div>
@@ -47,7 +47,7 @@ export default function Wishlist() {
           </span>
           <div className="text-lg font-semibold">Your wishlist is empty</div>
           <p className="max-w-sm text-sm text-cream-dim">
-            Tap the heart on any product in the Studio, the immersive room, or
+            Tap the heart on any product in the Designer, the immersive room, or
             the Marketplace to save it here.
           </p>
           <Link href="/marketplace" className="btn-primary mt-2">

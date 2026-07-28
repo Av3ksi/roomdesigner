@@ -41,7 +41,7 @@ export default function CartDrawer() {
             <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
               <ShoppingBag size={32} className="text-ink-line" />
               <p className="text-sm text-cream-faint">
-                Nothing here yet. Generate a design in the Studio and add the
+                Nothing here yet. Generate a design in the Designer and add the
                 whole look with one click.
               </p>
             </div>

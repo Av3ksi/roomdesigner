@@ -100,7 +100,7 @@ export default function CheckoutSuccess() {
         <Mail size={16} className="shrink-0 text-brass" />
         Order confirmation and delivery updates will be emailed to you.
       </div>
-      <Link href="/studio" className="btn-primary mt-8">
+      <Link href="/designer" className="btn-primary mt-8">
         Design another room
       </Link>
     </div>

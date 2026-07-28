@@ -51,6 +51,12 @@ async function runSchema(): Promise<void> {
     )
   `;
   await db`CREATE INDEX IF NOT EXISTS idx_rooms_session ON rooms(session_id)`;
+  // Extra angle photos and an optional floor plan — context for analysis
+  // (inventory + room-dimension estimates) only. The single original_photo
+  // above stays the one and only base image every render edits; these never
+  // get passed to the image-edit step.
+  await db`ALTER TABLE rooms ADD COLUMN IF NOT EXISTS extra_photos TEXT[] NOT NULL DEFAULT '{}'`;
+  await db`ALTER TABLE rooms ADD COLUMN IF NOT EXISTS floorplan_photo TEXT`;
 
   await db`
     CREATE TABLE IF NOT EXISTS room_messages (

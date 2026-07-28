@@ -11,7 +11,6 @@ const LINKS = [
   { href: "/designer", label: "Designer" },
   { href: "/looks", label: "Complete Rooms" },
   { href: "/publish", label: "Publish" },
-  { href: "/studio", label: "Studio" },
   { href: "/styles", label: "Styles" },
   { href: "/marketplace", label: "Marketplace" },
   { href: "/pricing", label: "Pricing" },

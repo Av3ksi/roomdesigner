@@ -27,18 +27,25 @@ export interface PersistedRoom {
   id: string;
   title: string;
   originalPhotoBase64: string;
+  extraPhotosBase64: string[];
+  floorplanPhotoBase64: string | null;
   roomContext: RoomContext | null;
   messages: PersistedMessage[];
   constraints: Constraint[];
   versions: PersistedVersion[];
 }
 
-export async function createRoom(sessionId: string, originalPhotoBase64: string): Promise<string> {
+export async function createRoom(
+  sessionId: string,
+  originalPhotoBase64: string,
+  extraPhotosBase64: string[] = [],
+  floorplanPhotoBase64: string | null = null,
+): Promise<string> {
   await ensureSchema();
   const db = sql();
   const rows = await db`
-    INSERT INTO rooms (session_id, original_photo)
-    VALUES (${sessionId}, ${originalPhotoBase64})
+    INSERT INTO rooms (session_id, original_photo, extra_photos, floorplan_photo)
+    VALUES (${sessionId}, ${originalPhotoBase64}, ${extraPhotosBase64}, ${floorplanPhotoBase64})
     RETURNING id
   `;
   return rows[0].id as string;
@@ -107,6 +114,8 @@ export async function loadRoom(roomId: string, sessionId: string): Promise<Persi
     id: room.id as string,
     title: room.title as string,
     originalPhotoBase64: room.original_photo as string,
+    extraPhotosBase64: (room.extra_photos as string[] | null) ?? [],
+    floorplanPhotoBase64: (room.floorplan_photo as string | null) ?? null,
     roomContext: (room.room_context as RoomContext | null) ?? null,
     messages: messageRows.map((r) => ({
       role: r.role as "user" | "assistant",

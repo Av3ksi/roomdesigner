@@ -213,10 +213,10 @@ export default function SavedDesigns() {
           </span>
           <div className="text-lg font-semibold">No saved designs yet</div>
           <p className="max-w-sm text-sm text-cream-dim">
-            Generate a room in the Studio and hit &quot;Save design&quot; to keep it here.
+            Generate a room in the Designer and hit &quot;Save design&quot; to keep it here.
           </p>
-          <Link href="/studio" className="btn-primary mt-2">
-            Go to the Studio
+          <Link href="/designer" className="btn-primary mt-2">
+            Go to the Designer
           </Link>
         </div>
       ) : (
