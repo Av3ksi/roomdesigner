@@ -3,6 +3,7 @@ import sharp from "sharp";
 import { MODEL, aiEnabled } from "./claude";
 import { suggestPlacements, type PlacementMap, type RoomDimensionsEstimate } from "./placement";
 import { detectSceneItems } from "./locate";
+import { searchWebForProduct, type WebProduct } from "./webProductSearch";
 import { searchProducts, toAgentProductSummary } from "../productSearch";
 import { DEFAULT_CATEGORY_BOX, clampBox, isValidBox } from "../placementBoxes";
 import type { DetectionBox, Product, ProductCategory } from "../types";
@@ -54,6 +55,16 @@ export interface AddProposal {
   rationale: string;
 }
 
+/** A real product found on the open web (search_web_for_product) — not our catalog, so it's shown as clearly sourced from another retailer and never added to cart directly. */
+export interface AddWebProposal {
+  kind: "add-web";
+  webProduct: WebProduct;
+  category: ProductCategory;
+  box: DetectionBox;
+  wallAngleDeg: number;
+  rationale: string;
+}
+
 /** Removing something already physically in the photo (Phase 2 — see lib/ai/locate.ts). No product: there's nothing to buy. */
 export interface RemoveProposal {
   kind: "remove";
@@ -65,7 +76,7 @@ export interface RemoveProposal {
   box?: DetectionBox;
 }
 
-export type EditProposal = AddProposal | RemoveProposal;
+export type EditProposal = AddProposal | AddWebProposal | RemoveProposal;
 
 export interface DesignerTurnResult {
   reply: string;
@@ -155,6 +166,40 @@ const TOOLS: Anthropic.Tool[] = [
       required: ["category", "rationale"],
     },
   },
+  {
+    name: "search_web_for_product",
+    description:
+      "Search the open web for one real, purchasable product when the catalog (search_products) genuinely has nothing that matches what the client asked for — e.g. a specific poster, a particular art style, a decor item the ~200-product catalog doesn't cover. This is a real, somewhat slow search (up to ~2 minutes) — only use it for a specific named item the client actually asked for, not speculatively, and don't call it more than once or twice per turn. Returns one real product from an actual European retailer with a real photo, or found:false if nothing solid turned up (tell the client honestly rather than inventing one). Use the returned webResultIndex with propose_web_edit.",
+    input_schema: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "English search terms, 2-6 words, e.g. 'abstract black white poster large'." },
+        category: { type: "string", enum: CATEGORIES },
+      },
+      required: ["query", "category"],
+    },
+  },
+  {
+    name: "propose_web_edit",
+    description:
+      "Propose placing a web-sourced product (found via search_web_for_product) into the room. Same confirm-before-render flow as propose_edit, but the client sees it clearly marked as sourced from another retailer, not something Maison sells directly — it links out to buy, it doesn't get added to a Maison cart.",
+    input_schema: {
+      type: "object",
+      properties: {
+        webResultIndex: { type: "number", description: "The index returned by search_web_for_product." },
+        box: {
+          type: "object",
+          properties: {
+            x: { type: "number" }, y: { type: "number" }, w: { type: "number" }, h: { type: "number" },
+          },
+          required: ["x", "y", "w", "h"],
+        },
+        wallAngleDeg: { type: "number" },
+        rationale: { type: "string", description: "One sentence: why this product for this room/request." },
+      },
+      required: ["webResultIndex", "box", "rationale"],
+    },
+  },
 ];
 
 function buildSystemPrompt(constraints: Constraint[], hasPhoto: boolean, roomContext: RoomContext | null): string {
@@ -172,11 +217,11 @@ ${constraintList}
 
 How you work:
 1. Understand what they want; record durable preferences with set_constraint.
-2. search_products for candidates (German keywords — the catalog is German). Check dimensionsCm against the room when relevant. Prefer products whose title/category clearly describes a normal, self-supporting piece of furniture over ambiguous single-part listings (e.g. a bare "Tischplatte"/tabletop panel, a lone leg, a spare part) — those can't be placed anywhere that looks physically real on their own, and a client can't tell that from the product name alone.
-3. get_room_placement once, then propose_edit for each item you recommend (max 3-4 per turn) using that category's box and wallAngleDeg. The box only needs to be a reasonable starting point, not pixel-perfect — the client can drag and resize it before confirming — but it should still put the item somewhere physically sensible for its category (resting on the floor for furniture, mounted at wall height for art/lighting, on an existing surface for small decor), never floating in open space or overlapping another object at an odd angle.
+2. search_products for candidates (German keywords — the catalog is German). Check dimensionsCm against the room when relevant. Prefer products whose title/category clearly describes a normal, self-supporting piece of furniture over ambiguous single-part listings (e.g. a bare "Tischplatte"/tabletop panel, a lone leg, a spare part) — those can't be placed anywhere that looks physically real on their own, and a client can't tell that from the product name alone. If the client asked for something specific the catalog clearly doesn't have (a poster, a particular style of art or decor), use search_web_for_product instead of saying no or substituting something unrelated — don't mention this fallback exists unless you actually need it.
+3. get_room_placement once, then propose_edit (catalog) or propose_web_edit (web-sourced) for each item you recommend (max 3-4 per turn) using that category's box and wallAngleDeg. The box only needs to be a reasonable starting point, not pixel-perfect — the client can drag and resize it before confirming — but it should still put the item somewhere physically sensible for its category (resting on the floor for furniture, mounted at wall height for art/lighting, on an existing surface for small decor), never floating in open space or overlapping another object at an odd angle.
 4. Your final text reply: brief, concrete, in the client's own language. Reference the proposals you made — the UI shows them as cards the client confirms. Each confirmed render costs the client a little money, so propose what you'd genuinely stand behind.
 
-Honest limits (say so when asked, offer the nearest real alternative): you can ADD products to the photo. You can also propose REMOVING a piece of furniture already physically in the photo with remove_existing_object — this depends on a vision step actually locating a matching item, so it can fail; if the confirm comes back with an error, tell the user honestly instead of pretending it worked. There's no way to just move an object in place yet, only remove it (they'd re-add a replacement afterward). You cannot restyle walls/floors. The catalog is ~200 VidaXL products today.`;
+Honest limits (say so when asked, offer the nearest real alternative): you can ADD products to the photo, from the catalog or (via search_web_for_product) real products sourced from other retailers when the catalog has nothing that fits — those are always shown to the client as external, not something Maison sells. You can also propose REMOVING a piece of furniture already physically in the photo with remove_existing_object — this depends on a vision step actually locating a matching item, so it can fail; if the confirm comes back with an error, tell the user honestly instead of pretending it worked. There's no way to just move an object in place yet, only remove it (they'd re-add a replacement afterward). You cannot restyle walls/floors. The catalog is ~200 VidaXL products today.`;
 }
 
 interface AgentState {
@@ -185,7 +230,13 @@ interface AgentState {
   roomContext: RoomContext | null;
   constraints: Constraint[];
   proposals: EditProposal[];
+  /** Results from search_web_for_product this turn, referenced by index from propose_web_edit — never trust the model's own retyped copy of a URL/photo. */
+  webResults: { product: WebProduct; category: ProductCategory }[];
+  /** Hard cap on real web searches per turn — independent of the system prompt's own restraint, since each one costs real time/money. */
+  webSearchCalls: number;
 }
+
+const MAX_WEB_SEARCHES_PER_TURN = 2;
 
 async function executeTool(name: string, input: Record<string, unknown>, state: AgentState): Promise<string> {
   switch (name) {
@@ -240,6 +291,49 @@ async function executeTool(name: string, input: Record<string, unknown>, state: 
       state.proposals.push(proposal);
       return JSON.stringify({ ok: true, proposalIndex: state.proposals.length - 1 });
     }
+    case "search_web_for_product": {
+      if (state.webSearchCalls >= MAX_WEB_SEARCHES_PER_TURN) {
+        return JSON.stringify({ error: "Web search limit reached for this turn — work with what you already found, or ask the client to try again." });
+      }
+      const query = String(input.query ?? "").trim();
+      const category = String(input.category ?? "");
+      if (!query) return JSON.stringify({ error: "query required" });
+      if (!CATEGORIES.includes(category as ProductCategory)) {
+        return JSON.stringify({ error: `category must be one of: ${CATEGORIES.join(", ")}` });
+      }
+      state.webSearchCalls += 1;
+      const found = await searchWebForProduct(query, "CH");
+      if (!found || !found.imageUrl) {
+        return JSON.stringify({
+          found: false,
+          note: "No real product with a usable photo was found for this search — tell the client honestly rather than inventing one.",
+        });
+      }
+      const webResultIndex = state.webResults.push({ product: found, category: category as ProductCategory }) - 1;
+      return JSON.stringify({
+        found: true,
+        webResultIndex,
+        name: found.name,
+        retailer: found.retailer,
+        priceText: found.priceText,
+      });
+    }
+    case "propose_web_edit": {
+      const idx = Number(input.webResultIndex);
+      const found = state.webResults[idx];
+      if (!found) return JSON.stringify({ error: "Unknown webResultIndex — use one returned by search_web_for_product." });
+      if (!isValidBox(input.box)) return JSON.stringify({ error: "box must be {x,y,w,h} in 0–1 image coordinates." });
+      const webProposal: EditProposal = {
+        kind: "add-web",
+        webProduct: found.product,
+        category: found.category,
+        box: clampBox(input.box),
+        wallAngleDeg: typeof input.wallAngleDeg === "number" ? input.wallAngleDeg : 0,
+        rationale: String(input.rationale ?? ""),
+      };
+      state.proposals.push(webProposal);
+      return JSON.stringify({ ok: true, proposalIndex: state.proposals.length - 1 });
+    }
     case "set_constraint": {
       const kind = String(input.kind ?? "custom") as Constraint["kind"];
       const description = String(input.description ?? "").trim();
@@ -285,6 +379,16 @@ async function runAgentLoop(
       system: buildSystem(state),
       tools,
       messages,
+    }, {
+      // See lib/ai/webProductSearch.ts for why an explicit timeout matters at
+      // all: the SDK default (10 min x up to 3 attempts) turned one stuck
+      // call into a real 24-minute production hang. A normal turn is a
+      // couple of seconds; even one that just got back a slow tool result
+      // (search_web_for_product can take up to ~2 min on its own, already
+      // budgeted separately below) only needs fast text/tool-call inference
+      // here, not another long wait on top of it.
+      timeout: 60_000,
+      maxRetries: 1,
     });
 
     const toolUses = response.content.filter((b): b is Anthropic.ToolUseBlock => b.type === "tool_use");
@@ -320,6 +424,8 @@ export async function runDesignerTurn(
     roomContext,
     constraints: [...constraints],
     proposals: [],
+    webResults: [],
+    webSearchCalls: 0,
   };
 
   const messages: Anthropic.MessageParam[] = [
@@ -349,7 +455,9 @@ export interface DesignerKickoffResult extends DesignerTurnResult {
 }
 
 const KICKOFF_MAX_CONTEXT_EDGE = 1024;
-const KICKOFF_TOOLS = TOOLS.filter((t) => t.name !== "remove_existing_object");
+// Kickoff stays catalog-only and fast — no removal (see buildKickoffSystemPrompt)
+// and no web search (a real, ~2-min-worst-case call) on the automatic first look.
+const KICKOFF_TOOLS = TOOLS.filter((t) => t.name !== "remove_existing_object" && t.name !== "search_web_for_product" && t.name !== "propose_web_edit");
 
 async function toContextJpegBase64(photo: Buffer): Promise<string> {
   const jpeg = await sharp(photo)
@@ -390,7 +498,15 @@ export async function runDesignerKickoff(
 ): Promise<DesignerKickoffResult> {
   if (!aiEnabled()) throw new Error("ANTHROPIC_API_KEY not configured");
 
-  const state: AgentState = { catalog, roomPhoto: primaryPhoto, roomContext: null, constraints: [], proposals: [] };
+  const state: AgentState = {
+    catalog,
+    roomPhoto: primaryPhoto,
+    roomContext: null,
+    constraints: [],
+    proposals: [],
+    webResults: [],
+    webSearchCalls: 0,
+  };
 
   const [inventoryItems, primaryJpeg, extraJpegs, floorplanJpeg] = await Promise.all([
     detectSceneItems(primaryPhoto, []),

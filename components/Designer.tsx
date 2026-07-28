@@ -35,6 +35,24 @@ interface AddProposal {
   rationale: string;
 }
 
+/** A real product the agent found on the open web (not our catalog) — always has a real photo, shown as clearly sourced from another retailer. */
+interface WebProductInfo {
+  name: string;
+  url: string;
+  retailer: string;
+  priceText: string | null;
+  imageUrl: string;
+}
+
+interface AddWebProposal {
+  kind: "add-web";
+  webProduct: WebProductInfo;
+  category: string;
+  box: DetectionBox;
+  wallAngleDeg: number;
+  rationale: string;
+}
+
 /** Removing something already physically in the room photo (Phase 2) — no product, nothing to buy. */
 interface RemoveProposal {
   kind: "remove";
@@ -48,17 +66,16 @@ interface RemoveProposal {
   inventoryIndex?: number;
 }
 
-type EditProposal = AddProposal | RemoveProposal;
+type EditProposal = AddProposal | AddWebProposal | RemoveProposal;
 
 interface ChatMessage {
   role: "user" | "assistant";
   content: string;
 }
 
-interface PlacedObject {
-  box: DetectionBox;
-  product: Product;
-}
+type PlacedObject =
+  | { box: DetectionBox; kind: "catalog"; product: Product }
+  | { box: DetectionBox; kind: "web"; webProduct: WebProductInfo };
 
 interface RoomVersion {
   /** Base64 PNG for generated versions; null for version 0 (the original photo, shown via objectURL). */
@@ -302,13 +319,14 @@ export default function Designer() {
   /** Opens the placement adjuster for an add-proposal: shows its box on the real photo, draggable/resizable, before any render fires. */
   async function openPlacementPreview(index: number) {
     const p = proposals[index];
-    if (p.kind !== "add") return;
+    if (p.kind !== "add" && p.kind !== "add-web") return;
     setActiveProposalIndex(index);
     setAdjustLoading(true);
+    const imageUrl = p.kind === "add" ? p.product.imageUrl : p.webProduct.imageUrl;
     let box = p.box;
-    if (p.product.imageUrl) {
+    if (imageUrl) {
       try {
-        box = reshapeBoxToAspectRatio(box, await loadImageAspectRatio(p.product.imageUrl));
+        box = reshapeBoxToAspectRatio(box, await loadImageAspectRatio(imageUrl));
       } catch {
         // un-reshaped box still works as a starting point
       }
@@ -452,12 +470,13 @@ export default function Designer() {
         return;
       }
 
-      // Fit the box to the product's real shape before rendering — unless
-      // the placement adjuster already gave us one.
+      // Fit the box to the item's real shape before rendering — unless the
+      // placement adjuster already gave us one.
+      const imageUrl = proposal.kind === "add" ? proposal.product.imageUrl ?? "" : proposal.webProduct.imageUrl;
       let box = overrideBox ?? proposal.box;
-      if (!overrideBox && proposal.product.imageUrl) {
+      if (!overrideBox && imageUrl) {
         try {
-          box = reshapeBoxToAspectRatio(box, await loadImageAspectRatio(proposal.product.imageUrl));
+          box = reshapeBoxToAspectRatio(box, await loadImageAspectRatio(imageUrl));
         } catch {
           // un-reshaped box still works
         }
@@ -465,7 +484,7 @@ export default function Designer() {
 
       const form = new FormData();
       form.append("room", baseFile);
-      form.append("productImageUrl", proposal.product.imageUrl ?? "");
+      form.append("productImageUrl", imageUrl);
       form.append("category", proposal.category);
       form.append("boxX", String(box.x));
       form.append("boxY", String(box.y));
@@ -477,11 +496,13 @@ export default function Designer() {
       const body = await res.json();
       if (!res.ok) throw new Error(body.error ?? `Render failed: ${res.status}`);
 
-      commitVersion(
-        body.imageBase64,
-        `V${versions.length} · ${proposal.product.name.slice(0, 24)}`,
-        [...prevObjects, { box: body.maskBox, product: proposal.product }],
-      );
+      const newObject: PlacedObject =
+        proposal.kind === "add"
+          ? { box: body.maskBox, kind: "catalog", product: proposal.product }
+          : { box: body.maskBox, kind: "web", webProduct: proposal.webProduct };
+      const label = proposal.kind === "add" ? proposal.product.name : proposal.webProduct.name;
+
+      commitVersion(body.imageBase64, `V${versions.length} · ${label.slice(0, 24)}`, [...prevObjects, newObject]);
       setProposals((p) => p.filter((_, i) => i !== index));
       if (activeProposalIndex === index) {
         setActiveProposalIndex(null);
@@ -499,6 +520,10 @@ export default function Designer() {
 
   const version = versions[currentVersion];
   const canvasSrc = version?.imageBase64 ? `data:image/png;base64,${version.imageBase64}` : roomPreviewUrl;
+
+  const activeProposal = activeProposalIndex !== null ? proposals[activeProposalIndex] : null;
+  const activeAddProposal = activeProposal?.kind === "add" || activeProposal?.kind === "add-web" ? activeProposal : null;
+  const activeName = activeAddProposal ? (activeAddProposal.kind === "add" ? activeAddProposal.product.name : activeAddProposal.webProduct.name) : "";
 
   return (
     <div className="container-page py-10">
@@ -583,7 +608,12 @@ export default function Designer() {
             {thinking && <div className="text-xs text-cream-faint">Designing…</div>}
 
             {proposals.map((p, i) => (
-              <div key={i} className="rounded-xl border border-brass/30 bg-brass/5 p-3">
+              <div
+                key={i}
+                className={`rounded-xl border p-3 ${
+                  p.kind === "add-web" ? "border-rose-400/25 bg-rose-400/5" : "border-brass/30 bg-brass/5"
+                }`}
+              >
                 {p.kind === "add" ? (
                   <div className="flex items-center gap-3">
                     {p.product.imageUrl && (
@@ -598,15 +628,28 @@ export default function Designer() {
                       </div>
                     </div>
                   </div>
+                ) : p.kind === "add-web" ? (
+                  <div className="flex items-center gap-3">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={p.webProduct.imageUrl} alt={p.webProduct.name} className="h-14 w-14 rounded-lg object-cover" />
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-sm font-semibold">{p.webProduct.name}</div>
+                      <div className="text-xs text-rose-300">
+                        {p.webProduct.priceText ?? "See price"} · from {p.webProduct.retailer}, not sold by Maison
+                      </div>
+                    </div>
+                  </div>
                 ) : (
                   <div className="text-sm font-semibold">Remove {p.description ?? `existing ${p.category}`}</div>
                 )}
                 {p.rationale && <div className="mt-2 text-xs text-cream-dim">{p.rationale}</div>}
-                {p.kind === "add" ? (
+                {p.kind === "add" || p.kind === "add-web" ? (
                   <button
                     onClick={() => openPlacementPreview(i)}
                     disabled={generating !== null || !roomFile || activeProposalIndex === i}
-                    className="mt-2.5 flex w-full items-center justify-center gap-1.5 rounded-full bg-brass px-4 py-2 text-xs font-semibold text-ink disabled:opacity-40"
+                    className={`mt-2.5 flex w-full items-center justify-center gap-1.5 rounded-full px-4 py-2 text-xs font-semibold disabled:opacity-40 ${
+                      p.kind === "add-web" ? "bg-rose-400/90 text-ink" : "bg-brass text-ink"
+                    }`}
                   >
                     <Ruler size={13} />
                     {activeProposalIndex === i ? "Adjusting…" : "Preview placement"}
@@ -834,7 +877,7 @@ export default function Designer() {
                   <Sparkles size={15} /> Analyze my room
                 </button>
               </div>
-            ) : activeProposalIndex !== null && proposals[activeProposalIndex]?.kind === "add" && canvasSrc ? (
+            ) : activeAddProposal && canvasSrc ? (
               <div className="w-full">
                 <div
                   ref={overlayRef}
@@ -856,7 +899,7 @@ export default function Designer() {
                       className="absolute cursor-move rounded-md border-2 border-brass-bright/80 bg-brass/15"
                     >
                       <span className="absolute -top-5 left-0 rounded bg-ink/80 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-brass-bright backdrop-blur">
-                        {(proposals[activeProposalIndex] as AddProposal).category}
+                        {activeAddProposal.category}
                       </span>
                       <span
                         onPointerDown={(e) => onBoxPointerDown(e, "resize")}
@@ -874,14 +917,15 @@ export default function Designer() {
                   <Ruler size={15} className="shrink-0 text-brass" />
                   <div className="min-w-0 flex-1 text-xs text-cream-dim">
                     Drag to move, corner handle to resize — position{" "}
-                    <span className="font-semibold text-cream">{(proposals[activeProposalIndex] as AddProposal).product.name}</span>{" "}
-                    where it actually belongs.
+                    <span className="font-semibold text-cream">{activeName}</span> where it actually belongs.
                   </div>
                   <button onClick={cancelPlacementPreview} className="btn-ghost !px-3.5 !py-1.5 !text-xs">
                     Cancel
                   </button>
                   <button
-                    onClick={() => adjustedBox && generateProposal(proposals[activeProposalIndex]!, activeProposalIndex, adjustedBox)}
+                    onClick={() =>
+                      adjustedBox && activeProposalIndex !== null && generateProposal(activeAddProposal, activeProposalIndex, adjustedBox)
+                    }
                     disabled={generating !== null || !adjustedBox || adjustLoading}
                     className="btn-primary !px-4 !py-1.5 !text-xs disabled:opacity-40"
                   >
@@ -895,18 +939,29 @@ export default function Designer() {
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src={canvasSrc} alt="Room" className="w-full" />
                 <RoomHotspots
-                  items={(version?.objects ?? []).map(
-                    (obj): HotspotItem => ({
+                  items={(version?.objects ?? []).map((obj, i): HotspotItem => {
+                    if (obj.kind === "web") {
+                      return {
+                        id: `web-${i}`,
+                        name: obj.webProduct.name,
+                        box: obj.box,
+                        priceLabel: obj.webProduct.priceText ?? "See price",
+                        kind: "external",
+                        url: obj.webProduct.url,
+                        retailer: obj.webProduct.retailer,
+                      };
+                    }
+                    return {
                       id: obj.product.id,
                       name: obj.product.name,
                       box: obj.box,
                       priceLabel: formatChf(obj.product.price),
                       kind: "catalog",
-                    }),
-                  )}
+                    };
+                  })}
                   onAction={(id) => {
-                    const obj = version?.objects.find((o) => o.product.id === id);
-                    if (obj) addToCart(obj.product);
+                    const obj = version?.objects.find((o) => o.kind !== "web" && o.product.id === id);
+                    if (obj && obj.kind !== "web") addToCart(obj.product);
                   }}
                 />
               </div>
