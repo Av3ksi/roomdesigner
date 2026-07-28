@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, ArrowUpRight, Loader2, MapPin, Plus, Search, Send, Sparkles, Upload, X } from "lucide-react";
+import { AlertTriangle, Loader2, MapPin, Plus, Ruler, Search, Send, Sparkles, Upload, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import {
   base64PngToFile,
@@ -9,7 +9,9 @@ import {
   loadImageAspectRatio,
   reshapeBoxToAspectRatio,
 } from "@/lib/clientImage";
-import { DEFAULT_CATEGORY_BOX, describeRoughLocation } from "@/lib/placementBoxes";
+import { clampBox, DEFAULT_CATEGORY_BOX, describeRoughLocation } from "@/lib/placementBoxes";
+import RoomHotspots, { type HotspotItem } from "@/components/RoomHotspots";
+import { useMaisonStore } from "@/lib/store";
 import type { DetectionBox, Product, ProductCategory } from "@/lib/types";
 
 const ROOM_ID_STORAGE_KEY = "maison_room_id";
@@ -109,14 +111,23 @@ export default function Designer() {
   const [generating, setGenerating] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [identityWarning, setIdentityWarning] = useState<string | null>(null);
-  const [openHotspot, setOpenHotspot] = useState<number | null>(null);
   const [roomId, setRoomId] = useState<string | null>(null);
   const [rehydrating, setRehydrating] = useState(false);
   const [catalogQuery, setCatalogQuery] = useState("");
   const [catalogResults, setCatalogResults] = useState<Product[]>([]);
   const [catalogSearching, setCatalogSearching] = useState(false);
   const [showCatalogPanel, setShowCatalogPanel] = useState(false);
+  // Placement adjuster ("ruler") — every add-proposal previews its box on the
+  // real photo, draggable/resizable, before the render actually fires. A bad
+  // AI-guessed box (floating mid-air, wrong spot) gets caught here instead
+  // of wasting a paid render.
+  const [activeProposalIndex, setActiveProposalIndex] = useState<number | null>(null);
+  const [adjustedBox, setAdjustedBox] = useState<DetectionBox | null>(null);
+  const [adjustLoading, setAdjustLoading] = useState(false);
   const chatEndRef = useRef<HTMLDivElement | null>(null);
+  const overlayRef = useRef<HTMLDivElement | null>(null);
+  const dragRef = useRef<{ mode: "move" | "resize"; startX: number; startY: number; box: DetectionBox; rect: DOMRect } | null>(null);
+  const addToCart = useMaisonStore((s) => s.addToCart);
 
   // On mount: if a room was persisted last visit (DB-backed sessions only),
   // fetch its full state back so a refresh doesn't lose the conversation.
@@ -288,6 +299,51 @@ export default function Designer() {
     setCatalogResults([]);
   }
 
+  /** Opens the placement adjuster for an add-proposal: shows its box on the real photo, draggable/resizable, before any render fires. */
+  async function openPlacementPreview(index: number) {
+    const p = proposals[index];
+    if (p.kind !== "add") return;
+    setActiveProposalIndex(index);
+    setAdjustLoading(true);
+    let box = p.box;
+    if (p.product.imageUrl) {
+      try {
+        box = reshapeBoxToAspectRatio(box, await loadImageAspectRatio(p.product.imageUrl));
+      } catch {
+        // un-reshaped box still works as a starting point
+      }
+    }
+    setAdjustedBox(box);
+    setAdjustLoading(false);
+  }
+
+  function cancelPlacementPreview() {
+    setActiveProposalIndex(null);
+    setAdjustedBox(null);
+  }
+
+  function onBoxPointerDown(e: React.PointerEvent, mode: "move" | "resize") {
+    if (!adjustedBox || !overlayRef.current) return;
+    e.preventDefault();
+    e.stopPropagation();
+    dragRef.current = { mode, startX: e.clientX, startY: e.clientY, box: adjustedBox, rect: overlayRef.current.getBoundingClientRect() };
+    overlayRef.current.setPointerCapture(e.pointerId);
+  }
+
+  function onOverlayPointerMove(e: React.PointerEvent) {
+    const d = dragRef.current;
+    if (!d) return;
+    const dx = (e.clientX - d.startX) / d.rect.width;
+    const dy = (e.clientY - d.startY) / d.rect.height;
+    setAdjustedBox(
+      clampBox(d.mode === "move" ? { ...d.box, x: d.box.x + dx, y: d.box.y + dy } : { ...d.box, w: d.box.w + dx, h: d.box.h + dy }),
+    );
+  }
+
+  function onOverlayPointerUp() {
+    dragRef.current = null;
+  }
+
   async function sendMessage() {
     const text = input.trim();
     if (!text || thinking) return;
@@ -343,8 +399,14 @@ export default function Designer() {
     }
   }
 
-  /** The explicit money moment: one confirmed proposal = one billed render call. */
-  async function generateProposal(proposal: EditProposal, index: number) {
+  /**
+   * The explicit money moment: one confirmed proposal = one billed render
+   * call. For "add" proposals, `overrideBox` is the (possibly hand-dragged)
+   * box from the placement adjuster — when given, it's already reshaped to
+   * the product's real aspect ratio and positioned by the user, so skip the
+   * automatic reshape below.
+   */
+  async function generateProposal(proposal: EditProposal, index: number, overrideBox?: DetectionBox) {
     if (!roomFile || generating !== null) return;
     setGenerating(index);
     setError(null);
@@ -376,9 +438,10 @@ export default function Designer() {
         return;
       }
 
-      // Fit the box to the product's real shape before rendering.
-      let box = proposal.box;
-      if (proposal.product.imageUrl) {
+      // Fit the box to the product's real shape before rendering — unless
+      // the placement adjuster already gave us one.
+      let box = overrideBox ?? proposal.box;
+      if (!overrideBox && proposal.product.imageUrl) {
         try {
           box = reshapeBoxToAspectRatio(box, await loadImageAspectRatio(proposal.product.imageUrl));
         } catch {
@@ -406,6 +469,10 @@ export default function Designer() {
         [...prevObjects, { box: body.maskBox, product: proposal.product }],
       );
       setProposals((p) => p.filter((_, i) => i !== index));
+      if (activeProposalIndex === index) {
+        setActiveProposalIndex(null);
+        setAdjustedBox(null);
+      }
       if (body.identityCheck && body.identityCheck.pass === false) {
         setIdentityWarning(body.identityCheck.note);
       }
@@ -511,18 +578,25 @@ export default function Designer() {
                   <div className="text-sm font-semibold">Remove {p.description ?? `existing ${p.category}`}</div>
                 )}
                 {p.rationale && <div className="mt-2 text-xs text-cream-dim">{p.rationale}</div>}
-                <button
-                  onClick={() => generateProposal(p, i)}
-                  disabled={generating !== null || !roomFile}
-                  className="mt-2.5 flex w-full items-center justify-center gap-1.5 rounded-full bg-brass px-4 py-2 text-xs font-semibold text-ink disabled:opacity-40"
-                >
-                  <Sparkles size={13} />
-                  {generating === i
-                    ? "Rendering (~15-60s)…"
-                    : p.kind === "add"
-                      ? "Place in room (~$0.01)"
-                      : "Remove from room (~$0.02)"}
-                </button>
+                {p.kind === "add" ? (
+                  <button
+                    onClick={() => openPlacementPreview(i)}
+                    disabled={generating !== null || !roomFile || activeProposalIndex === i}
+                    className="mt-2.5 flex w-full items-center justify-center gap-1.5 rounded-full bg-brass px-4 py-2 text-xs font-semibold text-ink disabled:opacity-40"
+                  >
+                    <Ruler size={13} />
+                    {activeProposalIndex === i ? "Adjusting…" : "Preview placement"}
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => generateProposal(p, i)}
+                    disabled={generating !== null || !roomFile}
+                    className="mt-2.5 flex w-full items-center justify-center gap-1.5 rounded-full bg-brass px-4 py-2 text-xs font-semibold text-ink disabled:opacity-40"
+                  >
+                    <Sparkles size={13} />
+                    {generating === i ? "Rendering (~15-60s)…" : "Remove from room (~$0.02)"}
+                  </button>
+                )}
               </div>
             ))}
 
@@ -736,48 +810,81 @@ export default function Designer() {
                   <Sparkles size={15} /> Analyze my room
                 </button>
               </div>
+            ) : activeProposalIndex !== null && proposals[activeProposalIndex]?.kind === "add" && canvasSrc ? (
+              <div className="w-full">
+                <div
+                  ref={overlayRef}
+                  onPointerMove={onOverlayPointerMove}
+                  onPointerUp={onOverlayPointerUp}
+                  className="relative touch-none select-none overflow-hidden"
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={canvasSrc} alt="Room" draggable={false} className="w-full" />
+                  {adjustedBox && !adjustLoading && (
+                    <div
+                      onPointerDown={(e) => onBoxPointerDown(e, "move")}
+                      style={{
+                        left: `${adjustedBox.x * 100}%`,
+                        top: `${adjustedBox.y * 100}%`,
+                        width: `${adjustedBox.w * 100}%`,
+                        height: `${adjustedBox.h * 100}%`,
+                      }}
+                      className="absolute cursor-move rounded-md border-2 border-brass-bright/80 bg-brass/15"
+                    >
+                      <span className="absolute -top-5 left-0 rounded bg-ink/80 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-brass-bright backdrop-blur">
+                        {(proposals[activeProposalIndex] as AddProposal).category}
+                      </span>
+                      <span
+                        onPointerDown={(e) => onBoxPointerDown(e, "resize")}
+                        className="absolute -bottom-1.5 -right-1.5 h-4 w-4 cursor-nwse-resize rounded-sm border border-ink bg-brass-bright"
+                      />
+                    </div>
+                  )}
+                  {adjustLoading && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-ink/40">
+                      <Loader2 size={20} className="animate-spin text-brass" />
+                    </div>
+                  )}
+                </div>
+                <div className="flex flex-wrap items-center gap-3 border-t border-ink-line p-4">
+                  <Ruler size={15} className="shrink-0 text-brass" />
+                  <div className="min-w-0 flex-1 text-xs text-cream-dim">
+                    Drag to move, corner handle to resize — position{" "}
+                    <span className="font-semibold text-cream">{(proposals[activeProposalIndex] as AddProposal).product.name}</span>{" "}
+                    where it actually belongs.
+                  </div>
+                  <button onClick={cancelPlacementPreview} className="btn-ghost !px-3.5 !py-1.5 !text-xs">
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => adjustedBox && generateProposal(proposals[activeProposalIndex]!, activeProposalIndex, adjustedBox)}
+                    disabled={generating !== null || !adjustedBox || adjustLoading}
+                    className="btn-primary !px-4 !py-1.5 !text-xs disabled:opacity-40"
+                  >
+                    <Sparkles size={13} />
+                    {generating === activeProposalIndex ? "Rendering (~15-60s)…" : "Place in room (~$0.01)"}
+                  </button>
+                </div>
+              </div>
             ) : canvasSrc ? (
               <div className="relative w-full">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src={canvasSrc} alt="Room" className="w-full" />
-                {version?.objects.map((obj, i) => (
-                  <button
-                    key={i}
-                    onClick={() => setOpenHotspot(openHotspot === i ? null : i)}
-                    style={{
-                      left: `${obj.box.x * 100}%`,
-                      top: `${obj.box.y * 100}%`,
-                      width: `${obj.box.w * 100}%`,
-                      height: `${obj.box.h * 100}%`,
-                    }}
-                    className="absolute rounded-md border-2 border-brass-bright/60 bg-brass/5 transition hover:bg-brass/15"
-                    aria-label={`View ${obj.product.name}`}
-                  />
-                ))}
-                {openHotspot !== null && version?.objects[openHotspot] && (
-                  <div
-                    style={{
-                      left: `${Math.min(version.objects[openHotspot].box.x * 100, 70)}%`,
-                      top: `${(version.objects[openHotspot].box.y + version.objects[openHotspot].box.h) * 100}%`,
-                    }}
-                    className="absolute z-10 mt-2 w-60 rounded-lg border border-ink-line bg-ink p-3 shadow-xl"
-                  >
-                    <div className="text-sm font-semibold">{version.objects[openHotspot].product.name}</div>
-                    <div className="mt-1.5 font-display text-lg text-brass-bright">
-                      {formatChf(version.objects[openHotspot].product.price)}
-                    </div>
-                    {version.objects[openHotspot].product.productUrl && (
-                      <a
-                        href={version.objects[openHotspot].product.productUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="mt-2 flex items-center gap-1 text-xs font-semibold text-brass hover:underline"
-                      >
-                        View product <ArrowUpRight size={12} />
-                      </a>
-                    )}
-                  </div>
-                )}
+                <RoomHotspots
+                  items={(version?.objects ?? []).map(
+                    (obj): HotspotItem => ({
+                      id: obj.product.id,
+                      name: obj.product.name,
+                      box: obj.box,
+                      priceLabel: formatChf(obj.product.price),
+                      kind: "catalog",
+                    }),
+                  )}
+                  onAction={(id) => {
+                    const obj = version?.objects.find((o) => o.product.id === id);
+                    if (obj) addToCart(obj.product);
+                  }}
+                />
               </div>
             ) : (
               <label className="flex cursor-pointer flex-col items-center gap-3 p-16 text-center text-sm text-cream-faint">
@@ -800,7 +907,6 @@ export default function Designer() {
                   key={i}
                   onClick={() => {
                     setCurrentVersion(i);
-                    setOpenHotspot(null);
                     setIdentityWarning(null);
                   }}
                   className={`shrink-0 overflow-hidden rounded-lg border text-left transition ${
