@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, Loader2, MapPin, Plus, Ruler, Search, Send, Sparkles, Upload, X } from "lucide-react";
+import { AlertTriangle, Eraser, Loader2, MapPin, Plus, Ruler, Search, Send, Sparkles, Upload, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import {
   base64PngToFile,
@@ -344,6 +344,20 @@ export default function Designer() {
     dragRef.current = null;
   }
 
+  /** Wipes the conversation only — the room photo, versions and any pending checklist/inventory stay untouched. */
+  function clearChat() {
+    setMessages([]);
+    setProposals([]);
+    setInput("");
+    setError(null);
+    setIdentityWarning(null);
+    if (roomId) {
+      fetch(`/api/rooms/${roomId}/messages`, { method: "DELETE" }).catch(() => {
+        // Chat is already cleared client-side — a persistence hiccup here isn't worth surfacing.
+      });
+    }
+  }
+
   async function sendMessage() {
     const text = input.trim();
     if (!text || thinking) return;
@@ -502,6 +516,16 @@ export default function Designer() {
       <div className="mt-8 grid gap-6 lg:grid-cols-[420px_1fr]">
         {/* Chat rail */}
         <div className="card flex h-[640px] flex-col p-0">
+          {messages.length > 0 && (
+            <div className="flex items-center justify-end border-b border-ink-line px-4 py-2">
+              <button
+                onClick={clearChat}
+                className="flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium text-cream-faint transition hover:text-brass-bright"
+              >
+                <Eraser size={12} /> Clear chat
+              </button>
+            </div>
+          )}
           <div className="flex-1 space-y-4 overflow-y-auto p-5">
             {messages.length === 0 && uploadStage !== "analyzing" && (
               <div className="text-sm text-cream-faint">

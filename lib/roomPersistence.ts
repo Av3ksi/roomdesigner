@@ -65,6 +65,13 @@ export async function appendMessage(roomId: string, role: "user" | "assistant", 
   await db`UPDATE rooms SET updated_at = now() WHERE id = ${roomId}`;
 }
 
+/** "Clear chat" — wipes the conversation only; the room's photo, versions and room_context are untouched. */
+export async function clearMessages(roomId: string): Promise<void> {
+  const db = sql();
+  await db`DELETE FROM room_messages WHERE room_id = ${roomId}`;
+  await db`UPDATE rooms SET updated_at = now() WHERE id = ${roomId}`;
+}
+
 /** Replaces the full constraint ledger — small table, simplest correct approach. */
 export async function saveConstraints(roomId: string, constraints: Constraint[]): Promise<void> {
   const db = sql();
