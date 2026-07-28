@@ -236,7 +236,9 @@ interface AgentState {
   webSearchCalls: number;
 }
 
-const MAX_WEB_SEARCHES_PER_TURN = 2;
+// Each web search can take up to searchWebForProduct's own 60s budget — cap
+// at 1 per turn so a chat message never waits on more than one of these.
+const MAX_WEB_SEARCHES_PER_TURN = 1;
 
 async function executeTool(name: string, input: Record<string, unknown>, state: AgentState): Promise<string> {
   switch (name) {
@@ -384,11 +386,13 @@ async function runAgentLoop(
       // all: the SDK default (10 min x up to 3 attempts) turned one stuck
       // call into a real 24-minute production hang. A normal turn is a
       // couple of seconds; even one that just got back a slow tool result
-      // (search_web_for_product can take up to ~2 min on its own, already
-      // budgeted separately below) only needs fast text/tool-call inference
-      // here, not another long wait on top of it.
+      // (search_web_for_product has its own separate budget) only needs fast
+      // text/tool-call inference here, not another long wait on top of it.
+      // maxRetries: 0 because the SDK retries a timeout like any other
+      // connection error — with maxRetries: 1 a single slow turn could
+      // silently take up to 120s instead of the 60s this comment implies.
       timeout: 60_000,
-      maxRetries: 1,
+      maxRetries: 0,
     });
 
     const toolUses = response.content.filter((b): b is Anthropic.ToolUseBlock => b.type === "tool_use");

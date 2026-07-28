@@ -125,6 +125,7 @@ export default function Designer() {
   const [versions, setVersions] = useState<RoomVersion[]>([]);
   const [currentVersion, setCurrentVersion] = useState(0);
   const [thinking, setThinking] = useState(false);
+  const [thinkingSeconds, setThinkingSeconds] = useState(0);
   const [generating, setGenerating] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [identityWarning, setIdentityWarning] = useState<string | null>(null);
@@ -145,6 +146,20 @@ export default function Designer() {
   const overlayRef = useRef<HTMLDivElement | null>(null);
   const dragRef = useRef<{ mode: "move" | "resize"; startX: number; startY: number; box: DetectionBox; rect: DOMRect } | null>(null);
   const addToCart = useMaisonStore((s) => s.addToCart);
+
+  // Ticks while waiting on a chat reply so the loading text can be honest
+  // about how long it's actually been — a message that might involve a real
+  // web search can take up to a minute, and a bare "Designing…" for that
+  // long reads as broken without a running clock.
+  useEffect(() => {
+    if (!thinking) {
+      setThinkingSeconds(0);
+      return;
+    }
+    const start = Date.now();
+    const id = setInterval(() => setThinkingSeconds(Math.floor((Date.now() - start) / 1000)), 1000);
+    return () => clearInterval(id);
+  }, [thinking]);
 
   // On mount: if a room was persisted last visit (DB-backed sessions only),
   // fetch its full state back so a refresh doesn't lose the conversation.
@@ -605,7 +620,16 @@ export default function Designer() {
                 {m.content}
               </div>
             ))}
-            {thinking && <div className="text-xs text-cream-faint">Designing…</div>}
+            {thinking && (
+              <div className="flex items-center gap-2 text-xs text-cream-faint">
+                <Loader2 size={12} className="animate-spin text-brass" />
+                {thinkingSeconds < 8
+                  ? "Designing…"
+                  : thinkingSeconds < 20
+                    ? `Still thinking… (${thinkingSeconds}s)`
+                    : `Finding something specific can take up to a minute — hang tight (${thinkingSeconds}s)…`}
+              </div>
+            )}
 
             {proposals.map((p, i) => (
               <div

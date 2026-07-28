@@ -153,8 +153,10 @@ async function describeProductForPrompt(productPhoto: Buffer): Promise<string | 
       // timeout x up to 3 attempts) turns one stuck call into up to 30
       // minutes. This is a tiny, single-turn, no-thinking call — normally a
       // couple of seconds — so fail fast instead of blocking the render.
+      // maxRetries: 0 — the SDK retries a timeout like any other connection
+      // error, so maxRetries: 1 would silently double this to 90s.
       timeout: 45_000,
-      maxRetries: 1,
+      maxRetries: 0,
     });
 
     const text = response.content.find((b) => b.type === "text")?.text;

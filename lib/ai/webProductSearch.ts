@@ -118,12 +118,17 @@ export async function searchWebForProduct(query: string, market: TargetMarket = 
       // The SDK default (10 min timeout x up to 3 attempts with retries =
       // up to 30 min for ONE call) is what turned a single stuck search into
       // a 24-minute generate request. A real web search (a couple of rounds,
-      // reading a few pages) normally finishes well under a minute; if it
-      // hasn't in 2, something's actually wrong — fail fast and let this
-      // function's existing fallback (return null, degrade gracefully) kick
-      // in instead of blocking the whole response for up to half an hour.
-      timeout: 120_000,
-      maxRetries: 1,
+      // reading a few pages) normally finishes in well under a minute.
+      // maxRetries: 0 is deliberate — the SDK retries a *timeout* exactly
+      // like any other connection error, so maxRetries: 1 here silently
+      // doubles the worst case (measured: a real request hit this and took
+      // ~4 minutes end to end, not the ~2 the single timeout implied).
+      // Retrying an already-slow web search rarely helps; fail once, fail
+      // fast, and let this function's existing fallback (return null,
+      // degrade gracefully) kick in — the caller (the chat agent) can
+      // decide whether to try again with a different query.
+      timeout: 60_000,
+      maxRetries: 0,
     });
 
     if (response.stop_reason === "refusal") return null;
@@ -225,9 +230,10 @@ export async function extractRequestedExtras(
     }, {
       // Tiny, single-turn, no-thinking, no-tools call — normally a couple of
       // seconds. See searchWebForProduct above for why an explicit timeout
-      // matters at all.
+      // matters at all, and why maxRetries: 0 — the SDK retries a timeout
+      // like any other connection error, silently doubling the wait.
       timeout: 45_000,
-      maxRetries: 1,
+      maxRetries: 0,
     });
 
     if (response.stop_reason === "refusal") return [];

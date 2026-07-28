@@ -369,9 +369,11 @@ export async function detectSceneItems(render: Buffer, picked: PickedProductRef[
       // timeout x up to 3 attempts) turns one stuck call into up to 30
       // minutes. This is a single-turn vision call — normally seconds,
       // rarely more than a minute — so fail fast instead of blocking the
-      // whole generate request.
+      // whole generate request. maxRetries: 0 — the SDK retries a timeout
+      // like any other connection error, so maxRetries: 1 would silently
+      // double this to 180s.
       timeout: 90_000,
-      maxRetries: 1,
+      maxRetries: 0,
     });
 
     if (response.stop_reason === "refusal") return [];
