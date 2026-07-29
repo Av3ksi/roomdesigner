@@ -163,6 +163,15 @@ async function runSchema(): Promise<void> {
   await db`ALTER TABLE finished_rooms ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'curated'`;
   await db`ALTER TABLE finished_rooms ADD COLUMN IF NOT EXISTS user_id UUID`;
 
+  // The anonymous session that saved this room to "my collection" (see
+  // lib/finishedRooms.ts's getUserFinishedRooms/setFinishedRoomPublished) —
+  // lets a room be privately owned before a customer ever logs in. user_id
+  // above is set once the owner is actually signed in (at publish time, if
+  // not already known), same "start anonymous, attach identity when it
+  // matters" pattern as the rest of this app.
+  await db`ALTER TABLE finished_rooms ADD COLUMN IF NOT EXISTS session_id TEXT`;
+  await db`CREATE INDEX IF NOT EXISTS idx_finished_rooms_session ON finished_rooms(session_id)`;
+
   // Abuse/cost protection for the paid AI endpoints — see lib/rateLimit.ts.
   // One row per limiter key (e.g. "generate:session-id"); a single UPSERT
   // atomically resets-if-expired or increments, so concurrent requests from

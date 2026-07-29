@@ -14,7 +14,7 @@ const LINKS = [
   { href: "/styles", label: "Styles" },
   { href: "/marketplace", label: "Marketplace" },
   { href: "/pricing", label: "Pricing" },
-  { href: "/designs", label: "My Designs" },
+  { href: "/my-rooms", label: "My Collection" },
   { href: "/boards", label: "Boards" },
 ];
 

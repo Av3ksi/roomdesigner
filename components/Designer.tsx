@@ -1,6 +1,7 @@
 "use client";
 
-import { AlertTriangle, Eraser, Loader2, MapPin, Plus, Ruler, Search, Send, Sparkles, Upload, X } from "lucide-react";
+import { AlertTriangle, Bookmark, Check, Eraser, Loader2, MapPin, Plus, Ruler, Search, Send, Sparkles, Upload, X } from "lucide-react";
+import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import {
   base64PngToFile,
@@ -142,6 +143,13 @@ export default function Designer() {
   // /api/remove-object call regardless of what the client thinks.
   const [usageRemaining, setUsageRemaining] = useState<number | null>(null);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+  // "Save to my collection" — a private bookmark of the current render,
+  // separate from the free-generation gate above (saving costs nothing).
+  const [saveOpen, setSaveOpen] = useState(false);
+  const [saveTitle, setSaveTitle] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [savedFlash, setSavedFlash] = useState(false);
   // Placement adjuster ("ruler") — every add-proposal previews its box on the
   // real photo, draggable/resizable, before the render actually fires. A bad
   // AI-guessed box (floating mid-air, wrong spot) gets caught here instead
@@ -461,6 +469,52 @@ export default function Designer() {
       }).catch(() => {
         // The render already succeeded and is visible — a persistence hiccup here isn't worth surfacing.
       });
+    }
+  }
+
+  /** Bookmarks the current render into "my collection" (/my-rooms) — private, no login required, free (no OpenAI call). */
+  async function saveToCollection() {
+    const current = versions[currentVersion];
+    if (!current?.imageBase64 || current.objects.length === 0) return;
+    setSaving(true);
+    setSaveError(null);
+    try {
+      const catalogObjects = current.objects.filter((o) => o.kind === "catalog");
+      const webObjects = current.objects.filter((o) => o.kind === "web");
+      const productIds = catalogObjects.map((o) => o.product.id);
+      const itemBoxes = Object.fromEntries(catalogObjects.map((o) => [o.product.id, o.box]));
+      const externals = webObjects.map((o) => ({
+        name: o.webProduct.name,
+        url: o.webProduct.url,
+        retailer: o.webProduct.retailer,
+        priceText: o.webProduct.priceText,
+        box: o.box,
+      }));
+      const totalPrice = catalogObjects.reduce((sum, o) => sum + o.product.price, 0);
+
+      const res = await fetch("/api/finished-rooms/save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: saveTitle.trim() || undefined,
+          heroImageBase64: current.imageBase64,
+          productIds,
+          itemBoxes,
+          externals,
+          totalPrice,
+        }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error ?? `Save failed: ${res.status}`);
+
+      setSaveOpen(false);
+      setSaveTitle("");
+      setSavedFlash(true);
+      setTimeout(() => setSavedFlash(false), 4000);
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -1071,6 +1125,53 @@ export default function Designer() {
                   <div className="truncate px-1.5 py-0.5 text-[9px] text-cream-faint">{v.label}</div>
                 </button>
               ))}
+            </div>
+          )}
+
+          {version && version.objects.length > 0 && (
+            <div className="relative">
+              {savedFlash ? (
+                <div className="flex items-center justify-between gap-2 rounded-lg border border-brass/30 bg-brass/5 px-3.5 py-2.5 text-xs text-cream-dim">
+                  <span className="flex items-center gap-1.5">
+                    <Check size={13} className="text-brass" /> Saved to your collection.
+                  </span>
+                  <Link href="/my-rooms" className="shrink-0 font-semibold text-brass-bright hover:underline">
+                    View →
+                  </Link>
+                </div>
+              ) : (
+                <button
+                  onClick={() => setSaveOpen((v) => !v)}
+                  className="btn-ghost w-full justify-center !text-xs"
+                >
+                  <Bookmark size={13} />
+                  Save to my collection
+                </button>
+              )}
+              {saveOpen && (
+                <>
+                  <button className="fixed inset-0 z-10 cursor-default" onClick={() => setSaveOpen(false)} aria-label="Close" />
+                  <div className="absolute bottom-full left-0 z-20 mb-2 w-full rounded-xl border border-ink-line bg-ink-soft p-3 shadow-2xl">
+                    <div className="mb-1.5 text-[10px] uppercase tracking-widest text-cream-faint">Save privately — publish later if you want</div>
+                    <div className="flex gap-1.5">
+                      <input
+                        value={saveTitle}
+                        onChange={(e) => setSaveTitle(e.target.value)}
+                        placeholder="Name this room (optional)"
+                        className="min-w-0 flex-1 rounded-lg border border-ink-line bg-ink-panel px-2.5 py-2 text-xs outline-none placeholder:text-cream-faint/60 focus:border-brass/50"
+                      />
+                      <button
+                        onClick={saveToCollection}
+                        disabled={saving}
+                        className="rounded-lg bg-brass px-3 py-2 text-xs font-semibold text-ink disabled:opacity-50"
+                      >
+                        {saving ? <Loader2 size={13} className="animate-spin" /> : "Save"}
+                      </button>
+                    </div>
+                    {saveError && <p className="mt-1.5 text-[11px] text-rose-300">{saveError}</p>}
+                  </div>
+                </>
+              )}
             </div>
           )}
 

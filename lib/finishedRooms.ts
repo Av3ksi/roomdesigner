@@ -44,10 +44,14 @@ export interface FinishedRoom {
   /** Web-sourced items for staged pieces we don't carry — link out, never added to cart. */
   externals: FinishedRoomExternalItem[];
   totalPrice: number;
-  /** 'curated' (Looks Studio, our own compositing) or 'user' (a customer's own room, /publish). */
+  /** 'curated' (Looks Studio, our own compositing) or 'user' (a customer's own room, /publish or "save to my collection"). */
   source: string;
-  /** Set only for source: 'user' — who published it. */
+  /** Set once the owner is signed in — null for a room saved anonymously and never published. */
   userId: string | null;
+  /** The anonymous session that saved this room — how an unpublished, not-yet-logged-in "my collection" entry is owned. */
+  sessionId: string | null;
+  /** Public (joins Complete Rooms) or private (only visible to its owner via "my collection"). */
+  published: boolean;
   createdAt: string;
 }
 
@@ -87,6 +91,8 @@ function resolveRow(row: Record<string, unknown>, catalog: Product[]): FinishedR
     totalPrice: Number(row.total_price),
     source: (row.source as string | null) ?? "curated",
     userId: (row.user_id as string | null) ?? null,
+    sessionId: (row.session_id as string | null) ?? null,
+    published: (row.published as boolean | null) ?? true,
     createdAt: row.created_at as string,
   };
 }
@@ -104,18 +110,22 @@ export async function createFinishedRoom(input: {
   /** Web-sourced external items for staged pieces we don't carry. */
   externals?: FinishedRoomExternalItem[];
   totalPrice: number;
-  /** 'curated' (default, Looks Studio) or 'user' (a customer's own room, /publish). */
+  /** 'curated' (default, Looks Studio) or 'user' (a customer's own room, /publish or "save to my collection"). */
   source?: string;
   userId?: string | null;
+  /** The anonymous session saving this room — required to later list/publish it via "my collection". */
+  sessionId?: string | null;
+  /** Public immediately (default, existing curated/publish behavior) or private until explicitly published. */
+  published?: boolean;
 }): Promise<string> {
   await ensureSchema();
   const db = sql();
   const rows = await db`
-    INSERT INTO finished_rooms (title, description, style_tags, hero_image_base64, product_ids, item_boxes, auto_matched_ids, external_items, total_price, source, user_id)
+    INSERT INTO finished_rooms (title, description, style_tags, hero_image_base64, product_ids, item_boxes, auto_matched_ids, external_items, total_price, source, user_id, session_id, published)
     VALUES (
       ${input.title}, ${input.description}, ${input.styleTags}, ${input.heroImageBase64}, ${input.productIds},
       ${JSON.stringify(input.itemBoxes ?? {})}, ${input.autoMatchedIds ?? []}, ${JSON.stringify(input.externals ?? [])}, ${input.totalPrice},
-      ${input.source ?? "curated"}, ${input.userId ?? null}
+      ${input.source ?? "curated"}, ${input.userId ?? null}, ${input.sessionId ?? null}, ${input.published ?? true}
     )
     RETURNING id
   `;
@@ -136,6 +146,57 @@ export async function listFinishedRooms(): Promise<FinishedRoom[]> {
     console.error("[maison] listFinishedRooms failed:", err);
     return [];
   }
+}
+
+/**
+ * "My collection" — every room this browser (or, once signed in, this
+ * account) has saved, published or not. Ownership is session_id OR user_id
+ * so a room saved anonymously still shows up after the owner later logs in
+ * on the same browser, without requiring a separate merge step.
+ */
+export async function getUserFinishedRooms(owner: { sessionId: string; userId: string | null }): Promise<FinishedRoom[]> {
+  if (!dbEnabled()) return [];
+  try {
+    await ensureSchema();
+    const db = sql();
+    const [rows, catalog] = await Promise.all([
+      db`
+        SELECT * FROM finished_rooms
+        WHERE session_id = ${owner.sessionId} OR (${owner.userId}::uuid IS NOT NULL AND user_id = ${owner.userId})
+        ORDER BY created_at DESC
+      `,
+      loadProductCatalog(),
+    ]);
+    return rows.map((r) => resolveRow(r, catalog));
+  } catch (err) {
+    console.error("[maison] getUserFinishedRooms failed:", err);
+    return [];
+  }
+}
+
+/**
+ * Flips a saved room public (joins Complete Rooms) or back to private.
+ * Ownership-checked against the same session_id/user_id pair
+ * getUserFinishedRooms uses — returns false rather than throwing when the
+ * room doesn't exist or isn't owned by this caller, so the route can 404
+ * without leaking which case it was. Publishing also attaches the caller's
+ * user_id if the room was saved anonymously and is only now being
+ * published by a signed-in owner.
+ */
+export async function setFinishedRoomPublished(
+  id: string,
+  owner: { sessionId: string; userId: string | null },
+  published: boolean,
+): Promise<boolean> {
+  await ensureSchema();
+  const db = sql();
+  const rows = await db`
+    UPDATE finished_rooms
+    SET published = ${published}, user_id = COALESCE(user_id, ${owner.userId})
+    WHERE id = ${id} AND (session_id = ${owner.sessionId} OR (${owner.userId}::uuid IS NOT NULL AND user_id = ${owner.userId}))
+    RETURNING id
+  `;
+  return rows.length > 0;
 }
 
 export async function getFinishedRoom(id: string): Promise<FinishedRoom | null> {
