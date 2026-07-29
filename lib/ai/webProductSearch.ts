@@ -99,6 +99,12 @@ export async function searchWebForProduct(query: string, market: TargetMarket = 
       model: MODEL,
       max_tokens: 2048,
       thinking: { type: "adaptive" },
+      // Sonnet 5 defaults adaptive thinking to "high" effort when unset,
+      // which measurably stacked up across this call's own thinking plus
+      // the agent loop's follow-up turn (a real request hit ~299s total).
+      // "medium" is the documented lever for thinking depth/latency on this
+      // model — finding one product page doesn't need the deepest setting.
+      output_config: { effort: "medium" },
       // Cast: web_search_20260209 / web_fetch_20260209 aren't in this SDK version's tool
       // union types yet, but the server accepts them and they're the current tool versions
       // for opus-4-8.
@@ -241,6 +247,13 @@ export async function extractRequestedExtras(
     const response = await new Anthropic().messages.create({
       model: MODEL,
       max_tokens: 512,
+      // Explicit, not just omitted: on Sonnet 5, an omitted `thinking` field
+      // silently runs adaptive thinking (unlike Opus 4.7/4.8, where omitting
+      // it meant no thinking) — this call's own "no-thinking" comment below
+      // was written under that older assumption and stopped being true when
+      // the app switched models. Disabling it here actually delivers the
+      // "couple of seconds" the comment already promised.
+      thinking: { type: "disabled" },
       system:
         "You read a free-text room styling direction and pull out any SPECIFIC, NAMED physical item the person " +
         "wants added to the room — e.g. 'add a poster', 'put in a floor lamp', 'a small side table would be nice'. " +

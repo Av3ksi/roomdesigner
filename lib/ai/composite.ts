@@ -138,6 +138,12 @@ async function describeProductForPrompt(productPhoto: Buffer): Promise<string | 
     const response = await new Anthropic().messages.create({
       model: CLAUDE_MODEL,
       max_tokens: 200,
+      // Explicit, not just omitted: on Sonnet 5 an omitted `thinking` field
+      // silently runs adaptive thinking (a model-specific default change —
+      // see lib/ai/webProductSearch.ts's extractRequestedExtras for the
+      // same fix), which would undercut the "couple of seconds" this call
+      // is supposed to take.
+      thinking: { type: "disabled" },
       system:
         "Describe this furniture/decor product photo in one concise sentence, for someone who must recreate " +
         "its exact appearance elsewhere without seeing this photo. State the product type, dominant color, " +

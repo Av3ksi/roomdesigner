@@ -378,6 +378,14 @@ async function runAgentLoop(
       model: MODEL,
       max_tokens: 4096,
       thinking: { type: "adaptive" },
+      // Sonnet 5 defaults adaptive thinking to "high" effort when unset — a
+      // real measured turn (search tool call + follow-up reply) took ~299s
+      // end to end, consistent with several ~60s-bounded iterations each
+      // spending most of their budget on high-effort thinking. "medium" is
+      // the documented lever for this (thinking depth/latency, not a token
+      // budget — budget_tokens 400s on this model) and this is a chat agent
+      // picking a tool and writing a reply, not a task that needs max depth.
+      output_config: { effort: "medium" },
       system: buildSystem(state),
       tools,
       messages,
