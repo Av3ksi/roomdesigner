@@ -74,8 +74,12 @@ const MARKET_EXCLUSION =
 // AND pulls retrieved content into context as (billed) input tokens — the single biggest variable
 // cost in the pipeline. web_fetch is what lets the model actually open the product page it found
 // and read off the real photo URL, rather than guessing one from the search snippet alone.
-const WEB_SEARCH_TOOL = { type: "web_search_20260209", name: "web_search", max_uses: 2 } as const;
-const WEB_FETCH_TOOL = { type: "web_fetch_20260209", name: "web_fetch", max_uses: 2 } as const;
+// 3 rather than 2: real testing showed the model finding a genuine product page on its first fetch
+// but failing to extract a clean image URL from it (JS-rendered galleries, lazy-loaded images,
+// signed CDN URLs) — with only 1 fetch left after that, it had no room to try a second page rather
+// than giving up. This gives it one more shot at a different listing before conceding.
+const WEB_SEARCH_TOOL = { type: "web_search_20260209", name: "web_search", max_uses: 3 } as const;
+const WEB_FETCH_TOOL = { type: "web_fetch_20260209", name: "web_fetch", max_uses: 3 } as const;
 
 function firstJsonObject(text: string): Record<string, unknown> | null {
   // The model ends with a JSON object; grab the last {...} block and parse it.
@@ -101,16 +105,20 @@ export async function searchWebForProduct(query: string, market: TargetMarket = 
       tools: [WEB_SEARCH_TOOL as unknown as Anthropic.Tool, WEB_FETCH_TOOL as unknown as Anthropic.Tool],
       system:
         "You find one real, in-stock, purchasable product that matches a description, for a 'shop the look' feature " +
-        "that composites the ACTUAL product photo into a room render — so the real photo matters as much as the link. " +
-        "Search the web, pick a single concrete product page from a reputable retailer (not a category/listing page, " +
+        "that composites the ACTUAL product photo into a room render — so a usable photo URL is just as essential as " +
+        "the link itself; a result without one is not useful to this caller. " +
+        "Search the web, pick a concrete product page from a reputable retailer (not a category/listing page, " +
         `not a marketplace search URL, not a blog). ${MARKET_GUIDANCE[market]} ${MARKET_EXCLUSION} ` +
-        "Once you've picked a product page, use web_fetch to open it and find the direct URL of its main product " +
-        "photo (an <img> src, an Open Graph og:image, or a product-schema image field — not a logo, icon, or " +
-        "unrelated thumbnail). " +
+        "Use web_fetch to open it and find the direct URL of its main product photo (an <img> src, an Open Graph " +
+        "og:image, or a product-schema image field — not a logo, icon, or unrelated thumbnail). If that page's photo " +
+        "isn't cleanly extractable (JS-rendered gallery, lazy-loaded image, signed/expiring CDN URL), don't give up — " +
+        "you have multiple search and fetch rounds: try a different listing for the same item, favoring retailers " +
+        "whose product pages tend to have plain <img>/og:image tags (AliExpress and most dedicated print/poster " +
+        "shops usually do; some larger marketplaces are harder to extract from). Only fall back to a result with " +
+        "imageUrl: null if you've genuinely tried more than one listing and none yielded an extractable photo. " +
         'When you have it, end your reply with ONLY a JSON object on its own line: {"name": "...", ' +
-        '"url": "https://...", "retailer": "...", "priceText": "CHF 49" or null, "imageUrl": "https://..." or null ' +
-        'if you could not confidently find the real product photo URL}. If you cannot find a genuine product page ' +
-        'that actually ships to the customer, end with {"name": null}.',
+        '"url": "https://...", "retailer": "...", "priceText": "CHF 49" or null, "imageUrl": "https://..." or null}. ' +
+        'If you cannot find a genuine product page that actually ships to the customer, end with {"name": null}.',
       messages: [
         { role: "user", content: `Find a real product to buy that matches: "${query}". Return the JSON object as instructed.` },
       ],
@@ -131,19 +139,38 @@ export async function searchWebForProduct(query: string, market: TargetMarket = 
       maxRetries: 0,
     });
 
-    if (response.stop_reason === "refusal") return null;
+    if (response.stop_reason === "refusal") {
+      console.log(`[maison] web product search refused for query "${query}"`);
+      return null;
+    }
     const text = response.content
       .filter((b): b is Anthropic.TextBlock => b.type === "text")
       .map((b) => b.text)
       .join("\n");
     const parsed = firstJsonObject(text);
-    if (!parsed) return null;
+    if (!parsed) {
+      // Genuinely diagnostic — did the model even attempt the JSON contract,
+      // or did it just narrate/refuse in prose? Log the tail of its reply so
+      // a real failure is visible in server logs instead of a bare null.
+      console.log(`[maison] web product search: no JSON object found for query "${query}". Model's reply (last 500 chars): ${text.slice(-500)}`);
+      return null;
+    }
 
     const name = typeof parsed.name === "string" ? parsed.name.trim() : "";
     const url = typeof parsed.url === "string" ? parsed.url.trim() : "";
-    if (!name || !/^https?:\/\//i.test(url)) return null;
+    if (!name || !/^https?:\/\//i.test(url)) {
+      console.log(`[maison] web product search: model reported no genuine product page for query "${query}"`);
+      return null;
+    }
 
     const imageUrl = typeof parsed.imageUrl === "string" ? parsed.imageUrl.trim() : "";
+    if (!/^https?:\/\//i.test(imageUrl)) {
+      // The model DID find a real product (name + url) but couldn't extract
+      // a usable photo — this is a different failure than "nothing found",
+      // and the caller currently discards it too, so it's worth knowing
+      // this happened rather than looking identical to a total miss.
+      console.log(`[maison] web product search: found "${name}" at ${url} but no extractable photo URL for query "${query}"`);
+    }
 
     return {
       name,
