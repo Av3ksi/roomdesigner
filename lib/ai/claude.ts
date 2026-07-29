@@ -8,7 +8,14 @@ import { STYLES } from "@/lib/styles";
  * and the caller falls back to the deterministic demo engine.
  */
 
-export const MODEL = "claude-opus-4-8";
+// Sonnet, not Opus — every AI call in this app (chat, vision analysis,
+// placement, web search) shares this one constant, so this single line is
+// the biggest lever on real API cost. Sonnet 5 supports everything this app
+// uses (tool calling, vision, extended thinking, the web_search/web_fetch
+// tools) at a meaningfully lower price than Opus. If a specific call later
+// turns out to need Opus-level reasoning, give that one call its own model
+// constant rather than raising this for everything.
+export const MODEL = "claude-sonnet-5";
 
 export function aiEnabled(): boolean {
   return Boolean(process.env.ANTHROPIC_API_KEY);
