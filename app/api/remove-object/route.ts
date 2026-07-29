@@ -5,6 +5,7 @@ import { aiEnabled } from "@/lib/ai/claude";
 import { clampBox, isValidBox } from "@/lib/placementBoxes";
 import { clientIp, enforceRateLimit } from "@/lib/rateLimit";
 import { getOrCreateSessionId } from "@/lib/session";
+import { FREE_GENERATION_LIMIT, hasFreeGenerationsRemaining, recordGeneration } from "@/lib/usageLimits";
 import type { ProductCategory } from "@/lib/types";
 
 // sharp (compositing) needs the Node runtime, not edge.
@@ -25,14 +26,27 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "OPENAI_API_KEY not configured on the server." }, { status: 501 });
   }
 
+  const sessionId = await getOrCreateSessionId();
   const limited = await enforceRateLimit({
     name: "remove-object",
-    sessionId: await getOrCreateSessionId(),
+    sessionId,
     ip: clientIp(req),
     sessionLimit: 10,
     ipLimit: 30,
   });
   if (limited) return NextResponse.json({ error: limited.error }, { status: 429 });
+
+  // Freemium gate — checked BEFORE the billed OpenAI call fires, so a
+  // request past the free limit never spends money.
+  if (!(await hasFreeGenerationsRemaining(sessionId))) {
+    return NextResponse.json(
+      {
+        error: `You've used your ${FREE_GENERATION_LIMIT} free room generation. Upgrade to Pro for unlimited access.`,
+        code: "FREE_LIMIT_REACHED",
+      },
+      { status: 402 },
+    );
+  }
 
   const form = await req.formData().catch(() => null);
   const roomFile = form?.get("room");
@@ -68,6 +82,8 @@ export async function POST(req: NextRequest) {
     }
 
     const result = await removeExistingObject(roomBuffer, box, category as ProductCategory);
+    // The render succeeded — this is the actual "one free generation" spend (see /api/composite for why it's recorded here, not in the versions-persistence route).
+    await recordGeneration(sessionId);
     return NextResponse.json({ imageBase64: result.imageBase64, removedBox: box });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 500 });

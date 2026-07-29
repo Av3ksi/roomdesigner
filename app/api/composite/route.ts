@@ -3,6 +3,7 @@ import { compositeProductIntoRoom, compositingEnabled } from "@/lib/ai/composite
 import { checkRenderedProductIdentity } from "@/lib/ai/identityCheck";
 import { clientIp, enforceRateLimit } from "@/lib/rateLimit";
 import { getOrCreateSessionId } from "@/lib/session";
+import { FREE_GENERATION_LIMIT, hasFreeGenerationsRemaining, recordGeneration } from "@/lib/usageLimits";
 import type { ProductCategory } from "@/lib/types";
 
 // sharp (used by lib/ai/composite.ts) needs the Node runtime, not edge.
@@ -18,14 +19,27 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "OPENAI_API_KEY not configured on the server." }, { status: 501 });
   }
 
+  const sessionId = await getOrCreateSessionId();
   const limited = await enforceRateLimit({
     name: "composite",
-    sessionId: await getOrCreateSessionId(),
+    sessionId,
     ip: clientIp(req),
     sessionLimit: 10,
     ipLimit: 30,
   });
   if (limited) return NextResponse.json({ error: limited.error }, { status: 429 });
+
+  // Freemium gate — checked BEFORE the billed OpenAI call fires, so a
+  // request past the free limit never spends money.
+  if (!(await hasFreeGenerationsRemaining(sessionId))) {
+    return NextResponse.json(
+      {
+        error: `You've used your ${FREE_GENERATION_LIMIT} free room generation. Upgrade to Pro for unlimited access.`,
+        code: "FREE_LIMIT_REACHED",
+      },
+      { status: 402 },
+    );
+  }
 
   // formData() itself throws on a missing/non-multipart body — that's a
   // caller mistake (400), not a server failure (500).
@@ -71,6 +85,12 @@ export async function POST(req: NextRequest) {
       explicitBox,
       wallAngleDeg,
     );
+
+    // The render succeeded — this is the actual "one free generation" spend,
+    // counted here (not in the separate /api/rooms/[id]/versions persistence
+    // call) since that route is fire-and-forget from the client and could
+    // silently fail to record the count.
+    await recordGeneration(sessionId);
 
     // Best-effort QA pass (Phase 2): compares the rendered region against the
     // real product photo since compositing models occasionally substitute a

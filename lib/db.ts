@@ -175,6 +175,17 @@ async function runSchema(): Promise<void> {
     )
   `;
 
+  // Freemium gate for AI room generation — one row per anonymous session,
+  // incremented after each successful billed render (composite add or
+  // remove-object). See lib/usageLimits.ts.
+  await db`
+    CREATE TABLE IF NOT EXISTS session_usage (
+      session_id TEXT PRIMARY KEY,
+      generation_count INT NOT NULL DEFAULT 0,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `;
+
   // Real accounts — email only, no passwords to hash/store/leak. Login is a
   // one-time link emailed via Resend (see lib/auth.ts).
   await db`

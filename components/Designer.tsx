@@ -11,6 +11,7 @@ import {
 } from "@/lib/clientImage";
 import { clampBox, DEFAULT_CATEGORY_BOX, describeRoughLocation } from "@/lib/placementBoxes";
 import RoomHotspots, { type HotspotItem } from "@/components/RoomHotspots";
+import UpgradeModal from "@/components/UpgradeModal";
 import { useMaisonStore } from "@/lib/store";
 import type { DetectionBox, Product, ProductCategory } from "@/lib/types";
 
@@ -135,6 +136,12 @@ export default function Designer() {
   const [catalogResults, setCatalogResults] = useState<Product[]>([]);
   const [catalogSearching, setCatalogSearching] = useState(false);
   const [showCatalogPanel, setShowCatalogPanel] = useState(false);
+  // Freemium gate — null while unknown (not yet fetched), else the number of
+  // free AI generations left on this anonymous session. Purely a UX hint:
+  // the server enforces the real limit on every /api/composite and
+  // /api/remove-object call regardless of what the client thinks.
+  const [usageRemaining, setUsageRemaining] = useState<number | null>(null);
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   // Placement adjuster ("ruler") — every add-proposal previews its box on the
   // real photo, draggable/resizable, before the render actually fires. A bad
   // AI-guessed box (floating mid-air, wrong spot) gets caught here instead
@@ -160,6 +167,17 @@ export default function Designer() {
     const id = setInterval(() => setThinkingSeconds(Math.floor((Date.now() - start) / 1000)), 1000);
     return () => clearInterval(id);
   }, [thinking]);
+
+  // On mount: how many free generations this session has left, so the UI
+  // can show the paywall proactively instead of only after a wasted click.
+  useEffect(() => {
+    fetch("/api/usage")
+      .then((res) => res.json())
+      .then((data) => setUsageRemaining(typeof data.remaining === "number" ? data.remaining : null))
+      .catch(() => {
+        // Unknown is fine — the server still enforces the limit either way.
+      });
+  }, []);
 
   // On mount: if a room was persisted last visit (DB-backed sessions only),
   // fetch its full state back so a refresh doesn't lose the conversation.
@@ -455,6 +473,10 @@ export default function Designer() {
    */
   async function generateProposal(proposal: EditProposal, index: number, overrideBox?: DetectionBox) {
     if (!roomFile || generating !== null) return;
+    if (usageRemaining === 0) {
+      setShowUpgradeModal(true);
+      return;
+    }
     setGenerating(index);
     setError(null);
     setIdentityWarning(null);
@@ -478,8 +500,14 @@ export default function Designer() {
 
         const res = await fetch("/api/remove-object", { method: "POST", body: form });
         const body = await res.json();
+        if (res.status === 402) {
+          setUsageRemaining(0);
+          setShowUpgradeModal(true);
+          return;
+        }
         if (!res.ok) throw new Error(body.error ?? `Removal failed: ${res.status}`);
 
+        setUsageRemaining((r) => (r !== null ? Math.max(0, r - 1) : r));
         commitVersion(body.imageBase64, `V${versions.length} · Removed ${proposal.description ?? proposal.category}`, prevObjects);
         setProposals((p) => p.filter((_, i) => i !== index));
         return;
@@ -509,8 +537,14 @@ export default function Designer() {
 
       const res = await fetch("/api/composite", { method: "POST", body: form });
       const body = await res.json();
+      if (res.status === 402) {
+        setUsageRemaining(0);
+        setShowUpgradeModal(true);
+        return;
+      }
       if (!res.ok) throw new Error(body.error ?? `Render failed: ${res.status}`);
 
+      setUsageRemaining((r) => (r !== null ? Math.max(0, r - 1) : r));
       const newObject: PlacedObject =
         proposal.kind === "add"
           ? { box: body.maskBox, kind: "catalog", product: proposal.product }
@@ -541,7 +575,9 @@ export default function Designer() {
   const activeName = activeAddProposal ? (activeAddProposal.kind === "add" ? activeAddProposal.product.name : activeAddProposal.webProduct.name) : "";
 
   return (
-    <div className="container-page py-10">
+    <>
+      {showUpgradeModal && <UpgradeModal onClose={() => setShowUpgradeModal(false)} />}
+      <div className="container-page py-10">
       <div className="max-w-2xl">
         <div className="eyebrow mb-3">Designer</div>
         <h1 className="font-display text-4xl leading-tight sm:text-5xl">Talk to your room.</h1>
@@ -629,6 +665,16 @@ export default function Designer() {
                     ? `Still thinking… (${thinkingSeconds}s)`
                     : `Finding something specific can take up to a minute — hang tight (${thinkingSeconds}s)…`}
               </div>
+            )}
+
+            {usageRemaining === 0 && (
+              <button
+                onClick={() => setShowUpgradeModal(true)}
+                className="flex w-full items-center justify-between gap-2 rounded-lg border border-brass/30 bg-brass/5 p-3 text-left text-xs text-cream-dim"
+              >
+                <span>You&apos;ve used your free room generation.</span>
+                <span className="shrink-0 font-semibold text-brass-bright">Upgrade to Pro →</span>
+              </button>
             )}
 
             {proposals.map((p, i) => (
@@ -1035,6 +1081,7 @@ export default function Designer() {
           </div>
         </div>
       </div>
-    </div>
+      </div>
+    </>
   );
 }
