@@ -55,19 +55,37 @@ export async function loadProductCatalog(): Promise<Product[]> {
   return products;
 }
 
+/**
+ * The `products` table has `id` as its primary key, so the DB path can't
+ * produce a duplicate — but the live VidaXL feed's offset-paginated scan
+ * (fetchVidaxlCatalog, lib/suppliers/vidaxl.ts) genuinely can: a product
+ * shifting position between page fetches can land on two different offset
+ * pages and get scanned twice. A duplicate id breaks anything that keys a
+ * list by product id (React's `key` prop, most visibly) — dedupe once here
+ * so every caller downstream gets a clean catalog regardless of source.
+ */
+function dedupeById(products: Product[]): Product[] {
+  const seen = new Set<string>();
+  return products.filter((p) => {
+    if (seen.has(p.id)) return false;
+    seen.add(p.id);
+    return true;
+  });
+}
+
 async function loadProductCatalogUncached(): Promise<Product[]> {
   if (dbEnabled()) {
     try {
       await ensureSchema();
       const db = sql();
       const rows = await db`SELECT * FROM products`;
-      if (rows.length > 0) return rows.map(rowToProduct);
+      if (rows.length > 0) return dedupeById(rows.map(rowToProduct));
     } catch {
       // DB reachable but query failed (unseeded schema drift, etc.) — fall through.
     }
   }
   const catalog = await fetchVidaxlCatalog();
-  return catalog.products;
+  return dedupeById(catalog.products);
 }
 
 /**
@@ -91,7 +109,7 @@ export async function getProductsByIds(ids: string[]): Promise<Product[]> {
   }
   const catalog = await fetchVidaxlCatalog();
   const idSet = new Set(ids);
-  return catalog.products.filter((p) => idSet.has(p.id));
+  return dedupeById(catalog.products.filter((p) => idSet.has(p.id)));
 }
 
 export interface MarketplacePage {
