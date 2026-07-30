@@ -80,6 +80,60 @@ async function toImageBlob(buffer: Buffer): Promise<{ blob: Blob; filename: stri
   return { blob: new Blob([new Uint8Array(buffer)], { type: mime }), filename: `image.${ext}` };
 }
 
+/**
+ * gpt-image's masked edit doesn't guarantee pixel-identical output outside
+ * the mask — a confirmed, reproducible complaint: the whole photo can come
+ * back with subtly different color grading, wall texture, or grain, not
+ * just the masked region. `input_fidelity: "high"` (set on both calls
+ * below) reduces this but isn't a hard guarantee from OpenAI, so enforce it
+ * ourselves: blend the model's output back onto the ORIGINAL photo, only
+ * letting pixels inside a feathered version of the mask region actually
+ * come from the edit. Everywhere else ends up byte-identical to the source
+ * photo regardless of what the model did to the rest of the canvas.
+ */
+async function blendEditedRegion(
+  original: Buffer,
+  edited: Buffer,
+  width: number,
+  height: number,
+  box: DetectionBox,
+): Promise<Buffer> {
+  const maskRaw = Buffer.alloc(width * height, 0);
+  const x0 = Math.max(0, Math.round(box.x * width));
+  const y0 = Math.max(0, Math.round(box.y * height));
+  const x1 = Math.min(width, Math.round((box.x + box.w) * width));
+  const y1 = Math.min(height, Math.round((box.y + box.h) * height));
+  for (let y = y0; y < y1; y++) {
+    for (let x = x0; x < x1; x++) {
+      maskRaw[y * width + x] = 255;
+    }
+  }
+  // Blurred so the boundary between real and edited pixels is a soft
+  // falloff, not a hard rectangle that would look pasted-in. .greyscale()
+  // is load-bearing, not cosmetic: sharp silently expands a single-channel
+  // raw buffer to 3 channels through .blur() otherwise, which shifts every
+  // index below and corrupts the blend (confirmed by testing — without it,
+  // the "edited" region silently fell back to 100% original pixels).
+  const alpha = await sharp(maskRaw, { raw: { width, height, channels: 1 } }).blur(16).greyscale().raw().toBuffer();
+
+  const [originalRgba, editedRgba] = await Promise.all([
+    sharp(original).ensureAlpha().raw().toBuffer(),
+    sharp(edited).resize(width, height).ensureAlpha().raw().toBuffer(),
+  ]);
+
+  const out = Buffer.alloc(width * height * 4);
+  for (let i = 0; i < width * height; i++) {
+    const a = alpha[i] / 255;
+    const base = i * 4;
+    out[base] = Math.round(editedRgba[base] * a + originalRgba[base] * (1 - a));
+    out[base + 1] = Math.round(editedRgba[base + 1] * a + originalRgba[base + 1] * (1 - a));
+    out[base + 2] = Math.round(editedRgba[base + 2] * a + originalRgba[base + 2] * (1 - a));
+    out[base + 3] = 255;
+  }
+
+  return sharp(out, { raw: { width, height, channels: 4 } }).png().toBuffer();
+}
+
 async function buildMaskPng(width: number, height: number, box: DetectionBox): Promise<Buffer> {
   const channels = 4;
   const pixels = Buffer.alloc(width * height * channels, 255); // opaque everywhere = "keep as-is"
@@ -262,6 +316,7 @@ export async function compositeProductIntoRoom(
       wallAngleInstruction,
   );
   form.append("quality", quality);
+  form.append("input_fidelity", "high");
   form.append("size", "auto");
   form.append("n", "1");
 
@@ -280,7 +335,8 @@ export async function compositeProductIntoRoom(
   const b64 = body.data?.[0]?.b64_json;
   if (!b64) throw new Error("OpenAI response had no image data");
 
-  return { imageBase64: b64, maskBox, placementSource };
+  const blended = await blendEditedRegion(roomPhoto, Buffer.from(b64, "base64"), width, height, paddedBox);
+  return { imageBase64: blended.toString("base64"), maskBox, placementSource };
 }
 
 export interface RemovalResult {
@@ -334,6 +390,7 @@ export async function removeExistingObject(
       "Leave everything outside the masked region unchanged.",
   );
   form.append("quality", "low");
+  form.append("input_fidelity", "high");
   form.append("size", "auto");
   form.append("n", "1");
 
@@ -352,7 +409,8 @@ export async function removeExistingObject(
   const b64 = body.data?.[0]?.b64_json;
   if (!b64) throw new Error("OpenAI response had no image data");
 
-  return { imageBase64: b64 };
+  const blended = await blendEditedRegion(roomPhoto, Buffer.from(b64, "base64"), width, height, paddedBox);
+  return { imageBase64: blended.toString("base64") };
 }
 
 export interface SceneItem {
