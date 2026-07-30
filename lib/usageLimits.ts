@@ -20,12 +20,24 @@ export const FREE_GENERATION_LIMIT = 1;
 const memoryStore = new Map<string, number>();
 
 /**
+ * Kill switch — OFF (gate disabled, everyone unlimited) unless explicitly
+ * turned on. Flip FREEMIUM_ENABLED=1 in the environment whenever the real
+ * one-free-generation limit should start enforcing; no code change or
+ * redeploy needed either direction. Defaults to off right now so testing
+ * isn't blocked by the gate while the rest of the app is still in flux.
+ */
+function freemiumEnabled(): boolean {
+  return process.env.FREEMIUM_ENABLED === "1";
+}
+
+/**
  * Read-only — call this BEFORE the billed OpenAI call fires, so a session
  * that's already at the limit never reaches OpenAI. Increment separately
  * with recordGeneration() only once the render actually succeeds, so a
  * failed render doesn't burn the user's free generation.
  */
 export async function hasFreeGenerationsRemaining(sessionId: string): Promise<boolean> {
+  if (!freemiumEnabled()) return true;
   if (dbEnabled()) {
     try {
       await ensureSchema();
@@ -40,8 +52,9 @@ export async function hasFreeGenerationsRemaining(sessionId: string): Promise<bo
   return (memoryStore.get(sessionId) ?? 0) < FREE_GENERATION_LIMIT;
 }
 
-/** Call once a render has actually succeeded. */
+/** Call once a render has actually succeeded. No-op while the gate is disabled — nothing to count against. */
 export async function recordGeneration(sessionId: string): Promise<void> {
+  if (!freemiumEnabled()) return;
   if (dbEnabled()) {
     try {
       await ensureSchema();
@@ -81,8 +94,17 @@ export interface UsageStatus {
   remaining: number;
 }
 
+// Designer.tsx decrements its local `remaining` by 1 after every successful
+// render (optimistic UI, avoids an extra round-trip). While the gate is
+// disabled, `remaining` needs to stay a number the client will never
+// decrement down to 0 in one sitting — reporting the real limit (1) here
+// would make the SECOND render of a session client-block itself behind the
+// upgrade modal even though the server would still allow it.
+const UNLIMITED_REMAINING = 1_000_000;
+
 /** Current usage snapshot for the UI — lets Designer.tsx show the paywall proactively instead of only after a blocked request. */
 export async function getUsageStatus(sessionId: string): Promise<UsageStatus> {
+  if (!freemiumEnabled()) return { used: 0, limit: FREE_GENERATION_LIMIT, remaining: UNLIMITED_REMAINING };
   let used = memoryStore.get(sessionId) ?? 0;
   if (dbEnabled()) {
     try {
