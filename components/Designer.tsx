@@ -717,7 +717,7 @@ export default function Designer() {
                   ? "Designing…"
                   : thinkingSeconds < 20
                     ? `Still thinking… (${thinkingSeconds}s)`
-                    : `Finding something specific can take up to a minute — hang tight (${thinkingSeconds}s)…`}
+                    : `Finding something specific can take up to ~100s — hang tight (${thinkingSeconds}s)…`}
               </div>
             )}
 

@@ -131,17 +131,24 @@ export async function searchWebForProduct(query: string, market: TargetMarket = 
     }, {
       // The SDK default (10 min timeout x up to 3 attempts with retries =
       // up to 30 min for ONE call) is what turned a single stuck search into
-      // a 24-minute generate request. A real web search (a couple of rounds,
-      // reading a few pages) normally finishes in well under a minute.
-      // maxRetries: 0 is deliberate — the SDK retries a *timeout* exactly
-      // like any other connection error, so maxRetries: 1 here silently
-      // doubles the worst case (measured: a real request hit this and took
-      // ~4 minutes end to end, not the ~2 the single timeout implied).
-      // Retrying an already-slow web search rarely helps; fail once, fail
-      // fast, and let this function's existing fallback (return null,
-      // degrade gracefully) kick in — the caller (the chat agent) can
-      // decide whether to try again with a different query.
-      timeout: 60_000,
+      // a 24-minute generate request. maxRetries: 0 is deliberate — the SDK
+      // retries a *timeout* exactly like any other connection error, so
+      // maxRetries: 1 here would double the worst case. Retrying an
+      // already-slow web search rarely helps; fail once, fail fast, and let
+      // this function's existing fallback (return null, degrade gracefully)
+      // kick in — the caller (the chat agent) can decide whether to try
+      // again with a different query.
+      //
+      // 100s, not 60s: real logs showed this call hitting "Request timed
+      // out" 100% of the time at the 60s mark — never "no results", never
+      // "found a page but no photo", always the timeout itself firing
+      // before the model call could even return. Real multi-round
+      // web_search + web_fetch work (searching, then actually loading
+      // product pages) apparently needs more than 60s some/most of the
+      // time; since maxRetries: 0 already rules out the doubling that
+      // caused the original 24-minute hang, a single longer bounded wait is
+      // safe here — it can no longer multiply into anything like that.
+      timeout: 100_000,
       maxRetries: 0,
     });
 

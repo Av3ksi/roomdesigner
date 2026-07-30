@@ -9,6 +9,14 @@ import { getOrCreateSessionId } from "@/lib/session";
 
 // The agent's placement tool uses sharp — Node runtime required.
 export const runtime = "nodejs";
+// A turn that calls search_web_for_product can now legitimately take up to
+// ~100s for that one tool call (see lib/ai/webProductSearch.ts) plus the
+// agent loop's own follow-up turn — without this, a serverless host's
+// default function timeout (10-60s depending on platform/plan) would kill
+// the request before our own, deliberately-configured timeout ever gets a
+// chance to. Matches the maxDuration already used by this app's other
+// AI-calling routes (app/api/generate, app/api/analyze).
+export const maxDuration = 120;
 
 function parseJsonField<T>(form: FormData, key: string, fallback: T): T {
   const raw = form.get(key);

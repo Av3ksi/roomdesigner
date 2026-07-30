@@ -9,6 +9,11 @@ import { getOrCreateSessionId } from "@/lib/session";
 
 // The agent's placement tool uses sharp — Node runtime required.
 export const runtime = "nodejs";
+// Same reasoning as app/api/designer/route.ts — the agent loop here can run
+// up to MAX_AGENT_ITERATIONS turns; without this a serverless host's default
+// function timeout could kill the request well before our own configured
+// per-call timeouts would.
+export const maxDuration = 120;
 
 /**
  * Fires once, automatically, right after a room photo is uploaded — before
