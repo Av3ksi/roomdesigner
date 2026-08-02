@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, Bookmark, Check, Eraser, Loader2, MapPin, Plus, Ruler, Search, Send, Sparkles, Upload, X } from "lucide-react";
+import { AlertTriangle, Bookmark, Check, Eraser, Loader2, MapPin, Plus, Ruler, Search, Send, Sparkles, Trash2, Upload, X } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -894,6 +894,20 @@ export default function Designer() {
 
         {/* Canvas + filmstrip */}
         <div className="space-y-4">
+          {roomFile && (
+            <div className="flex justify-end">
+              <button
+                onClick={() => {
+                  if (window.confirm("Clear this room and start a new one? Unsaved renders and chat will be lost.")) {
+                    onRoomFileChange(null);
+                  }
+                }}
+                className="flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium text-cream-faint transition hover:text-brass-bright"
+              >
+                <Trash2 size={12} /> Clear board
+              </button>
+            </div>
+          )}
           {identityWarning && (
             <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-200">
               <AlertTriangle size={13} className="mt-0.5 shrink-0" />
