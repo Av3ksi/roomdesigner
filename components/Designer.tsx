@@ -657,7 +657,7 @@ export default function Designer() {
           Upload a room photo — extra angles and a floor plan help but aren&apos;t required. The AI
           designer will tell you what&apos;s already there, suggest a few pieces to make it more
           stylish, and take it from there: check items to remove, add straight from the catalog, or
-          just say what you want. Each proposal renders only when you confirm it (~$0.01 per render).
+          just say what you want. Each proposal renders only when you confirm it (~$0.02 per render).
         </p>
       </div>
 
@@ -1086,7 +1086,7 @@ export default function Designer() {
                     className="btn-primary !px-4 !py-1.5 !text-xs disabled:opacity-40"
                   >
                     <Sparkles size={13} />
-                    {generating === activeProposalIndex ? "Rendering (~15-60s)…" : "Place in room (~$0.01)"}
+                    {generating === activeProposalIndex ? "Rendering (~15-60s)…" : "Place in room (~$0.02)"}
                   </button>
                 </div>
               </div>

@@ -95,7 +95,7 @@ export async function POST(req: NextRequest) {
   try {
     const result = useFlux
       ? await compositeProductIntoRoomFlux(roomBuffer, productBuffer, category as ProductCategory, [], explicitBox, wallAngleDeg)
-      : await compositeProductIntoRoom(roomBuffer, productBuffer, category as ProductCategory, [], "low", explicitBox, wallAngleDeg);
+      : await compositeProductIntoRoom(roomBuffer, productBuffer, category as ProductCategory, [], "medium", explicitBox, wallAngleDeg);
 
     // The render succeeded — this is the actual "one free generation" spend,
     // counted here (not in the separate /api/rooms/[id]/versions persistence
