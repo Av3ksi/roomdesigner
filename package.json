@@ -7,7 +7,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "watch:pull": "bash scripts/auto-pull.sh"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.88.0",
