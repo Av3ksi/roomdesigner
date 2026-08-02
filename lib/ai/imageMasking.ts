@@ -42,6 +42,11 @@ export async function buildMaskPng(width: number, height: number, box: Detection
  * shifts every index in blendWithAlpha() below and silently corrupts the
  * blend — confirmed by testing before this was caught; without it, the
  * "edited" region falls back to 100% original pixels with no error.
+ *
+ * featherPx <= 0 means an intentionally hard edge (e.g. the mask sent to a
+ * model itself, as opposed to the local blend-back step) — skip .blur()
+ * entirely in that case rather than calling it with 0, which sharp rejects
+ * outright ("Expected number between 0.3 and 1000 for sigma").
  */
 export async function boxToAlphaBuffer(width: number, height: number, box: DetectionBox, featherPx = 16): Promise<Buffer> {
   const maskRaw = Buffer.alloc(width * height, 0);
@@ -54,6 +59,7 @@ export async function boxToAlphaBuffer(width: number, height: number, box: Detec
       maskRaw[y * width + x] = 255;
     }
   }
+  if (featherPx <= 0) return maskRaw;
   return sharp(maskRaw, { raw: { width, height, channels: 1 } }).blur(featherPx).greyscale().raw().toBuffer();
 }
 
