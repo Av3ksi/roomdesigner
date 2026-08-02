@@ -526,15 +526,35 @@ export async function composeSceneWithProducts(
 }
 
 /**
+ * Product listing photos are studio shots on a near-white background with
+ * uneven padding around the actual product — a real, confirmed failure had
+ * a wide 3-seater sofa's near-square product photo (padding included)
+ * treated as if the sofa itself were square, producing a mask the model
+ * then had to squeeze the sofa into, warping its proportions badly. sharp's
+ * trim() strips that padding first so the ratio reflects the product's real
+ * visual footprint, not whatever canvas the listing photo happened to use.
+ * Falls back to the untrimmed ratio only if trim() itself fails (e.g. a
+ * photo with no uniform background to trim against).
+ */
+export async function productAspectRatio(productPhoto: Buffer): Promise<number> {
+  try {
+    const { info } = await sharp(productPhoto).trim({ threshold: 20 }).toBuffer({ resolveWithObject: true });
+    if (info.width && info.height) return info.width / info.height;
+  } catch {
+    // fall through to the untrimmed ratio below
+  }
+  const { width, height } = await sharp(productPhoto).metadata();
+  return width && height ? width / height : 1;
+}
+
+/**
  * Server-side equivalent of lib/clientImage.ts's reshapeBoxToAspectRatio
  * (that one needs a browser canvas) — adapts a category's generic
  * placement box to a specific product's real width:height ratio, keeping
  * the suggested width and floor-contact bottom edge fixed.
  */
 export async function reshapeBoxForProduct(box: DetectionBox, productPhoto: Buffer): Promise<DetectionBox> {
-  const { width, height } = await sharp(productPhoto).metadata();
-  if (!width || !height) return box;
-  const aspectRatio = width / height;
+  const aspectRatio = await productAspectRatio(productPhoto);
   const bottom = box.y + box.h;
   const h = box.w / aspectRatio;
   return clampBox({ x: box.x, y: bottom - h, w: box.w, h });

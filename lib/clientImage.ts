@@ -7,65 +7,28 @@ import type { DetectionBox } from "./types";
  */
 
 /**
- * Reads a product photo's real width:height ratio without a network
- * re-fetch (browser cache handles it). VidaXL product photos are studio
- * shots on a near-white background with uneven padding around the actual
- * product — the raw image canvas's ratio isn't the product's real shape,
- * it's "product + whatever margin that particular photo happened to have".
- * Trims the background first so callers (reshapeBoxToAspectRatio) get the
- * product's actual visual footprint instead.
+ * Reads a product photo's real (padding-trimmed) width:height ratio via
+ * the server (app/api/products/aspect-ratio) rather than a browser canvas.
+ * VidaXL product photos are studio shots on a near-white background with
+ * uneven padding around the actual product — the raw file's ratio isn't
+ * the product's real shape. A canvas-based trim was tried first but needs
+ * the image host to send CORS headers for pixel access to work at all; a
+ * real, confirmed failure showed vidaXL's image host doesn't send them, so
+ * it silently fell back to the untrimmed (near-square, padded) ratio —
+ * which made a wide sofa's placement box come out square, and the model
+ * had to squeeze the sofa to fit it. A server-to-server fetch (sharp's
+ * trim(), see lib/ai/composite.ts's productAspectRatio) has no such
+ * restriction, so that box-warping failure mode is now structurally
+ * impossible rather than something to catch case-by-case.
  */
-export function loadImageAspectRatio(url: string): Promise<number> {
-  return loadImage(url, true).catch(() => loadImage(url, false));
-}
-
-function loadImage(url: string, withCors: boolean): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const img = new window.Image();
-    if (withCors) img.crossOrigin = "anonymous";
-    img.onload = () => {
-      try {
-        resolve(trimmedAspectRatio(img));
-      } catch {
-        // Canvas access blocked (no CORS headers from the image host) — the
-        // untrimmed ratio is still a usable, if less precise, fallback.
-        resolve(img.naturalWidth / img.naturalHeight);
-      }
-    };
-    img.onerror = () => reject(new Error("Failed to load product image"));
-    img.src = url;
-  });
-}
-
-/** Near-white background threshold (0–255 per channel) below which a pixel counts as "the product". */
-const BACKGROUND_THRESHOLD = 245;
-
-function trimmedAspectRatio(img: HTMLImageElement): number {
-  const { naturalWidth: width, naturalHeight: height } = img;
-  const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return width / height;
-  ctx.drawImage(img, 0, 0);
-  const { data } = ctx.getImageData(0, 0, width, height); // throws if the canvas is CORS-tainted
-
-  let minX = width, minY = height, maxX = 0, maxY = 0, found = false;
-  const step = 2; // sampling every other pixel is plenty for a bounding box and keeps this fast
-  for (let y = 0; y < height; y += step) {
-    for (let x = 0; x < width; x += step) {
-      const i = (y * width + x) * 4;
-      if (data[i] < BACKGROUND_THRESHOLD || data[i + 1] < BACKGROUND_THRESHOLD || data[i + 2] < BACKGROUND_THRESHOLD) {
-        found = true;
-        if (x < minX) minX = x;
-        if (x > maxX) maxX = x;
-        if (y < minY) minY = y;
-        if (y > maxY) maxY = y;
-      }
-    }
+export async function loadImageAspectRatio(url: string): Promise<number> {
+  const res = await fetch(`/api/products/aspect-ratio?url=${encodeURIComponent(url)}`);
+  if (!res.ok) throw new Error("Failed to read product image aspect ratio");
+  const { aspectRatio } = (await res.json()) as { aspectRatio: number };
+  if (typeof aspectRatio !== "number" || !Number.isFinite(aspectRatio) || aspectRatio <= 0) {
+    throw new Error("Invalid aspect ratio returned");
   }
-  if (!found || maxX <= minX || maxY <= minY) return width / height;
-  return (maxX - minX) / (maxY - minY);
+  return aspectRatio;
 }
 
 /**
