@@ -16,13 +16,20 @@ export const runtime = "nodejs";
  * automatically. No caching, no retries-on-mount, no polling.
  */
 export async function POST(req: NextRequest) {
-  // FLUX Fill (Replicate) is the new primary path — see lib/ai/fluxFill.ts's
-  // module doc comment for why, and the real capability tradeoff found
-  // while building it. Falls back to the existing OpenAI path when only
-  // OPENAI_API_KEY is configured, so nothing regresses for a setup that
-  // hasn't added REPLICATE_API_TOKEN yet.
-  const useFlux = fluxFillEnabled();
-  if (!useFlux && !compositingEnabled()) {
+  // OpenAI is the primary path for adding a product: gpt-image-1.5 sees the
+  // ACTUAL product reference photo, while FLUX Fill (lib/ai/fluxFill.ts) can
+  // only work from a text description of it — a real, confirmed failure had
+  // that description carry over an incidental detail from the product photo
+  // (a child staged on a kids' sofa for scale) straight into the render.
+  // Both paths now carry the same "pixels outside the mask stay untouched"
+  // guarantee (lib/ai/imageMasking.ts), so that's no longer a reason to
+  // prefer FLUX here. FLUX Fill is used automatically only when
+  // OPENAI_API_KEY isn't configured — unlike removal (/api/remove-object),
+  // where FLUX + Grounded-SAM segmentation stays primary since erasing
+  // something has no text-description fidelity gap to begin with.
+  const openAiAvailable = compositingEnabled();
+  const useFlux = !openAiAvailable && fluxFillEnabled();
+  if (!useFlux && !openAiAvailable) {
     return NextResponse.json(
       { error: "Compositing isn't configured on this server yet (needs REPLICATE_API_TOKEN or OPENAI_API_KEY)." },
       { status: 501 },

@@ -6,6 +6,7 @@ import {
   CATEGORY_PLACEMENT_HINT,
   COMPOSITE_MAX_EDGE,
   MASK_PADDING,
+  NO_PEOPLE_INSTRUCTION,
   describeProductForPrompt,
   matchingDetectionBox,
   type CompositeResult,
@@ -15,28 +16,33 @@ import { DEFAULT_CATEGORY_BOX, clampBox } from "../placementBoxes";
 import type { Detection, DetectionBox, ProductCategory } from "../types";
 
 /**
- * Replicate-hosted FLUX Fill compositing — the new primary path for
- * "add this product to the room," replacing lib/ai/composite.ts's
- * compositeProductIntoRoom() (OpenAI gpt-image) in the live flow. That
- * function stays in place, fully working, deliberately unused — a fallback
- * if this needs to be rolled back, not dead code to delete.
- *
- * IMPORTANT, found while building this (report before assuming, as asked):
+ * Replicate-hosted FLUX Fill compositing. compositeProductIntoRoomFlux()
+ * (product insertion) is now the FALLBACK path, used by app/api/composite
+ * only when OPENAI_API_KEY isn't configured — see that route for why:
  * FLUX Fill's real API — verified against multiple independent sources
  * since replicate.com returns 403 to automated fetches — is `image` +
  * `mask` + `prompt` ONLY. There is no second "reference image" input the
- * way OpenAI's multi-image edit took a real product photo alongside the
- * room photo. That means this function can only describe the product in
- * TEXT (via describeProductForPrompt, same Claude-vision description
- * composite.ts already generates) — it has no visual anchor to the real
- * product photo's exact appearance the way the OpenAI path at least
- * attempted. This is a genuine capability tradeoff, not an oversight: if
- * exact visual product fidelity from a reference photo matters more than
- * whatever FLUX's own inpainting quality buys you, that's a real reason to
- * keep using the OpenAI path for now. (Separately: the original motivating
- * bug for this switch — "the whole room changes, not just the masked area"
- * — is now fixed at the OpenAI path too, via the local blend-back guarantee
- * in lib/ai/imageMasking.ts. Both providers get that guarantee here.)
+ * way OpenAI's multi-image edit takes a real product photo alongside the
+ * room photo, so this can only describe the product in TEXT (via
+ * describeProductForPrompt, same Claude-vision description composite.ts
+ * already generates) — no visual anchor to the product's exact appearance.
+ * A real, confirmed failure from exactly this gap: a kids' sofa's product
+ * photo staged a child for scale, the text description carried that detail
+ * over, and FLUX painted a child into the customer's room. (Fixed at the
+ * prompt level — see NO_PEOPLE_INSTRUCTION in composite.ts, applied to both
+ * providers now — but it's the clearest illustration of why a real image
+ * reference beats a text description for fidelity.)
+ *
+ * removeExistingObjectFlux()/removeExistingObjectFluxWithMask() (below)
+ * stay the PRIMARY path for erasing an existing object whenever Replicate
+ * is configured — removal has no product-description step, so this
+ * text-only limitation doesn't apply, and Grounded-SAM segmentation gives
+ * genuinely better precision than OpenAI's box-only removal.
+ *
+ * (The original motivating bug for building this — "the whole room
+ * changes, not just the masked area" — is fixed at the OpenAI path too now,
+ * via the local blend-back guarantee in lib/ai/imageMasking.ts. Both
+ * providers get that guarantee here.)
  */
 
 export function fluxFillEnabled(): boolean {
@@ -121,7 +127,8 @@ export async function compositeProductIntoRoomFlux(
     (explicitBox
       ? "The masked region marks the exact intended position — fit the product naturally within it."
       : `Place it realistically the way it would actually sit in a lived-in room: ${CATEGORY_PLACEMENT_HINT[category]}.`) +
-    wallAngleInstruction;
+    wallAngleInstruction +
+    NO_PEOPLE_INSTRUCTION;
 
   const output = await runReplicateModel(modelSlug(), {
     image: `data:image/png;base64,${roomPng.toString("base64")}`,

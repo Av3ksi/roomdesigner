@@ -47,6 +47,20 @@ export const CATEGORY_PLACEMENT_HINT: Record<ProductCategory, string> = {
   textile: "draped naturally over existing furniture, not floating in open space",
 };
 
+/**
+ * Product listing photos routinely stage a person for scale (a child on a
+ * kids' sofa, a hand holding a lamp) — a real, confirmed failure had that
+ * staged child get painted straight into a customer's room photo, sourced
+ * from the reference image and/or its text description. Repeated verbatim
+ * in every product-insertion prompt (both providers) as a second layer on
+ * top of describeProductForPrompt's own "describe the object alone"
+ * instruction, since a multi-image edit can still copy what it visually
+ * sees in the reference photo regardless of what the text says.
+ */
+export const NO_PEOPLE_INSTRUCTION =
+  " Do not include any people, children, hands, models, or pets that may appear in the reference photo or its " +
+  "description — depict only the product itself, unoccupied, with no person or animal present.";
+
 const CATEGORY_LABEL_ALIASES: Record<ProductCategory, string[]> = {
   sofa: ["sofa", "sectional", "couch"],
   chair: ["chair", "armchair"],
@@ -128,9 +142,11 @@ export async function describeProductForPrompt(productPhoto: Buffer): Promise<st
       // is supposed to take.
       thinking: { type: "disabled" },
       system:
-        "Describe this furniture/decor product photo in one concise sentence, for someone who must recreate " +
-        "its exact appearance elsewhere without seeing this photo. State the product type, dominant color, " +
-        "material, and any distinctive shape or features. Do not mention the background or photography style.",
+        "Describe ONLY the furniture/decor item itself in this product photo, in one concise sentence, for " +
+        "someone who must recreate its exact appearance elsewhere without seeing this photo. State the product " +
+        "type, dominant color, material, and any distinctive shape or features. Do not mention the background, " +
+        "photography style, or any people, children, hands, models, pets, or other props visible in the shot — " +
+        "describe the object alone, as if it were photographed empty on a plain background.",
       messages: [
         {
           role: "user",
@@ -242,7 +258,8 @@ export async function compositeProductIntoRoom(
       (explicitBox
         ? "The masked region marks the exact intended position — fit the product naturally within it, resting on the floor or surface with a realistic contact shadow."
         : `Place it realistically the way it would actually sit in a lived-in room: ${CATEGORY_PLACEMENT_HINT[category]}.`) +
-      wallAngleInstruction,
+      wallAngleInstruction +
+      NO_PEOPLE_INSTRUCTION,
   );
   form.append("quality", quality);
   form.append("input_fidelity", "high");
@@ -449,7 +466,8 @@ export async function composeSceneWithProducts(
         "use the EXACT product shown in each reference image — never substitute a different piece for any of " +
         "them, and never omit one. " +
         itemLines.join(" ") +
-        " Consistent scale, perspective and lighting across everything; realistic contact shadows where items touch the floor.",
+        " Consistent scale, perspective and lighting across everything; realistic contact shadows where items touch the floor." +
+        NO_PEOPLE_INSTRUCTION,
     );
   } else {
     const union = unionBox(items.map((i) => i.box));
@@ -472,7 +490,8 @@ export async function composeSceneWithProducts(
         "touches the floor. Use the EXACT product shown in each reference image for its corresponding item — never " +
         "substitute a different piece of furniture for any of them, and never omit one. " +
         itemLines.join(" ") +
-        " Leave everything outside the masked region unchanged.",
+        " Leave everything outside the masked region unchanged." +
+        NO_PEOPLE_INSTRUCTION,
     );
   }
   form.append("quality", quality);
