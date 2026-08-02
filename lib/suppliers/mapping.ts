@@ -130,6 +130,28 @@ export function computeRetailPrice(raw: RawSupplierProduct): number {
   return Math.round(raw.costPrice * MARKUP);
 }
 
+/**
+ * VidaXL's real image feed gives several variants per product, and a real,
+ * confirmed failure came from always grabbing images[0]: that's always the
+ * "_mo-im_" (staged lifestyle/mood) shot — the product amid other props at
+ * an arbitrary crop, not an isolated view of it. Two real consequences: (1)
+ * a clean product's real aspect ratio can't be recovered from it (there's
+ * no uniform background to trim against, since it's a whole scene, not a
+ * cutout), which fed a wide sofa's placement box the scene's own crop ratio
+ * instead of the sofa's real shape; (2) it's a confusing reference image for
+ * the compositing model, which is told "the exact product shown in this
+ * photo" but sees a busy scene, not an unambiguous product. "_wbg-fr_"
+ * (white background, front-facing) is the clean, correctly proportioned
+ * shot that should have been preferred all along; "_wbg-an-m_" (white
+ * background, angled) is the next best. Falls back to whatever's first if
+ * neither naming pattern is present, so an unexpected feed shape still
+ * gets *a* photo rather than none.
+ */
+function pickProductImageUrl(images: string[] | undefined): string | undefined {
+  if (!images || images.length === 0) return undefined;
+  return images.find((u) => u.includes("_wbg-fr_")) ?? images.find((u) => u.includes("_wbg-an-m_")) ?? images[0];
+}
+
 export function mapSupplierProduct(raw: RawSupplierProduct, supplierId: string, supplierLabel: string): Product {
   // VidaXL's real feed has no description — fall back to a copy line built
   // from the category path so the product card never shows blank copy.
@@ -148,7 +170,7 @@ export function mapSupplierProduct(raw: RawSupplierProduct, supplierId: string, 
     color: inferColor(raw),
     blurb,
     supplier: { id: supplierId, label: supplierLabel, sku: raw.sku, costPrice: raw.costPrice },
-    imageUrl: raw.images?.[0],
+    imageUrl: pickProductImageUrl(raw.images),
     productUrl: raw.productUrl,
     dimensionsCm: raw.dimensionsCm,
   };

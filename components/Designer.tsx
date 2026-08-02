@@ -609,7 +609,21 @@ export default function Designer() {
           : { box: body.maskBox, kind: "web", webProduct: proposal.webProduct };
       const label = proposal.kind === "add" ? proposal.product.name : proposal.webProduct.name;
 
-      commitVersion(body.imageBase64, `V${versions.length} · ${label.slice(0, 24)}`, [...prevObjects, newObject]);
+      // Re-adding the same product (e.g. retrying a placement) renders into
+      // the same masked region, visually replacing whatever was there — but
+      // prevObjects is otherwise a pure append-only log, so without this the
+      // hotspot bookkeeping would keep the stale entry around too. Two
+      // PlacedObjects for the same product then share the same React key
+      // (RoomHotspots keys by product id) — a real, confirmed duplicate-key
+      // warning from exactly this. Drop the old entry for this product/URL
+      // before appending the new one.
+      const isSameProduct = (o: PlacedObject) =>
+        proposal.kind === "add"
+          ? o.kind === "catalog" && o.product.id === proposal.product.id
+          : o.kind === "web" && o.webProduct.url === proposal.webProduct.url;
+      const dedupedPrevObjects = prevObjects.filter((o) => !isSameProduct(o));
+
+      commitVersion(body.imageBase64, `V${versions.length} · ${label.slice(0, 24)}`, [...dedupedPrevObjects, newObject]);
       setProposals((p) => p.filter((_, i) => i !== index));
       if (activeProposalIndex === index) {
         setActiveProposalIndex(null);
