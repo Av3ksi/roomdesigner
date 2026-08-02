@@ -545,6 +545,10 @@ export default function Designer() {
         const form = new FormData();
         form.append("room", baseFile);
         form.append("category", proposal.category);
+        // A specific inventory description ("gray fabric sofa") is a much
+        // better text prompt for segmentation than the generic category
+        // label — see lib/ai/vision/segmentation.ts's descriptionHint param.
+        if (proposal.description) form.append("description", proposal.description);
         if (proposal.box) {
           form.append("boxX", String(proposal.box.x));
           form.append("boxY", String(proposal.box.y));

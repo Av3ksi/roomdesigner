@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { compositingEnabled, removeExistingObject } from "@/lib/ai/composite";
+import { fluxFillEnabled, removeExistingObjectFlux, removeExistingObjectFluxWithMask } from "@/lib/ai/fluxFill";
+import { segmentExistingFurniture } from "@/lib/ai/vision/segmentation";
 import { locateExistingObject } from "@/lib/ai/locate";
 import { aiEnabled } from "@/lib/ai/claude";
 import { clampBox, isValidBox } from "@/lib/placementBoxes";
@@ -12,18 +14,31 @@ import type { ProductCategory } from "@/lib/types";
 export const runtime = "nodejs";
 
 /**
- * Phase 2: erases an existing object already physically present in the room
- * photo. Two real, billed calls happen here in sequence — a Claude vision
- * call to locate the object, then an OpenAI edit to erase it — so this only
- * ever fires from an explicit user confirmation, same discipline as
- * /api/composite.
+ * Erases an existing object already physically present in the room photo.
+ * Two tiers, both real billed calls, so this only ever fires from an
+ * explicit user confirmation, same discipline as /api/composite:
+ *
+ *   1. Grounded-SAM segmentation (lib/ai/vision/segmentation.ts) + FLUX
+ *      Fill erase — pixel-precise, only when REPLICATE_API_TOKEN is
+ *      configured. Falls through to tier 2 if segmentation itself doesn't
+ *      find the object (model miss, not a config problem).
+ *   2. A box — either already known (the room-inventory checklist) or
+ *      located via Claude vision (lib/ai/locate.ts) — erased via FLUX Fill
+ *      when Replicate is configured, or the original OpenAI path
+ *      otherwise. This is the ENTIRE removal pipeline when
+ *      REPLICATE_API_TOKEN isn't set — nothing regresses for a setup that
+ *      hasn't added it yet.
  */
 export async function POST(req: NextRequest) {
   if (!aiEnabled()) {
     return NextResponse.json({ error: "ANTHROPIC_API_KEY not configured on the server." }, { status: 501 });
   }
-  if (!compositingEnabled()) {
-    return NextResponse.json({ error: "OPENAI_API_KEY not configured on the server." }, { status: 501 });
+  const useFlux = fluxFillEnabled();
+  if (!useFlux && !compositingEnabled()) {
+    return NextResponse.json(
+      { error: "Removal isn't configured on this server yet (needs REPLICATE_API_TOKEN or OPENAI_API_KEY)." },
+      { status: 501 },
+    );
   }
 
   const sessionId = await getOrCreateSessionId();
@@ -36,7 +51,7 @@ export async function POST(req: NextRequest) {
   });
   if (limited) return NextResponse.json({ error: limited.error }, { status: 429 });
 
-  // Freemium gate — checked BEFORE the billed OpenAI call fires, so a
+  // Freemium gate — checked BEFORE the billed removal call fires, so a
   // request past the free limit never spends money.
   if (!(await hasFreeGenerationsRemaining(sessionId))) {
     return NextResponse.json(
@@ -55,6 +70,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Missing room photo or category." }, { status: 400 });
   }
 
+  // A specific inventory description ("gray fabric sofa") is a far better
+  // segmentation text prompt than the generic category label — optional,
+  // only present when the removal came from the room-inventory checklist.
+  const descriptionField = form.get("description");
+  const description = typeof descriptionField === "string" && descriptionField.trim() ? descriptionField.trim() : undefined;
+
   const roomBuffer = Buffer.from(await roomFile.arrayBuffer());
 
   // When the caller already knows exactly where the object is (the room
@@ -69,6 +90,19 @@ export async function POST(req: NextRequest) {
     : null;
 
   try {
+    // Tier 1: pixel-precise segmentation, only when Replicate is configured.
+    if (useFlux) {
+      const seg = await segmentExistingFurniture(roomBuffer, category as ProductCategory, description);
+      if (seg) {
+        const result = await removeExistingObjectFluxWithMask(roomBuffer, seg, category as ProductCategory);
+        await recordGeneration(sessionId);
+        return NextResponse.json({ imageBase64: result.imageBase64, removedBox: seg.box, maskSource: "segmentation" });
+      }
+      // Segmentation didn't find the object (a model miss, not a config
+      // problem) — fall through to the box tier below, still on FLUX.
+    }
+
+    // Tier 2: a box, either already known or Claude-vision-located.
     let box = knownBox && isValidBox(knownBox) ? clampBox(knownBox) : null;
     if (!box) {
       const located = await locateExistingObject(roomBuffer, category as ProductCategory);
@@ -81,10 +115,13 @@ export async function POST(req: NextRequest) {
       box = located.box;
     }
 
-    const result = await removeExistingObject(roomBuffer, box, category as ProductCategory);
+    const result = useFlux
+      ? await removeExistingObjectFlux(roomBuffer, box, category as ProductCategory)
+      : await removeExistingObject(roomBuffer, box, category as ProductCategory);
+
     // The render succeeded — this is the actual "one free generation" spend (see /api/composite for why it's recorded here, not in the versions-persistence route).
     await recordGeneration(sessionId);
-    return NextResponse.json({ imageBase64: result.imageBase64, removedBox: box });
+    return NextResponse.json({ imageBase64: result.imageBase64, removedBox: box, maskSource: "box" });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 500 });
   }

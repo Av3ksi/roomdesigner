@@ -4,6 +4,7 @@ import { MODEL, aiEnabled } from "./claude";
 import { suggestPlacements, type PlacementMap, type RoomDimensionsEstimate } from "./placement";
 import { detectSceneItems } from "./locate";
 import { searchWebForProduct, type WebProduct } from "./webProductSearch";
+import { searchProductViaSerpApi, serpApiEnabled } from "../suppliers/serpApiSearch";
 import { searchProducts, toAgentProductSummary } from "../productSearch";
 import { DEFAULT_CATEGORY_BOX, clampBox, isValidBox } from "../placementBoxes";
 import type { DetectionBox, Product, ProductCategory } from "../types";
@@ -236,8 +237,10 @@ interface AgentState {
   webSearchCalls: number;
 }
 
-// Each web search can take up to searchWebForProduct's own 60s budget — cap
-// at 1 per turn so a chat message never waits on more than one of these.
+// Cap at 1 per turn so a chat message never waits on more than one of
+// these — SerpApi (the primary path when configured) is fast, but the
+// Claude-agentic fallback (lib/ai/webProductSearch.ts, used automatically
+// when SERPAPI_KEY isn't set) can take up to its own 100s budget.
 const MAX_WEB_SEARCHES_PER_TURN = 1;
 
 async function executeTool(name: string, input: Record<string, unknown>, state: AgentState): Promise<string> {
@@ -304,7 +307,13 @@ async function executeTool(name: string, input: Record<string, unknown>, state: 
         return JSON.stringify({ error: `category must be one of: ${CATEGORIES.join(", ")}` });
       }
       state.webSearchCalls += 1;
-      const found = await searchWebForProduct(query, "CH");
+      // SerpApi (structured Google Shopping results, no page-scraping) is
+      // the primary source when configured — see lib/suppliers/
+      // serpApiSearch.ts for why this replaced the Claude-agentic
+      // web_search+web_fetch approach in the live flow. That approach
+      // stays in place as the automatic fallback when SERPAPI_KEY isn't
+      // set, so nothing regresses for a setup that hasn't added it yet.
+      const found = serpApiEnabled() ? await searchProductViaSerpApi(query, "CH") : await searchWebForProduct(query, "CH");
       if (!found || !found.imageUrl) {
         return JSON.stringify({
           found: false,

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { compositeProductIntoRoom, compositingEnabled } from "@/lib/ai/composite";
+import { compositeProductIntoRoomFlux, fluxFillEnabled } from "@/lib/ai/fluxFill";
 import { checkRenderedProductIdentity } from "@/lib/ai/identityCheck";
 import { clientIp, enforceRateLimit } from "@/lib/rateLimit";
 import { getOrCreateSessionId } from "@/lib/session";
@@ -15,8 +16,17 @@ export const runtime = "nodejs";
  * automatically. No caching, no retries-on-mount, no polling.
  */
 export async function POST(req: NextRequest) {
-  if (!compositingEnabled()) {
-    return NextResponse.json({ error: "OPENAI_API_KEY not configured on the server." }, { status: 501 });
+  // FLUX Fill (Replicate) is the new primary path — see lib/ai/fluxFill.ts's
+  // module doc comment for why, and the real capability tradeoff found
+  // while building it. Falls back to the existing OpenAI path when only
+  // OPENAI_API_KEY is configured, so nothing regresses for a setup that
+  // hasn't added REPLICATE_API_TOKEN yet.
+  const useFlux = fluxFillEnabled();
+  if (!useFlux && !compositingEnabled()) {
+    return NextResponse.json(
+      { error: "Compositing isn't configured on this server yet (needs REPLICATE_API_TOKEN or OPENAI_API_KEY)." },
+      { status: 501 },
+    );
   }
 
   const sessionId = await getOrCreateSessionId();
@@ -65,7 +75,7 @@ export async function POST(req: NextRequest) {
   // Diagnostic: the box a render actually used is otherwise invisible once
   // it's in front of a customer — useful for root-causing a mismatch
   // between where the mask was and what the model actually painted.
-  console.log("[maison] /api/composite", { category, productImageUrl, explicitBox, wallAngleDeg });
+  console.log("[maison] /api/composite", { provider: useFlux ? "flux" : "openai", category, productImageUrl, explicitBox, wallAngleDeg });
 
   const productRes = await fetch(productImageUrl);
   if (!productRes.ok) {
@@ -76,15 +86,9 @@ export async function POST(req: NextRequest) {
   const productBuffer = Buffer.from(await productRes.arrayBuffer());
 
   try {
-    const result = await compositeProductIntoRoom(
-      roomBuffer,
-      productBuffer,
-      category as ProductCategory,
-      [],
-      "low",
-      explicitBox,
-      wallAngleDeg,
-    );
+    const result = useFlux
+      ? await compositeProductIntoRoomFlux(roomBuffer, productBuffer, category as ProductCategory, [], explicitBox, wallAngleDeg)
+      : await compositeProductIntoRoom(roomBuffer, productBuffer, category as ProductCategory, [], "low", explicitBox, wallAngleDeg);
 
     // The render succeeded — this is the actual "one free generation" spend,
     // counted here (not in the separate /api/rooms/[id]/versions persistence

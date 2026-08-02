@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import sharp from "sharp";
 import { MODEL as CLAUDE_MODEL, aiEnabled } from "./claude";
+import { blendEditedRegion, buildMaskPng } from "./imageMasking";
 import { DEFAULT_CATEGORY_BOX, clampBox, describeRoughLocation, unionBox } from "../placementBoxes";
 import type { Detection, DetectionBox, ProductCategory } from "../types";
 
@@ -33,7 +34,7 @@ const MODEL = "gpt-image-1.5";
  * sofa centered in open floor instead of pushed back against a wall, a
  * cheap prompt-level fix rather than a placement-engineering one.
  */
-const CATEGORY_PLACEMENT_HINT: Record<ProductCategory, string> = {
+export const CATEGORY_PLACEMENT_HINT: Record<ProductCategory, string> = {
   sofa: "flush against the back wall, not floating in the middle of open floor",
   chair: "against a wall or in a corner, not in the middle of open floor",
   table: "resting on the floor in front of where a sofa or seating would be",
@@ -59,7 +60,7 @@ const CATEGORY_LABEL_ALIASES: Record<ProductCategory, string[]> = {
   textile: ["cushion", "curtain", "throw", "pillow"],
 };
 
-function matchingDetectionBox(category: ProductCategory, detections: Detection[]): DetectionBox | null {
+export function matchingDetectionBox(category: ProductCategory, detections: Detection[]): DetectionBox | null {
   const aliases = CATEGORY_LABEL_ALIASES[category];
   const match = detections.find((d) => d.box && aliases.some((a) => d.label.toLowerCase().includes(a)));
   return match?.box ?? null;
@@ -80,78 +81,6 @@ async function toImageBlob(buffer: Buffer): Promise<{ blob: Blob; filename: stri
   return { blob: new Blob([new Uint8Array(buffer)], { type: mime }), filename: `image.${ext}` };
 }
 
-/**
- * gpt-image's masked edit doesn't guarantee pixel-identical output outside
- * the mask — a confirmed, reproducible complaint: the whole photo can come
- * back with subtly different color grading, wall texture, or grain, not
- * just the masked region. `input_fidelity: "high"` (set on both calls
- * below) reduces this but isn't a hard guarantee from OpenAI, so enforce it
- * ourselves: blend the model's output back onto the ORIGINAL photo, only
- * letting pixels inside a feathered version of the mask region actually
- * come from the edit. Everywhere else ends up byte-identical to the source
- * photo regardless of what the model did to the rest of the canvas.
- */
-async function blendEditedRegion(
-  original: Buffer,
-  edited: Buffer,
-  width: number,
-  height: number,
-  box: DetectionBox,
-): Promise<Buffer> {
-  const maskRaw = Buffer.alloc(width * height, 0);
-  const x0 = Math.max(0, Math.round(box.x * width));
-  const y0 = Math.max(0, Math.round(box.y * height));
-  const x1 = Math.min(width, Math.round((box.x + box.w) * width));
-  const y1 = Math.min(height, Math.round((box.y + box.h) * height));
-  for (let y = y0; y < y1; y++) {
-    for (let x = x0; x < x1; x++) {
-      maskRaw[y * width + x] = 255;
-    }
-  }
-  // Blurred so the boundary between real and edited pixels is a soft
-  // falloff, not a hard rectangle that would look pasted-in. .greyscale()
-  // is load-bearing, not cosmetic: sharp silently expands a single-channel
-  // raw buffer to 3 channels through .blur() otherwise, which shifts every
-  // index below and corrupts the blend (confirmed by testing — without it,
-  // the "edited" region silently fell back to 100% original pixels).
-  const alpha = await sharp(maskRaw, { raw: { width, height, channels: 1 } }).blur(16).greyscale().raw().toBuffer();
-
-  const [originalRgba, editedRgba] = await Promise.all([
-    sharp(original).ensureAlpha().raw().toBuffer(),
-    sharp(edited).resize(width, height).ensureAlpha().raw().toBuffer(),
-  ]);
-
-  const out = Buffer.alloc(width * height * 4);
-  for (let i = 0; i < width * height; i++) {
-    const a = alpha[i] / 255;
-    const base = i * 4;
-    out[base] = Math.round(editedRgba[base] * a + originalRgba[base] * (1 - a));
-    out[base + 1] = Math.round(editedRgba[base + 1] * a + originalRgba[base + 1] * (1 - a));
-    out[base + 2] = Math.round(editedRgba[base + 2] * a + originalRgba[base + 2] * (1 - a));
-    out[base + 3] = 255;
-  }
-
-  return sharp(out, { raw: { width, height, channels: 4 } }).png().toBuffer();
-}
-
-async function buildMaskPng(width: number, height: number, box: DetectionBox): Promise<Buffer> {
-  const channels = 4;
-  const pixels = Buffer.alloc(width * height * channels, 255); // opaque everywhere = "keep as-is"
-
-  const x0 = Math.max(0, Math.round(box.x * width));
-  const y0 = Math.max(0, Math.round(box.y * height));
-  const x1 = Math.min(width, Math.round((box.x + box.w) * width));
-  const y1 = Math.min(height, Math.round((box.y + box.h) * height));
-
-  for (let y = y0; y < y1; y++) {
-    for (let x = x0; x < x1; x++) {
-      pixels[(y * width + x) * channels + 3] = 0; // alpha 0 = "edit this region"
-    }
-  }
-
-  return sharp(pixels, { raw: { width, height, channels } }).png().toBuffer();
-}
-
 export interface CompositeResult {
   /** Base64 PNG — the room photo with the product composited in. */
   imageBase64: string;
@@ -166,7 +95,7 @@ export interface CompositeResult {
  * a hard mask edge exactly at the product's silhouette produces visible
  * seams. The hotspot still gets the unpadded box.
  */
-const MASK_PADDING = 0.04;
+export const MASK_PADDING = 0.04;
 
 /**
  * gpt-image-1.5's multi-image edit doesn't reliably treat a second
@@ -180,7 +109,7 @@ const MASK_PADDING = 0.04;
  * strengths and this hedges across both. One extra cheap vision call,
  * not an image generation call, so it doesn't meaningfully change cost.
  */
-async function describeProductForPrompt(productPhoto: Buffer): Promise<string | null> {
+export async function describeProductForPrompt(productPhoto: Buffer): Promise<string | null> {
   if (!aiEnabled()) return null;
   try {
     const jpeg = await sharp(productPhoto)
@@ -236,7 +165,7 @@ async function describeProductForPrompt(productPhoto: Buffer): Promise<string | 
  * (lib/ai/placement.ts, lib/ai/identityCheck.ts) — this was the one place
  * still sending the original, full-resolution buffer straight through.
  */
-const COMPOSITE_MAX_EDGE = 2048;
+export const COMPOSITE_MAX_EDGE = 2048;
 
 export async function compositeProductIntoRoom(
   roomPhotoInput: Buffer,
