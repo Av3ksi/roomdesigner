@@ -148,20 +148,20 @@ export async function segmentExistingFurniture(
       return null;
     }
 
-    // TODO: a real captured response from this model (schananas/grounded_sam)
+    // A real captured response from this model (schananas/grounded_sam)
     // showed its `output` array in a fixed order:
     // [annotated_picture_mask, neg_annotated_picture_mask, mask, inverted_mask].
-    // refs[0] is therefore annotated_picture_mask — the original photo with a
-    // colored overlay drawn on it for human viewing, NOT a clean binary alpha
-    // mask — while a real usable mask sits at index 2. This is a strong,
-    // evidenced suspect for a black-rectangle rendering artifact seen on a
-    // real render that used this path, but it's NOT yet confirmed by a test
-    // or fixed — flagged here rather than guessed at live, since this same
-    // buffer also feeds removeExistingObjectFluxWithMask's removal path
-    // (lib/ai/fluxFill.ts), which is currently primary whenever
-    // REPLICATE_API_TOKEN is set. Verify against a real captured `output`
-    // array before changing the index.
-    const maskBuffer = await resolveMaskBuffer(refs[0]);
+    // index 0 (previously used here) is annotated_picture_mask — the
+    // original photo with a colored overlay drawn on it for human viewing,
+    // NOT a clean binary alpha mask. Confirmed live: using index 0 produced
+    // a real garbled render (stray twig-like patterns and hallucinated
+    // window blinds smeared across the whole photo, well outside the
+    // removed object) — consistent with feeding a busy annotated photo in
+    // as an alpha channel instead of a clean mask. Index 2 (`mask`) is the
+    // real one. Falls back to index 0 only if the model ever returns fewer
+    // than 3 refs, so this doesn't hard-fail on a model output shape change.
+    const maskRef = refs.length > 2 ? refs[2] : refs[0];
+    const maskBuffer = await resolveMaskBuffer(maskRef);
     // Match the room photo's own resolution exactly — the model's mask
     // dimensions aren't guaranteed to equal the input's.
     const alpha = await sharp(maskBuffer).resize(width, height).greyscale().raw().toBuffer();
