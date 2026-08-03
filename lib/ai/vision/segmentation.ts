@@ -148,6 +148,19 @@ export async function segmentExistingFurniture(
       return null;
     }
 
+    // TODO: a real captured response from this model (schananas/grounded_sam)
+    // showed its `output` array in a fixed order:
+    // [annotated_picture_mask, neg_annotated_picture_mask, mask, inverted_mask].
+    // refs[0] is therefore annotated_picture_mask — the original photo with a
+    // colored overlay drawn on it for human viewing, NOT a clean binary alpha
+    // mask — while a real usable mask sits at index 2. This is a strong,
+    // evidenced suspect for a black-rectangle rendering artifact seen on a
+    // real render that used this path, but it's NOT yet confirmed by a test
+    // or fixed — flagged here rather than guessed at live, since this same
+    // buffer also feeds removeExistingObjectFluxWithMask's removal path
+    // (lib/ai/fluxFill.ts), which is currently primary whenever
+    // REPLICATE_API_TOKEN is set. Verify against a real captured `output`
+    // array before changing the index.
     const maskBuffer = await resolveMaskBuffer(refs[0]);
     // Match the room photo's own resolution exactly — the model's mask
     // dimensions aren't guaranteed to equal the input's.

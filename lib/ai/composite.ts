@@ -1,12 +1,10 @@
 import Anthropic from "@anthropic-ai/sdk";
 import sharp from "sharp";
 import { MODEL as CLAUDE_MODEL, aiEnabled } from "./claude";
-import { blendEditedRegion, blendWithAlpha, buildMaskPng, featherAlpha, harmonizeRegion } from "./imageMasking";
-import { segmentExistingFurniture } from "./vision/segmentation";
+import { blendEditedRegion, buildMaskPng } from "./imageMasking";
 import {
   COMPOSITE_MAX_EDGE,
   DEFAULT_CATEGORY_BOX,
-  boxOverlapRatio,
   clampBox,
   describeRoughLocation,
   padBoxForEdit,
@@ -294,38 +292,18 @@ export async function compositeProductIntoRoom(
   if (!b64) throw new Error("OpenAI response had no image data");
   const editedBuffer = Buffer.from(b64, "base64");
 
-  // A real, reported failure: the box-shaped blend leaves a visible
-  // rectangular tint on the floor/wall AROUND the product, since the
-  // padded box is bigger than the product's actual silhouette — real
-  // furniture isn't rectangular. When Replicate is configured, segment
-  // the product's ACTUAL shape out of the just-rendered result and blend
-  // only that precise silhouette instead of the box. Deliberately NOT
-  // segmenting the product's own reference photo instead — that would
-  // lock insertion into the reference's exact studio pose/angle
-  // regardless of the room's real perspective and wallAngleDeg rotation.
-  // boxOverlapRatio sanity-checks the result against where we actually
-  // asked for it: a low overlap means segmentation likely found a
-  // DIFFERENT object of the same category already in the room, not the
-  // one we just placed — fall back to the plain box blend rather than
-  // trust a wrong match.
-  //
-  // Segmentation must run BEFORE harmonization, and harmonization must be
-  // SKIPPED entirely when segmentation doesn't produce a usable mask — a
-  // real, confirmed regression came from harmonizing against the padded
-  // box instead: the box mixes the product's own pixels with slices of
-  // wall/floor also inside it, so one blanket color statistic for the
-  // whole box doesn't represent either well, and applying it uniformly
-  // produced a visible flat-colored wash. See harmonizeRegion's doc
-  // comment in lib/ai/imageMasking.ts for the full story.
-  let blended: Buffer;
-  const seg = await segmentExistingFurniture(editedBuffer, category, productDescription ?? undefined);
-  if (seg && seg.width === width && seg.height === height && boxOverlapRatio(seg.box, paddedBox) > 0.5) {
-    const featheredSegAlpha = await featherAlpha(seg.alpha, width, height, 8);
-    const harmonized = await harmonizeRegion(roomPhoto, editedBuffer, width, height, featheredSegAlpha);
-    blended = await blendWithAlpha(roomPhoto, harmonized, width, height, featheredSegAlpha);
-  } else {
-    blended = await blendEditedRegion(roomPhoto, editedBuffer, width, height, paddedBox);
-  }
+  // Plain box blend — this deliberately does NOT run Grounded-SAM
+  // segmentation or color harmonization on the result, even though
+  // REPLICATE_API_TOKEN may be configured. Both were tried and reverted:
+  // segmentation-refined blending shipped once, then produced a black
+  // rendering artifact on a real render (a strong, unconfirmed suspect is
+  // lib/ai/vision/segmentation.ts reading the wrong index out of the
+  // model's output array — see that file's TODO), and color harmonization
+  // depended on that same segmentation step to have a real object mask to
+  // work from. Reverted rather than ship a third unverified fix on top of
+  // an already-twice-broken feature. blendEditedRegion's plain box blend
+  // is the simpler, previously-working behavior.
+  const blended = await blendEditedRegion(roomPhoto, editedBuffer, width, height, paddedBox);
   return { imageBase64: blended.toString("base64"), maskBox, placementSource };
 }
 
