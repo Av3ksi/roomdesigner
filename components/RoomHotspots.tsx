@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ArrowUpRight, ShoppingBag } from "lucide-react";
+import { ArrowUpRight, Move, ShoppingBag } from "lucide-react";
 import type { DetectionBox } from "@/lib/types";
 
 export interface HotspotItem {
@@ -22,6 +22,8 @@ export interface HotspotItem {
   url?: string;
   /** Retailer name for external items. */
   retailer?: string;
+  /** True when this item has everything a caller's onMove needs (a known category). Only meaningful together with onMove — ignored otherwise. */
+  movable?: boolean;
 }
 
 const PIN_COLOR: Record<HotspotItem["kind"], string> = {
@@ -40,14 +42,19 @@ const PIN_COLOR: Record<HotspotItem["kind"], string> = {
  * in the room is silently invisible, just honestly marked as not shoppable
  * yet. Shared by the Looks Studio preview and the published /looks/[id]
  * page. onAction fires add-to-cart for catalog/auto pins only; external
- * pins always link out; unavailable pins have no action at all.
+ * pins always link out; unavailable pins have no action at all. onMove is
+ * optional and additive — only Designer.tsx (the one place an already-
+ * placed object can actually be repositioned) passes it; the Looks Studio
+ * preview and published /looks/[id] page omit it and see no "Move" button.
  */
 export default function RoomHotspots({
   items,
   onAction,
+  onMove,
 }: {
   items: HotspotItem[];
   onAction?: (id: string) => void;
+  onMove?: (id: string) => void;
 }) {
   const [openId, setOpenId] = useState<string | null>(null);
   const open = items.find((i) => i.id === openId) ?? null;
@@ -89,27 +96,37 @@ export default function RoomHotspots({
             </div>
           )}
 
-          {open.kind === "external" ? (
-            open.url && (
-              <a
-                href={open.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="mt-2.5 flex w-full items-center justify-center gap-1 rounded-full border border-rose-400/50 px-3 py-1.5 text-xs font-semibold text-rose-200 hover:bg-rose-400/10"
-              >
-                View at {open.retailer || "retailer"} <ArrowUpRight size={12} />
-              </a>
-            )
-          ) : open.kind === "unavailable" ? null : (
-            onAction && (
+          <div className="mt-2.5 flex flex-col gap-1.5">
+            {open.kind === "external" ? (
+              open.url && (
+                <a
+                  href={open.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex w-full items-center justify-center gap-1 rounded-full border border-rose-400/50 px-3 py-1.5 text-xs font-semibold text-rose-200 hover:bg-rose-400/10"
+                >
+                  View at {open.retailer || "retailer"} <ArrowUpRight size={12} />
+                </a>
+              )
+            ) : open.kind === "unavailable" ? null : (
+              onAction && (
+                <button
+                  onClick={() => onAction(open.id)}
+                  className="flex w-full items-center justify-center gap-1 rounded-full bg-brass px-3 py-1.5 text-xs font-semibold text-ink"
+                >
+                  <ShoppingBag size={12} /> Add to cart
+                </button>
+              )
+            )}
+            {onMove && open.movable && open.kind !== "unavailable" && (
               <button
-                onClick={() => onAction(open.id)}
-                className="mt-2.5 flex w-full items-center justify-center gap-1 rounded-full bg-brass px-3 py-1.5 text-xs font-semibold text-ink"
+                onClick={() => onMove(open.id)}
+                className="flex w-full items-center justify-center gap-1 rounded-full border border-ink-line px-3 py-1.5 text-xs font-semibold text-cream-dim hover:border-brass/40 hover:text-cream"
               >
-                <ShoppingBag size={12} /> Add to cart
+                <Move size={12} /> Move
               </button>
-            )
-          )}
+            )}
+          </div>
         </div>
       )}
     </>

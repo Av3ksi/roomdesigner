@@ -77,7 +77,20 @@ interface ChatMessage {
 
 type PlacedObject =
   | { box: DetectionBox; kind: "catalog"; product: Product }
-  | { box: DetectionBox; kind: "web"; webProduct: WebProductInfo };
+  // category is optional: rows persisted before the move feature shipped
+  // won't have it — those items just can't be moved (movable: false) until
+  // re-added, rather than the app guessing wrong.
+  | { box: DetectionBox; kind: "web"; webProduct: WebProductInfo; category?: ProductCategory };
+
+function objectCategory(obj: PlacedObject): ProductCategory | null {
+  return obj.kind === "catalog" ? obj.product.category : obj.category ?? null;
+}
+function objectImageUrl(obj: PlacedObject): string {
+  return obj.kind === "catalog" ? obj.product.imageUrl ?? "" : obj.webProduct.imageUrl;
+}
+function objectName(obj: PlacedObject): string {
+  return obj.kind === "catalog" ? obj.product.name : obj.webProduct.name;
+}
 
 interface RoomVersion {
   /** Base64 PNG for generated versions; null for version 0 (the original photo, shown via objectURL). */
@@ -159,6 +172,14 @@ export default function Designer() {
   const [activeProposalIndex, setActiveProposalIndex] = useState<number | null>(null);
   const [adjustedBox, setAdjustedBox] = useState<DetectionBox | null>(null);
   const [adjustLoading, setAdjustLoading] = useState(false);
+  // Reuses the same ruler (adjustedBox/dragRef/overlayRef below) for an
+  // already-placed object instead of a pending proposal — the two are
+  // mutually exclusive (opening one clears the other). index is this
+  // object's position in the LATEST version's objects array (moving is
+  // only offered while viewing the latest version — see the hotspot wiring
+  // below — so that always lines up with what generating a new version
+  // actually edits).
+  const [movingObject, setMovingObject] = useState<{ index: number; object: PlacedObject } | null>(null);
   const chatEndRef = useRef<HTMLDivElement | null>(null);
   const overlayRef = useRef<HTMLDivElement | null>(null);
   const dragRef = useRef<{ mode: "move" | "resize"; startX: number; startY: number; box: DetectionBox; rect: DOMRect } | null>(null);
@@ -381,6 +402,84 @@ export default function Designer() {
   function cancelPlacementPreview() {
     setActiveProposalIndex(null);
     setAdjustedBox(null);
+  }
+
+  /** Opens the same ruler for an already-placed object — the box already exists (it was just rendered there), so unlike openPlacementPreview there's no aspect-ratio fetch to await first. */
+  function openMovePreview(index: number) {
+    const latest = versions[versions.length - 1];
+    const obj = latest?.objects[index];
+    if (!obj) return;
+    setActiveProposalIndex(null);
+    setMovingObject({ index, object: obj });
+    setAdjustedBox(obj.box);
+  }
+
+  function cancelMove() {
+    setMovingObject(null);
+    setAdjustedBox(null);
+  }
+
+  /** Erase-then-reinsert as one user-facing action — see app/api/move-object/route.ts's doc comment for why there's no single "move" call. */
+  async function confirmMove() {
+    if (!movingObject || !adjustedBox || !roomFile || generating !== null) return;
+    if (usageRemaining === 0) {
+      setShowUpgradeModal(true);
+      return;
+    }
+    const category = objectCategory(movingObject.object);
+    const imageUrl = objectImageUrl(movingObject.object);
+    if (!category || !imageUrl) {
+      setError("Can't move this item — it's missing a category or reference photo.");
+      return;
+    }
+
+    setGenerating(-1);
+    setError(null);
+    setIdentityWarning(null);
+    try {
+      const latest = versions[versions.length - 1];
+      const baseFile = latest?.imageBase64 ? base64PngToFile(latest.imageBase64, "version.png") : roomFile;
+      const prevObjects = latest?.objects ?? [];
+
+      const form = new FormData();
+      form.append("room", baseFile);
+      form.append("productImageUrl", imageUrl);
+      form.append("category", category);
+      form.append("oldBoxX", String(movingObject.object.box.x));
+      form.append("oldBoxY", String(movingObject.object.box.y));
+      form.append("oldBoxW", String(movingObject.object.box.w));
+      form.append("oldBoxH", String(movingObject.object.box.h));
+      form.append("newBoxX", String(adjustedBox.x));
+      form.append("newBoxY", String(adjustedBox.y));
+      form.append("newBoxW", String(adjustedBox.w));
+      form.append("newBoxH", String(adjustedBox.h));
+
+      const res = await fetch("/api/move-object", { method: "POST", body: form });
+      const body = await res.json();
+      if (res.status === 402) {
+        setUsageRemaining(0);
+        setShowUpgradeModal(true);
+        return;
+      }
+      if (!res.ok) throw new Error(body.error ?? `Move failed: ${res.status}`);
+
+      setUsageRemaining((r) => (r !== null ? Math.max(0, r - 1) : r));
+      const movedObject: PlacedObject =
+        movingObject.object.kind === "catalog"
+          ? { box: body.maskBox, kind: "catalog", product: movingObject.object.product }
+          : { box: body.maskBox, kind: "web", webProduct: movingObject.object.webProduct, category: movingObject.object.category };
+      const nextObjects = prevObjects.map((o, i) => (i === movingObject.index ? movedObject : o));
+
+      commitVersion(body.imageBase64, `V${versions.length} · Moved ${objectName(movingObject.object)}`, nextObjects);
+      cancelMove();
+      if (body.identityCheck && body.identityCheck.pass === false) {
+        setIdentityWarning(body.identityCheck.note);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setGenerating(null);
+    }
   }
 
   function onBoxPointerDown(e: React.PointerEvent, mode: "move" | "resize") {
@@ -641,7 +740,7 @@ export default function Designer() {
       const newObject: PlacedObject =
         proposal.kind === "add"
           ? { box: body.maskBox, kind: "catalog", product: proposal.product }
-          : { box: body.maskBox, kind: "web", webProduct: proposal.webProduct };
+          : { box: body.maskBox, kind: "web", webProduct: proposal.webProduct, category: proposal.category as ProductCategory };
       const label = proposal.kind === "add" ? proposal.product.name : proposal.webProduct.name;
 
       // Re-adding the same product (e.g. retrying a placement) renders into
@@ -1083,7 +1182,7 @@ export default function Designer() {
                   <Sparkles size={15} /> Analyze my room
                 </button>
               </div>
-            ) : activeAddProposal && canvasSrc ? (
+            ) : (activeAddProposal || movingObject) && canvasSrc ? (
               <div className="w-full">
                 <div
                   ref={overlayRef}
@@ -1105,7 +1204,7 @@ export default function Designer() {
                       className="absolute cursor-move rounded-md border-2 border-brass-bright/80 bg-brass/15"
                     >
                       <span className="absolute -top-5 left-0 rounded bg-ink/80 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-brass-bright backdrop-blur">
-                        {activeAddProposal.category}
+                        {activeAddProposal ? activeAddProposal.category : movingObject ? objectCategory(movingObject.object) ?? "" : ""}
                       </span>
                       <span
                         onPointerDown={(e) => onBoxPointerDown(e, "resize")}
@@ -1123,20 +1222,33 @@ export default function Designer() {
                   <Ruler size={15} className="shrink-0 text-brass" />
                   <div className="min-w-0 flex-1 text-xs text-cream-dim">
                     Drag to move, corner handle to resize — position{" "}
-                    <span className="font-semibold text-cream">{activeName}</span> where it actually belongs.
+                    <span className="font-semibold text-cream">
+                      {activeAddProposal ? activeName : movingObject ? objectName(movingObject.object) : ""}
+                    </span>{" "}
+                    where it actually belongs.
                   </div>
-                  <button onClick={cancelPlacementPreview} className="btn-ghost !px-3.5 !py-1.5 !text-xs">
+                  <button onClick={activeAddProposal ? cancelPlacementPreview : cancelMove} className="btn-ghost !px-3.5 !py-1.5 !text-xs">
                     Cancel
                   </button>
                   <button
-                    onClick={() =>
-                      adjustedBox && activeProposalIndex !== null && generateProposal(activeAddProposal, activeProposalIndex, adjustedBox)
-                    }
+                    onClick={() => {
+                      if (activeAddProposal) {
+                        if (adjustedBox && activeProposalIndex !== null) generateProposal(activeAddProposal, activeProposalIndex, adjustedBox);
+                      } else {
+                        confirmMove();
+                      }
+                    }}
                     disabled={generating !== null || !adjustedBox || adjustLoading}
                     className="btn-primary !px-4 !py-1.5 !text-xs disabled:opacity-40"
                   >
                     <Sparkles size={13} />
-                    {generating === activeProposalIndex ? "Rendering (~15-60s)…" : "Place in room (~$0.05–0.15)"}
+                    {activeAddProposal
+                      ? generating === activeProposalIndex
+                        ? "Rendering (~15-60s)…"
+                        : "Place in room (~$0.05–0.15)"
+                      : generating === -1
+                        ? "Moving (~30-90s)…"
+                        : "Move here (~$0.05–0.15)"}
                   </button>
                 </div>
               </div>
@@ -1155,6 +1267,7 @@ export default function Designer() {
                         kind: "external",
                         url: obj.webProduct.url,
                         retailer: obj.webProduct.retailer,
+                        movable: objectCategory(obj) !== null,
                       };
                     }
                     return {
@@ -1163,12 +1276,27 @@ export default function Designer() {
                       box: obj.box,
                       priceLabel: formatChf(obj.product.price),
                       kind: "catalog",
+                      movable: true,
                     };
                   })}
                   onAction={(id) => {
                     const obj = version?.objects.find((o) => o.kind !== "web" && o.product.id === id);
                     if (obj && obj.kind !== "web") addToCart(obj.product);
                   }}
+                  // Only offered while viewing the latest version — moving
+                  // edits from there (see openMovePreview/confirmMove), so
+                  // an index resolved against an older, currently-displayed
+                  // version wouldn't line up with what actually gets edited.
+                  onMove={
+                    currentVersion === versions.length - 1
+                      ? (id) => {
+                          const idx = (version?.objects ?? []).findIndex((o, i) =>
+                            o.kind === "web" ? `web-${i}` === id : o.product.id === id,
+                          );
+                          if (idx !== -1) openMovePreview(idx);
+                        }
+                      : undefined
+                  }
                 />
               </div>
             ) : (
