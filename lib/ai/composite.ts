@@ -20,6 +20,18 @@ import type { Detection, DetectionBox, ProductCategory } from "../types";
  *   2. A real detection box from the room's analysis whose label matches
  *      the category (e.g. replacing an existing sofa uses its position).
  *   3. The context-blind per-category default (lib/placementBoxes.ts).
+ *
+ * KNOWN LIMITATION — no combined replace: this only paints the masked
+ * region onto whatever `roomPhotoInput` already looks like — it doesn't
+ * know or care whether something else is already sitting there. Confirmed
+ * via real testing: asking to swap a placed sofa for a different one, by
+ * proposing only the new item, produced two full sofas in one render
+ * (the old one's pixels were never touched). There's no single "erase old
+ * + paint new" primitive yet — a real swap needs an explicit
+ * removeExistingObject call first. lib/ai/designer.ts's system prompt is
+ * responsible for recognizing swap language and proposing both steps
+ * rather than just this one. See docs/BLUEPRINT.md §9 item 9 for the full
+ * writeup and the planned real fix (EditPlan's `{op: replace}`).
  */
 
 export function compositingEnabled(): boolean {

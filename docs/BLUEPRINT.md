@@ -336,6 +336,20 @@ What is **architecturally dead-ended** (and why it doesn't carry forward):
    walkthrough (3D from photos) stays out of scope until the 2D loop prints money —
    revisit with Gaussian-splatting-class tech as a Phase-5 wow, not a foundation.
 8. **No accounts/persistence.** Sessions die with the tab. → auth + rooms from Phase 1.
+9. **No combined replace operation.** Swapping a placed item for a different one is NOT
+   one step today — a render only paints its own masked region onto whatever the photo
+   already looks like, so proposing just the new item leaves the old one's pixels
+   sitting there untouched and both end up visible (confirmed via real testing: "give
+   me another sofa" produced two full sofas side by side). Current mitigation: the
+   Designer Agent is prompted to recognize swap language ("a different X," "replace
+   the Y") and propose an explicit remove_existing_object + propose_edit pair instead
+   of silently adding on top (see lib/ai/designer.ts's buildSystemPrompt, rule 4); the
+   client-side hotspot bookkeeping also drops a stale entry when a new placement's box
+   heavily overlaps it (lib/placementBoxes.ts's boxOverlapRatio), but that only cleans
+   up bookkeeping, not pixels the two objects don't overlap in. → EditPlan's
+   `{op: replace, target, product}` (§4.2) is the real fix — erase the target's actual
+   footprint and paint the new item in one masked pass. Deliberately not built in this
+   pass; scope as its own task when picked up.
 
 ---
 

@@ -627,6 +627,13 @@ export default function Designer() {
       // it's a different catalog id, but two physical objects can't
       // actually overlap this much in a real room. Treat a heavily
       // overlapping placement as a replacement regardless of identity.
+      // NOTE: this only fixes the bookkeeping (hotspots, saved-collection
+      // data) — it can't erase the old item's actual PIXELS if its real
+      // footprint didn't fall inside the new item's mask (which is exactly
+      // what happened in the confirmed failure this was built from — see
+      // lib/ai/composite.ts's module doc comment and docs/BLUEPRINT.md §9
+      // item 9 for the full picture and the real fix this is standing in
+      // for).
       const OVERLAP_REPLACE_THRESHOLD = 0.3;
       const overlapsNewPlacement = (o: PlacedObject) => boxOverlapRatio(o.box, body.maskBox) > OVERLAP_REPLACE_THRESHOLD;
       const dedupedPrevObjects = prevObjects.filter((o) => !isSameProduct(o) && !overlapsNewPlacement(o));
