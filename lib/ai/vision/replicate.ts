@@ -40,14 +40,32 @@ function authHeader(): Record<string, string> {
  * as the model updates. Throws on failure/timeout; callers decide how to
  * degrade (every caller in this codebase treats vision failures as
  * "feature unavailable this turn", never a hard crash).
+ *
+ * Two-step create, not the shorthand `POST /v1/models/{owner}/{name}/predictions`
+ * this originally used — a real, confirmed test (live curl against a real,
+ * public, 2.7M-run model, `schananas/grounded_sam`, using that model's own
+ * documented example input) got a flat 404 from that shorthand every time,
+ * despite it being documented as supported. The classic flow — resolve the
+ * model's current version hash via GET, then POST /v1/predictions with that
+ * version explicit — worked immediately in the same live test. Adds one
+ * extra GET per call (unbilled, model metadata only) in exchange for
+ * actually working.
  */
 export async function runReplicateModel(modelSlug: string, input: Record<string, unknown>): Promise<unknown> {
   if (!replicateEnabled()) throw new Error("REPLICATE_API_TOKEN not configured");
 
-  const createRes = await fetch(`${API_BASE}/models/${modelSlug}/predictions`, {
+  const modelRes = await fetch(`${API_BASE}/models/${modelSlug}`, { headers: authHeader() });
+  if (!modelRes.ok) {
+    throw new Error(`Replicate model lookup failed: ${modelRes.status} ${await modelRes.text()}`);
+  }
+  const model = (await modelRes.json()) as { latest_version?: { id?: string } };
+  const version = model.latest_version?.id;
+  if (!version) throw new Error(`Replicate model "${modelSlug}" has no latest_version`);
+
+  const createRes = await fetch(`${API_BASE}/predictions`, {
     method: "POST",
     headers: { ...authHeader(), "Content-Type": "application/json" },
-    body: JSON.stringify({ input }),
+    body: JSON.stringify({ version, input }),
   });
   if (!createRes.ok) {
     throw new Error(`Replicate prediction create failed: ${createRes.status} ${await createRes.text()}`);
