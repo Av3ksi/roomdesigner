@@ -93,9 +93,17 @@ export async function POST(req: NextRequest) {
   const productBuffer = Buffer.from(await productRes.arrayBuffer());
 
   try {
+    // Quality history, from real testing: "low" produced structurally weak
+    // geometry (a small armchair shape instead of a real 3-seater); "medium"
+    // fixed the geometry once the mask aspect ratio and reference photo were
+    // also fixed, but still under-rendered product detail (arms, cushion
+    // count) even with a correctly-shaped mask and a clean reference photo —
+    // the app's own identityCheck QA step (below) caught this automatically.
+    // "high" is the next real test of whether quality tier is still the
+    // ceiling; it costs meaningfully more per render than medium.
     const result = useFlux
       ? await compositeProductIntoRoomFlux(roomBuffer, productBuffer, category as ProductCategory, [], explicitBox, wallAngleDeg)
-      : await compositeProductIntoRoom(roomBuffer, productBuffer, category as ProductCategory, [], "medium", explicitBox, wallAngleDeg);
+      : await compositeProductIntoRoom(roomBuffer, productBuffer, category as ProductCategory, [], "high", explicitBox, wallAngleDeg);
 
     // The render succeeded — this is the actual "one free generation" spend,
     // counted here (not in the separate /api/rooms/[id]/versions persistence
