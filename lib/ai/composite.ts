@@ -292,14 +292,9 @@ export async function compositeProductIntoRoom(
   const body = (await res.json()) as { data?: { b64_json?: string }[] };
   const b64 = body.data?.[0]?.b64_json;
   if (!b64) throw new Error("OpenAI response had no image data");
+  const editedBuffer = Buffer.from(b64, "base64");
 
-  // Harmonize BEFORE the feathered blend-back: matches the inserted
-  // product's color/tone to the room's real surrounding light before the
-  // edges get softened, so the two corrections compose cleanly rather
-  // than fighting each other.
-  const harmonized = await harmonizeRegion(roomPhoto, Buffer.from(b64, "base64"), width, height, paddedBox);
-
-  // A real, reported failure: the box-shaped blend still leaves a visible
+  // A real, reported failure: the box-shaped blend leaves a visible
   // rectangular tint on the floor/wall AROUND the product, since the
   // padded box is bigger than the product's actual silhouette — real
   // furniture isn't rectangular. When Replicate is configured, segment
@@ -308,20 +303,28 @@ export async function compositeProductIntoRoom(
   // segmenting the product's own reference photo instead — that would
   // lock insertion into the reference's exact studio pose/angle
   // regardless of the room's real perspective and wallAngleDeg rotation.
-  // Segmenting the RENDERED result has the right information: the
-  // product's actual pose as it was actually painted into THIS room.
   // boxOverlapRatio sanity-checks the result against where we actually
   // asked for it: a low overlap means segmentation likely found a
-  // DIFFERENT object of the same category already in the room (a real
-  // risk once a room has more than one chair, say), not the one we just
-  // placed — fall back to the box blend rather than trust a wrong match.
+  // DIFFERENT object of the same category already in the room, not the
+  // one we just placed — fall back to the plain box blend rather than
+  // trust a wrong match.
+  //
+  // Segmentation must run BEFORE harmonization, and harmonization must be
+  // SKIPPED entirely when segmentation doesn't produce a usable mask — a
+  // real, confirmed regression came from harmonizing against the padded
+  // box instead: the box mixes the product's own pixels with slices of
+  // wall/floor also inside it, so one blanket color statistic for the
+  // whole box doesn't represent either well, and applying it uniformly
+  // produced a visible flat-colored wash. See harmonizeRegion's doc
+  // comment in lib/ai/imageMasking.ts for the full story.
   let blended: Buffer;
-  const seg = await segmentExistingFurniture(harmonized, category, productDescription ?? undefined);
+  const seg = await segmentExistingFurniture(editedBuffer, category, productDescription ?? undefined);
   if (seg && seg.width === width && seg.height === height && boxOverlapRatio(seg.box, paddedBox) > 0.5) {
     const featheredSegAlpha = await featherAlpha(seg.alpha, width, height, 8);
+    const harmonized = await harmonizeRegion(roomPhoto, editedBuffer, width, height, featheredSegAlpha);
     blended = await blendWithAlpha(roomPhoto, harmonized, width, height, featheredSegAlpha);
   } else {
-    blended = await blendEditedRegion(roomPhoto, harmonized, width, height, paddedBox);
+    blended = await blendEditedRegion(roomPhoto, editedBuffer, width, height, paddedBox);
   }
   return { imageBase64: blended.toString("base64"), maskBox, placementSource };
 }

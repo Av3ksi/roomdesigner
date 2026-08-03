@@ -135,26 +135,36 @@ export async function blendEditedRegion(
  * known limitation of generative inpainting itself, not something a mask
  * alone fixes — it's why tools like Photoshop's Generative Fill ship a
  * separate "Harmonize" pass rather than relying on the fill step alone.
- * Shifts the edited region's per-channel mean/stddev toward a sample of
- * the room photo's OWN pixels immediately around the box — a simplified,
- * RGB-space version of classic Reinhard color transfer (not full
- * LAB-space, to keep this dependency-free and easy to verify) — blended
- * in at `strength` rather than applied fully, since a small sample's
- * statistics can be noisy and a full correction can overshoot into an
- * unnatural result. Call this BEFORE blendEditedRegion/blendWithAlpha —
- * it only touches pixels inside the box, so the two compose cleanly.
  *
- * Samples the "context" (target) color from a ring around the box rather
- * than the whole photo — a room can have very different lighting across
- * it (a sunlit window vs. a shaded corner), so the immediate surroundings
- * are the relevant reference, not a global average.
+ * REQUIRES a real object-shaped alpha (a segmentation mask, e.g. from
+ * lib/ai/vision/segmentation.ts) — not a rectangular box. A first version
+ * of this function took a box and computed ONE statistic for everything
+ * inside it; a real, confirmed regression from that: the box contains
+ * BOTH the product AND slices of wall/floor also inside the padded
+ * region, so one blanket "average color" doesn't represent either well,
+ * and applying it uniformly produced a visible flat-colored wash across
+ * the whole box — worse than doing nothing. Only pixels where `alpha` is
+ * bright (>128) count as "the product" for computing its own statistics;
+ * only pixels clearly outside any dilated/feathered edge (<32) count as
+ * "context". If you don't have a real object mask, don't call this at
+ * all — a caller with only a box should skip harmonization entirely
+ * rather than pass a box-shaped alpha in, which reproduces the same bug.
+ *
+ * Shifts the product's own per-channel mean/stddev toward a sample of the
+ * room photo's OWN pixels immediately around it — a simplified, RGB-space
+ * version of classic Reinhard color transfer (not full LAB-space, to keep
+ * this dependency-free and easy to verify). The correction is applied
+ * per-pixel, weighted by that pixel's own alpha value and `strength`
+ * together, so a feathered edge gets a gentler correction than the solid
+ * interior — composes cleanly with a subsequent blendWithAlpha() call
+ * using the same alpha, rather than fighting it at the boundary.
  */
 export async function harmonizeRegion(
   original: Buffer,
   edited: Buffer,
   width: number,
   height: number,
-  box: DetectionBox,
+  alpha: Buffer,
   strength = 0.6,
 ): Promise<Buffer> {
   const [originalRgba, editedRgba] = await Promise.all([
@@ -162,50 +172,61 @@ export async function harmonizeRegion(
     sharp(edited).resize(width, height).ensureAlpha().raw().toBuffer(),
   ]);
 
-  const x0 = Math.max(0, Math.round(box.x * width));
-  const y0 = Math.max(0, Math.round(box.y * height));
-  const x1 = Math.min(width, Math.round((box.x + box.w) * width));
-  const y1 = Math.min(height, Math.round((box.y + box.h) * height));
-  if (x1 <= x0 || y1 <= y0) return edited;
+  let minX = width, minY = height, maxX = -1, maxY = -1;
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      if (alpha[y * width + x] > 128) {
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+      }
+    }
+  }
+  if (maxX < minX || maxY < minY) return edited; // nothing bright in the mask — nothing to harmonize
 
-  const ringMargin = Math.max(8, Math.round(Math.min(x1 - x0, y1 - y0) * 0.25));
-  const rx0 = Math.max(0, x0 - ringMargin);
-  const ry0 = Math.max(0, y0 - ringMargin);
-  const rx1 = Math.min(width, x1 + ringMargin);
-  const ry1 = Math.min(height, y1 + ringMargin);
+  // Context ring anchored to the object's own real extent (not a generic
+  // padded box) — a room can have very different lighting across it (a
+  // sunlit window vs. a shaded corner), so the immediate surroundings are
+  // the relevant reference, not a global average.
+  const ringMargin = Math.max(8, Math.round(Math.min(maxX - minX, maxY - minY) * 0.25));
+  const rx0 = Math.max(0, minX - ringMargin);
+  const ry0 = Math.max(0, minY - ringMargin);
+  const rx1 = Math.min(width, maxX + ringMargin);
+  const ry1 = Math.min(height, maxY + ringMargin);
 
   const contextSum = [0, 0, 0];
   const contextSumSq = [0, 0, 0];
   let contextCount = 0;
-  for (let y = ry0; y < ry1; y++) {
-    for (let x = rx0; x < rx1; x++) {
-      if (x >= x0 && x < x1 && y >= y0 && y < y1) continue; // inside the box itself, not context
-      const base = (y * width + x) * 4;
-      for (let c = 0; c < 3; c++) {
-        const v = originalRgba[base + c];
-        contextSum[c] += v;
-        contextSumSq[c] += v * v;
-      }
-      contextCount++;
-    }
-  }
-  if (contextCount === 0) return edited; // box fills the whole image — nothing to sample
-
   const editedSum = [0, 0, 0];
   const editedSumSq = [0, 0, 0];
   let editedCount = 0;
-  for (let y = y0; y < y1; y++) {
-    for (let x = x0; x < x1; x++) {
-      const base = (y * width + x) * 4;
-      for (let c = 0; c < 3; c++) {
-        const v = editedRgba[base + c];
-        editedSum[c] += v;
-        editedSumSq[c] += v * v;
+
+  for (let y = ry0; y < ry1; y++) {
+    for (let x = rx0; x < rx1; x++) {
+      const i = y * width + x;
+      const a = alpha[i];
+      const base = i * 4;
+      if (a > 128) {
+        for (let c = 0; c < 3; c++) {
+          const v = editedRgba[base + c];
+          editedSum[c] += v;
+          editedSumSq[c] += v * v;
+        }
+        editedCount++;
+      } else if (a < 32) {
+        for (let c = 0; c < 3; c++) {
+          const v = originalRgba[base + c];
+          contextSum[c] += v;
+          contextSumSq[c] += v * v;
+        }
+        contextCount++;
       }
-      editedCount++;
+      // 32 <= a <= 128 (the feathered transition) counts toward neither —
+      // ambiguous whether it's "product" or "background" in either image.
     }
   }
-  if (editedCount === 0) return edited;
+  if (contextCount === 0 || editedCount === 0) return edited;
 
   const contextMean = [0, 0, 0];
   const contextStd = [0, 0, 0];
@@ -219,16 +240,17 @@ export async function harmonizeRegion(
   }
 
   const out = Buffer.from(editedRgba);
-  for (let y = y0; y < y1; y++) {
-    for (let x = x0; x < x1; x++) {
-      const base = (y * width + x) * 4;
-      for (let c = 0; c < 3; c++) {
-        const v = editedRgba[base + c];
-        const ratio = contextStd[c] / editedStd[c];
-        const fullyMatched = (v - editedMean[c]) * ratio + contextMean[c];
-        const corrected = v * (1 - strength) + fullyMatched * strength;
-        out[base + c] = Math.max(0, Math.min(255, Math.round(corrected)));
-      }
+  for (let i = 0; i < width * height; i++) {
+    const a = alpha[i];
+    if (a === 0) continue; // blendWithAlpha will use 100% original here anyway
+    const weight = (a / 255) * strength;
+    const base = i * 4;
+    for (let c = 0; c < 3; c++) {
+      const v = editedRgba[base + c];
+      const ratio = contextStd[c] / editedStd[c];
+      const fullyMatched = (v - editedMean[c]) * ratio + contextMean[c];
+      const corrected = v * (1 - weight) + fullyMatched * weight;
+      out[base + c] = Math.max(0, Math.min(255, Math.round(corrected)));
     }
   }
 

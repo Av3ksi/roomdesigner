@@ -1,7 +1,7 @@
 import sharp from "sharp";
 import { fetchReplicateOutput, replicateEnabled, runReplicateModel } from "./vision/replicate";
 import type { SegmentationResult } from "./vision/segmentation";
-import { alphaToGreyscaleMaskPng, blendWithAlpha, boxToAlphaBuffer, harmonizeRegion } from "./imageMasking";
+import { alphaToGreyscaleMaskPng, blendWithAlpha, boxToAlphaBuffer } from "./imageMasking";
 import {
   CATEGORY_PLACEMENT_HINT,
   NO_PEOPLE_INSTRUCTION,
@@ -133,16 +133,18 @@ export async function compositeProductIntoRoomFlux(
   if (!imageRef) throw new Error("FLUX Fill returned no image output");
   const editedBuffer = await resolveOutputBuffer(imageRef);
 
-  // Same color/tone harmonization as the OpenAI path (see lib/ai/imageMasking.ts's
-  // harmonizeRegion doc comment) — applied before the feathered blend-back so the
-  // two corrections compose cleanly instead of fighting each other.
-  const harmonized = await harmonizeRegion(roomPhoto, editedBuffer, width, height, paddedBox);
-
+  // No color harmonization on this path (unlike the OpenAI path in
+  // lib/ai/composite.ts) — harmonizeRegion now requires a real
+  // object-shaped alpha (a segmentation mask), not a box, after a
+  // confirmed regression from harmonizing against a padded box (see its
+  // doc comment). This fallback path doesn't do that segmentation step,
+  // so it stays without harmonization rather than reproduce that bug.
+  //
   // Same local guarantee as the OpenAI path — FLUX isn't trusted to leave
   // pixels outside the mask untouched either, only this time WITH feather
   // for a natural-looking blend seam.
   const blendAlpha = await boxToAlphaBuffer(width, height, paddedBox);
-  const blended = await blendWithAlpha(roomPhoto, harmonized, width, height, blendAlpha);
+  const blended = await blendWithAlpha(roomPhoto, editedBuffer, width, height, blendAlpha);
   return { imageBase64: blended.toString("base64"), maskBox, placementSource };
 }
 
