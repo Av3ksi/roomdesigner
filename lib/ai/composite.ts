@@ -2,7 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import sharp from "sharp";
 import { MODEL as CLAUDE_MODEL, aiEnabled } from "./claude";
 import { blendEditedRegion, buildMaskPng } from "./imageMasking";
-import { DEFAULT_CATEGORY_BOX, clampBox, describeRoughLocation, unionBox } from "../placementBoxes";
+import { DEFAULT_CATEGORY_BOX, clampBox, describeRoughLocation, padBoxForEdit, unionBox } from "../placementBoxes";
 import type { Detection, DetectionBox, ProductCategory } from "../types";
 
 /**
@@ -116,14 +116,6 @@ export interface CompositeResult {
 }
 
 /**
- * The mask is padded slightly beyond the placement box so the model has
- * room to blend shadows and contact edges into the surrounding pixels —
- * a hard mask edge exactly at the product's silhouette produces visible
- * seams. The hotspot still gets the unpadded box.
- */
-export const MASK_PADDING = 0.04;
-
-/**
  * gpt-image-1.5's multi-image edit doesn't reliably treat a second
  * reference image as a hard content constraint — a real, confirmed
  * failure had it paint a generic console table into the mask instead of
@@ -220,12 +212,7 @@ export async function compositeProductIntoRoom(
   const maskBox = explicitBox ? clampBox(explicitBox) : detectedBox ?? DEFAULT_CATEGORY_BOX[category];
   const placementSource: CompositeResult["placementSource"] = explicitBox ? "explicit" : detectedBox ? "detection" : "default";
 
-  const paddedBox = clampBox({
-    x: maskBox.x - MASK_PADDING,
-    y: maskBox.y - MASK_PADDING,
-    w: maskBox.w + MASK_PADDING * 2,
-    h: maskBox.h + MASK_PADDING * 2,
-  });
+  const paddedBox = padBoxForEdit(maskBox);
   console.log("[maison] compositeProductIntoRoom mask", {
     originalSize: await sharp(roomPhotoInput).metadata().then((m) => `${m.width}x${m.height}`),
     resizedTo: `${width}x${height}`,
@@ -258,17 +245,31 @@ export async function compositeProductIntoRoom(
     "prompt",
     "The first image is a room photo. The second image is a real product photo — " +
       `a real ${category}${productDescription ? `: ${productDescription}` : ""}. ` +
-      "Composite the EXACT product shown in the second image into the masked region of the first image — " +
-      "match the room's perspective, scale and lighting. CRITICAL: the masked region must contain ONLY this " +
-      `exact ${category} and nothing else — never substitute a different piece of furniture or object (no ` +
-      "consoles, shelves, side tables, decor, or any other category), even if it seems like a more natural fit " +
-      "for the room. If the reference photo is unclear, still insert something that resembles it as closely as " +
-      "possible — do not default to a generic or different object. Leave everything outside the masked region " +
-      "unchanged. " +
+      "Composite the EXACT product shown in the second image into the masked region of the first image. CRITICAL: " +
+      `the masked region must contain ONLY this exact ${category} and nothing else — never substitute a different ` +
+      "piece of furniture or object (no consoles, shelves, side tables, decor, or any other category), even if it " +
+      "seems like a more natural fit for the room. If the reference photo is unclear, still insert something that " +
+      "resembles it as closely as possible — do not default to a generic or different object. Leave everything " +
+      "outside the masked region unchanged. " +
+      // Real, confirmed failures this app has actually produced, each addressed explicitly rather
+      // than left to a generic "match the room" instruction: floating/sinking off the real floor
+      // plane, a light/shadow direction that doesn't match the room's own lighting, no contact
+      // shadow at all, and — the newest one — a wide item (e.g. a corner sofa) painted larger than
+      // the masked region, then visibly amputated at a hard edge once this app's own local
+      // blend-back guarantee (lib/ai/imageMasking.ts) discards anything outside it.
+      "Ground it exactly on the real floor plane at this position — resting flush on the floor, never floating " +
+      "above it or sinking into it. Match the room's actual lighting: the highlight and shadow direction on the " +
+      "product must follow the same light source(s) already visible in the room photo, not a generic studio " +
+      "light. Add a soft, physically plausible contact shadow directly beneath and behind it, consistent with " +
+      "that same light direction. Scale it realistically against real reference points already visible in the " +
+      "room — door height, window sill, floor plank or tile width, existing furniture — not against the size of " +
+      "the mask itself. The product must fit entirely within the masked region: anything painted outside it will " +
+      "be discarded outright, not blended, so scale and pose it to stay inside those bounds rather than overflow " +
+      "past the edge. " +
       // With an explicit user/AI-chosen box the mask IS the intended position — a generic
       // category hint ("against a wall") could fight a deliberate mid-room placement.
       (explicitBox
-        ? "The masked region marks the exact intended position — fit the product naturally within it, resting on the floor or surface with a realistic contact shadow."
+        ? "The masked region marks the exact intended position — fit the product naturally within it."
         : `Place it realistically the way it would actually sit in a lived-in room: ${CATEGORY_PLACEMENT_HINT[category]}.`) +
       wallAngleInstruction +
       NO_PEOPLE_INSTRUCTION,
@@ -328,12 +329,7 @@ export async function removeExistingObject(
   const width = meta.width ?? 1024;
   const height = meta.height ?? 1024;
 
-  const paddedBox = clampBox({
-    x: box.x - MASK_PADDING,
-    y: box.y - MASK_PADDING,
-    w: box.w + MASK_PADDING * 2,
-    h: box.h + MASK_PADDING * 2,
-  });
+  const paddedBox = padBoxForEdit(box);
   const maskPng = await buildMaskPng(width, height, paddedBox);
   const roomImage = await toImageBlob(roomPhoto);
 
@@ -483,12 +479,7 @@ export async function composeSceneWithProducts(
     );
   } else {
     const union = unionBox(items.map((i) => i.box));
-    const maskRegion = clampBox({
-      x: union.x - MASK_PADDING,
-      y: union.y - MASK_PADDING,
-      w: union.w + MASK_PADDING * 2,
-      h: union.h + MASK_PADDING * 2,
-    });
+    const maskRegion = padBoxForEdit(union);
     console.log("[maison] composeSceneWithProducts mask", { width, height, itemCount: items.length, quality, maskRegion });
     const maskPng = await buildMaskPng(width, height, maskRegion);
     form.append("mask", new Blob([new Uint8Array(maskPng)], { type: "image/png" }), "mask.png");

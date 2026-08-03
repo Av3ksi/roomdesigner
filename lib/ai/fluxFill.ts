@@ -5,14 +5,13 @@ import { alphaToGreyscaleMaskPng, blendWithAlpha, boxToAlphaBuffer } from "./ima
 import {
   CATEGORY_PLACEMENT_HINT,
   COMPOSITE_MAX_EDGE,
-  MASK_PADDING,
   NO_PEOPLE_INSTRUCTION,
   describeProductForPrompt,
   matchingDetectionBox,
   type CompositeResult,
   type RemovalResult,
 } from "./composite";
-import { DEFAULT_CATEGORY_BOX, clampBox } from "../placementBoxes";
+import { DEFAULT_CATEGORY_BOX, clampBox, padBoxForEdit } from "../placementBoxes";
 import type { Detection, DetectionBox, ProductCategory } from "../types";
 
 /**
@@ -95,12 +94,7 @@ export async function compositeProductIntoRoomFlux(
   const maskBox = explicitBox ? clampBox(explicitBox) : detectedBox ?? DEFAULT_CATEGORY_BOX[category];
   const placementSource: CompositeResult["placementSource"] = explicitBox ? "explicit" : detectedBox ? "detection" : "default";
 
-  const paddedBox = clampBox({
-    x: maskBox.x - MASK_PADDING,
-    y: maskBox.y - MASK_PADDING,
-    w: maskBox.w + MASK_PADDING * 2,
-    h: maskBox.h + MASK_PADDING * 2,
-  });
+  const paddedBox = padBoxForEdit(maskBox);
   console.log("[maison] compositeProductIntoRoomFlux mask", { placementSource, maskBox, paddedBox });
 
   // The mask fed to the model itself stays hard-edged (no feather) — the
@@ -186,12 +180,7 @@ export async function removeExistingObjectFlux(
   const width = meta.width ?? 1024;
   const height = meta.height ?? 1024;
 
-  const paddedBox = clampBox({
-    x: box.x - MASK_PADDING,
-    y: box.y - MASK_PADDING,
-    w: box.w + MASK_PADDING * 2,
-    h: box.h + MASK_PADDING * 2,
-  });
+  const paddedBox = padBoxForEdit(box);
   const modelAlpha = await boxToAlphaBuffer(width, height, paddedBox, 0);
   const maskPng = await alphaToGreyscaleMaskPng(modelAlpha, width, height);
 

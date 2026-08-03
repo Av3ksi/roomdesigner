@@ -72,6 +72,32 @@ export function boxOverlapRatio(a: DetectionBox, b: DetectionBox): number {
   return smallerArea > 0 ? interArea / smallerArea : 0;
 }
 
+/**
+ * Padding added around a placement box before it becomes an edit mask —
+ * gives the model room to blend shadows/contact edges rather than a hard,
+ * silhouette-exact boundary. A real, confirmed failure: a flat,
+ * size-independent padding constant gave a wide corner sofa (spanning
+ * ~30%+ of the frame) proportionally far LESS legroom than a small decor
+ * item gets — and the app's own local blend-back guarantee (see
+ * lib/ai/imageMasking.ts) enforces the padded boundary with zero
+ * tolerance, so anything the model painted past it isn't softened, it's
+ * discarded outright. Visually that reads as the object being amputated
+ * at a hard edge. Padding now scales with the box's own size (12% of its
+ * width/height per axis) with `flatPadding` as a floor, so a wide item
+ * automatically gets more room than a small one instead of the same flat
+ * amount either way.
+ */
+export function padBoxForEdit(box: DetectionBox, flatPadding = 0.04, proportional = 0.12): DetectionBox {
+  const padX = Math.max(flatPadding, box.w * proportional);
+  const padY = Math.max(flatPadding, box.h * proportional);
+  return clampBox({
+    x: box.x - padX,
+    y: box.y - padY,
+    w: box.w + padX * 2,
+    h: box.h + padY * 2,
+  });
+}
+
 /** The smallest box that contains every input box — used to build one combined edit mask covering several placement spots at once. */
 export function unionBox(boxes: DetectionBox[]): DetectionBox {
   const x0 = Math.min(...boxes.map((b) => b.x));
