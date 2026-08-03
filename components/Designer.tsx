@@ -10,7 +10,7 @@ import {
   loadImageAspectRatio,
   reshapeBoxToAspectRatio,
 } from "@/lib/clientImage";
-import { clampBox, DEFAULT_CATEGORY_BOX, describeRoughLocation } from "@/lib/placementBoxes";
+import { boxOverlapRatio, clampBox, DEFAULT_CATEGORY_BOX, describeRoughLocation } from "@/lib/placementBoxes";
 import RoomHotspots, { type HotspotItem } from "@/components/RoomHotspots";
 import UpgradeModal from "@/components/UpgradeModal";
 import { useMaisonStore } from "@/lib/store";
@@ -621,7 +621,15 @@ export default function Designer() {
         proposal.kind === "add"
           ? o.kind === "catalog" && o.product.id === proposal.product.id
           : o.kind === "web" && o.webProduct.url === proposal.webProduct.url;
-      const dedupedPrevObjects = prevObjects.filter((o) => !isSameProduct(o));
+      // A DIFFERENT product landing in nearly the same spot (e.g. "give me
+      // another sofa" after already placing one) is a real, confirmed
+      // failure too — the exact-product check above doesn't catch it since
+      // it's a different catalog id, but two physical objects can't
+      // actually overlap this much in a real room. Treat a heavily
+      // overlapping placement as a replacement regardless of identity.
+      const OVERLAP_REPLACE_THRESHOLD = 0.3;
+      const overlapsNewPlacement = (o: PlacedObject) => boxOverlapRatio(o.box, body.maskBox) > OVERLAP_REPLACE_THRESHOLD;
+      const dedupedPrevObjects = prevObjects.filter((o) => !isSameProduct(o) && !overlapsNewPlacement(o));
 
       commitVersion(body.imageBase64, `V${versions.length} · ${label.slice(0, 24)}`, [...dedupedPrevObjects, newObject]);
       setProposals((p) => p.filter((_, i) => i !== index));

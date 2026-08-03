@@ -51,6 +51,27 @@ export function describeRoughLocation(box: DetectionBox): string {
   return `${v} ${h}`;
 }
 
+/**
+ * Fraction of the smaller box's area that's covered by the intersection —
+ * used to tell "this is a replacement for what's already there" apart from
+ * "this is a second, distinct item elsewhere in the room." A real,
+ * confirmed failure: asking for "another sofa" after already placing one
+ * rendered a SECOND full sofa crammed in next to the first — two different
+ * catalog products, so the existing exact-product dedup never caught it,
+ * but their placement boxes overlapped heavily. Physical objects that
+ * overlap this much can't both really be there; the newer one replaces
+ * the older one.
+ */
+export function boxOverlapRatio(a: DetectionBox, b: DetectionBox): number {
+  const x0 = Math.max(a.x, b.x);
+  const y0 = Math.max(a.y, b.y);
+  const x1 = Math.min(a.x + a.w, b.x + b.w);
+  const y1 = Math.min(a.y + a.h, b.y + b.h);
+  const interArea = Math.max(0, x1 - x0) * Math.max(0, y1 - y0);
+  const smallerArea = Math.min(a.w * a.h, b.w * b.h);
+  return smallerArea > 0 ? interArea / smallerArea : 0;
+}
+
 /** The smallest box that contains every input box — used to build one combined edit mask covering several placement spots at once. */
 export function unionBox(boxes: DetectionBox[]): DetectionBox {
   const x0 = Math.min(...boxes.map((b) => b.x));
