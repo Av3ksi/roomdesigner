@@ -19,16 +19,22 @@
  * got picked and swap scripts/compose-finished-room.ts in for a specific
  * category if a pick looks off.
  *
- * Usage:
- *   npx tsx scripts/generate-showroom-rooms.ts <room1.jpg> [room2.jpg] [room3.jpg]
+ * Usage — zero-argument mode (the easy one):
+ *   Drop your room photo at "room.jpg" in the project root (already
+ *   gitignored — same file every other test-composite/test-generate
+ *   script in this folder already uses) and just run:
+ *     npx tsx scripts/generate-showroom-rooms.ts
+ *   That one photo is reused for all 3 concepts, which is normal for a
+ *   showroom demo.
  *
- * One room photo per concept, in order (Scandinavian, Dark Luxury,
- * Japandi/Organic Modern) — pass just one path to reuse the same room
- * photo for all three, which is normal for a showroom demo.
+ * Usage — explicit paths, one photo per concept:
+ *   npx tsx scripts/generate-showroom-rooms.ts <room1.jpg> [room2.jpg] [room3.jpg]
+ *   In order: Scandinavian, Dark Luxury, Japandi/Organic Modern. Fewer
+ *   than 3 paths given reuses the last one for the rest.
  *
  * Reads ANTHROPIC_API_KEY, OPENAI_API_KEY, DATABASE_URL from .env.
  */
-import { readFileSync } from "fs";
+import { existsSync, readFileSync } from "fs";
 import { checkRenderedProductIdentity } from "../lib/ai/identityCheck";
 import { compositingEnabled, composeSceneWithProducts, reshapeBoxForProduct, type SceneItem } from "../lib/ai/composite";
 import { suggestPlacements } from "../lib/ai/placement";
@@ -179,10 +185,20 @@ async function buildConcept(concept: Concept, catalog: Product[], roomPath: stri
   console.log(`  ✓ Saved — CHF ${totalPrice} across ${items.length} item(s). View at /looks/${id}.`);
 }
 
+const DEFAULT_ROOM_PATH = "room.jpg";
+
 async function main() {
-  const roomPaths = process.argv.slice(2);
-  if (roomPaths.length === 0) {
-    console.error("Usage: npx tsx scripts/generate-showroom-rooms.ts <room1.jpg> [room2.jpg] [room3.jpg]");
+  const argPaths = process.argv.slice(2);
+  const roomPaths = argPaths.length > 0 ? argPaths : [DEFAULT_ROOM_PATH];
+
+  if (!existsSync(roomPaths[0])) {
+    console.error(
+      argPaths.length > 0
+        ? `Room photo not found: ${roomPaths[0]}`
+        : `No room photo given and "${DEFAULT_ROOM_PATH}" doesn't exist in the project root. Drop your photo there ` +
+          `(it's gitignored already) and re-run with no arguments, or pass a path directly: ` +
+          "npx tsx scripts/generate-showroom-rooms.ts <room1.jpg> [room2.jpg] [room3.jpg]",
+    );
     process.exit(1);
   }
   if (!compositingEnabled()) {
