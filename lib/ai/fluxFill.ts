@@ -4,14 +4,13 @@ import type { SegmentationResult } from "./vision/segmentation";
 import { alphaToGreyscaleMaskPng, blendWithAlpha, boxToAlphaBuffer, harmonizeRegion } from "./imageMasking";
 import {
   CATEGORY_PLACEMENT_HINT,
-  COMPOSITE_MAX_EDGE,
   NO_PEOPLE_INSTRUCTION,
   describeProductForPrompt,
   matchingDetectionBox,
   type CompositeResult,
   type RemovalResult,
 } from "./composite";
-import { DEFAULT_CATEGORY_BOX, clampBox, padBoxForEdit } from "../placementBoxes";
+import { COMPOSITE_MAX_EDGE, DEFAULT_CATEGORY_BOX, clampBox, padBoxForEdit } from "../placementBoxes";
 import type { Detection, DetectionBox, ProductCategory } from "../types";
 
 /**

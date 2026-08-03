@@ -1,7 +1,6 @@
 import sharp from "sharp";
 import { fetchReplicateOutput, replicateEnabled, runReplicateModel } from "./replicate";
-import { COMPOSITE_MAX_EDGE } from "../composite";
-import { clampBox } from "../../placementBoxes";
+import { COMPOSITE_MAX_EDGE, clampBox } from "../../placementBoxes";
 import type { DetectionBox, ProductCategory } from "../../types";
 
 /**

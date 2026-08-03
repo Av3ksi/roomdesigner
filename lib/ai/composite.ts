@@ -1,8 +1,17 @@
 import Anthropic from "@anthropic-ai/sdk";
 import sharp from "sharp";
 import { MODEL as CLAUDE_MODEL, aiEnabled } from "./claude";
-import { blendEditedRegion, buildMaskPng, harmonizeRegion } from "./imageMasking";
-import { DEFAULT_CATEGORY_BOX, clampBox, describeRoughLocation, padBoxForEdit, unionBox } from "../placementBoxes";
+import { blendEditedRegion, blendWithAlpha, buildMaskPng, featherAlpha, harmonizeRegion } from "./imageMasking";
+import { segmentExistingFurniture } from "./vision/segmentation";
+import {
+  COMPOSITE_MAX_EDGE,
+  DEFAULT_CATEGORY_BOX,
+  boxOverlapRatio,
+  clampBox,
+  describeRoughLocation,
+  padBoxForEdit,
+  unionBox,
+} from "../placementBoxes";
 import type { Detection, DetectionBox, ProductCategory } from "../types";
 
 /**
@@ -176,16 +185,6 @@ export async function describeProductForPrompt(productPhoto: Buffer): Promise<st
   }
 }
 
-/**
- * Real photos (a phone camera shot, easily 4000×3000+) are far larger than
- * an image-edit API needs — sending one uncompressed is slow to upload,
- * slower for the model to process, and risks silently hitting whatever
- * size/dimension limit the API enforces. Downscaling first is standard
- * practice, and this app already does it for every Claude vision call
- * (lib/ai/placement.ts, lib/ai/identityCheck.ts) — this was the one place
- * still sending the original, full-resolution buffer straight through.
- */
-export const COMPOSITE_MAX_EDGE = 2048;
 
 export async function compositeProductIntoRoom(
   roomPhotoInput: Buffer,
@@ -299,7 +298,31 @@ export async function compositeProductIntoRoom(
   // edges get softened, so the two corrections compose cleanly rather
   // than fighting each other.
   const harmonized = await harmonizeRegion(roomPhoto, Buffer.from(b64, "base64"), width, height, paddedBox);
-  const blended = await blendEditedRegion(roomPhoto, harmonized, width, height, paddedBox);
+
+  // A real, reported failure: the box-shaped blend still leaves a visible
+  // rectangular tint on the floor/wall AROUND the product, since the
+  // padded box is bigger than the product's actual silhouette — real
+  // furniture isn't rectangular. When Replicate is configured, segment
+  // the product's ACTUAL shape out of the just-rendered result and blend
+  // only that precise silhouette instead of the box. Deliberately NOT
+  // segmenting the product's own reference photo instead — that would
+  // lock insertion into the reference's exact studio pose/angle
+  // regardless of the room's real perspective and wallAngleDeg rotation.
+  // Segmenting the RENDERED result has the right information: the
+  // product's actual pose as it was actually painted into THIS room.
+  // boxOverlapRatio sanity-checks the result against where we actually
+  // asked for it: a low overlap means segmentation likely found a
+  // DIFFERENT object of the same category already in the room (a real
+  // risk once a room has more than one chair, say), not the one we just
+  // placed — fall back to the box blend rather than trust a wrong match.
+  let blended: Buffer;
+  const seg = await segmentExistingFurniture(harmonized, category, productDescription ?? undefined);
+  if (seg && seg.width === width && seg.height === height && boxOverlapRatio(seg.box, paddedBox) > 0.5) {
+    const featheredSegAlpha = await featherAlpha(seg.alpha, width, height, 8);
+    blended = await blendWithAlpha(roomPhoto, harmonized, width, height, featheredSegAlpha);
+  } else {
+    blended = await blendEditedRegion(roomPhoto, harmonized, width, height, paddedBox);
+  }
   return { imageBase64: blended.toString("base64"), maskBox, placementSource };
 }
 

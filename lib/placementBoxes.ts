@@ -1,6 +1,23 @@
 import type { DetectionBox, ProductCategory } from "./types";
 
 /**
+ * Real photos (a phone camera shot, easily 4000×3000+) are far larger than
+ * an image-edit API needs — sending one uncompressed is slow to upload,
+ * slower for the model to process, and risks silently hitting whatever
+ * size/dimension limit the API enforces. Downscaling first is standard
+ * practice, and every compositing/removal/segmentation function that
+ * independently resizes the same raw input applies this exact bound —
+ * deterministic for identical input bytes, so their outputs line up
+ * without threading a pre-resized buffer between them. Lives here (not in
+ * lib/ai/composite.ts, where it originated) specifically so
+ * lib/ai/vision/segmentation.ts can import it without segmentation.ts and
+ * composite.ts importing each other — composite.ts started importing
+ * segmentExistingFurniture too once segmentation-refined blending was
+ * added, which would've been a real circular import otherwise.
+ */
+export const COMPOSITE_MAX_EDGE = 2048;
+
+/**
  * Client-safe placement data shared by the compositing pipeline (server)
  * and the placement UI (client) — deliberately no sharp/SDK imports here.
  *

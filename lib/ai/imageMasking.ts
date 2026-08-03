@@ -58,8 +58,23 @@ export async function boxToAlphaBuffer(width: number, height: number, box: Detec
       maskRaw[y * width + x] = 255;
     }
   }
-  if (featherPx <= 0) return maskRaw;
-  return sharp(maskRaw, { raw: { width, height, channels: 1 } }).blur(featherPx).greyscale().raw().toBuffer();
+  return featherAlpha(maskRaw, width, height, featherPx);
+}
+
+/**
+ * Blurs an EXISTING single-channel 0-255 alpha buffer for a soft edge —
+ * split out of boxToAlphaBuffer so a real object-shaped alpha buffer (a
+ * segmentation mask, not a rectangle — see lib/ai/vision/segmentation.ts)
+ * can get the exact same safe feathering without a third hand-rolled copy
+ * of this logic. .greyscale() after .blur() is load-bearing, not
+ * cosmetic — see boxToAlphaBuffer's doc comment above for the confirmed
+ * bug this guards against. featherPx <= 0 returns the input unchanged
+ * (an intentionally hard edge) rather than calling .blur(0), which sharp
+ * rejects outright.
+ */
+export async function featherAlpha(alpha: Buffer, width: number, height: number, featherPx: number): Promise<Buffer> {
+  if (featherPx <= 0) return alpha;
+  return sharp(alpha, { raw: { width, height, channels: 1 } }).blur(featherPx).greyscale().raw().toBuffer();
 }
 
 /**
