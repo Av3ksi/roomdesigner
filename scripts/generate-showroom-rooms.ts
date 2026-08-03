@@ -68,10 +68,10 @@ const CONCEPTS: Concept[] = [
     title: "Scandinavian Living Room",
     description: "Light oak tones, undyed wool, and soft daylight — a calm, airy Scandinavian living room.",
     items: [
-      { category: "sofa", keywords: ["eiche", "hell", "boucle", "leinen", "beige", "linen"], styleIds: ["scandinavian"] },
+      { category: "sofa", keywords: ["eiche", "boucle", "leinen", "beige", "linen", "3-sitzer", "sitzer sofa"], styleIds: ["scandinavian"] },
       { category: "table", keywords: ["eiche", "couchtisch", "rund", "oval", "oak"], styleIds: ["scandinavian"] },
       { category: "rug", keywords: ["teppich", "wolle", "beige", "creme", "wool"], styleIds: ["scandinavian"] },
-      { category: "lighting", keywords: ["stehlampe", "papier", "hell", "floor lamp"], styleIds: ["scandinavian"] },
+      { category: "lighting", keywords: ["stehlampe", "papier", "floor lamp"], styleIds: ["scandinavian"] },
       { category: "art", keywords: ["wandbild", "poster", "print", "leinwand"], styleIds: ["scandinavian", "minimalist"] },
       { category: "plant", keywords: ["olivenbaum", "kunstpflanze", "pflanze", "plant"], styleIds: ["scandinavian", "mediterranean"] },
       { category: "textile", keywords: ["decke", "plaid", "kissen", "throw"], styleIds: ["scandinavian", "cozy"] },
@@ -98,15 +98,31 @@ const CONCEPTS: Concept[] = [
       { category: "table", keywords: ["niedrig", "couchtisch", "eiche", "low table"], styleIds: ["japandi"] },
       { category: "rug", keywords: ["teppich", "jute", "natur", "natural"], styleIds: ["japandi", "organicmodern"] },
       { category: "lighting", keywords: ["laterne", "papier", "stehlampe", "lantern"], styleIds: ["japandi"] },
-      { category: "decor", keywords: ["vase", "keramik", "ceramic"], styleIds: ["japandi", "minimalist"] },
+      { category: "decor", keywords: ["vase", "dekovase", "steingutvase"], styleIds: ["japandi", "minimalist"] },
       { category: "plant", keywords: ["bonsai", "ficus", "pflanze", "plant"], styleIds: ["japandi"] },
     ],
   },
 ];
 
-/** Best real, photographed catalog match for one recipe slot — null if the catalog has nothing usable in that category at all. */
+/**
+ * Hard-excluded regardless of category or keyword score, checked BEFORE
+ * scoring — not a soft penalty. A real, confirmed failure: this app's
+ * category taxonomy is coarse enough that a children's sofa is still
+ * category "sofa" and a pizza oven's ceramic stone still substring-matched
+ * a "keramik" (ceramic) decor keyword, so either could win a slot purely
+ * on an incidental keyword collision. These terms should never belong in
+ * an adult living-room showroom scene no matter what else matches.
+ */
+const EXCLUDE_TERMS = ["kinder", "baby", "welpen", "hunde", "katzen", "haustier", "grill", "pizzaofen"];
+
+function isExcluded(product: Product): boolean {
+  const text = product.name.toLowerCase();
+  return EXCLUDE_TERMS.some((t) => text.includes(t));
+}
+
+/** Best real, photographed catalog match for one recipe slot — null if the catalog has nothing usable (or nothing NOT excluded) in that category. */
 function pickBest(catalog: Product[], item: ConceptItem): Product | null {
-  const withPhotos = catalog.filter((p) => p.category === item.category && p.imageUrl);
+  const withPhotos = catalog.filter((p) => p.category === item.category && p.imageUrl && !isExcluded(p));
   if (withPhotos.length === 0) return null;
   const [best] = searchProducts(withPhotos, { category: item.category, keywords: item.keywords, styleIds: item.styleIds, limit: 1 });
   return best ?? null;
