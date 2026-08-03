@@ -84,6 +84,8 @@ interface RoomVersion {
   imageBase64: string | null;
   objects: PlacedObject[];
   label: string;
+  /** DB row id, once persisted — undefined for version 0 (never persisted) and briefly for a just-committed version until its save round-trip resolves. Needed to target a DELETE at this specific version. */
+  dbId?: string;
 }
 
 interface PersistedRoomApi {
@@ -92,7 +94,7 @@ interface PersistedRoomApi {
   roomContext: unknown;
   messages: { role: "user" | "assistant"; content: string }[];
   constraints: Constraint[];
-  versions: { imageBase64: string; label: string; objects: PlacedObject[] }[];
+  versions: { id: string; imageBase64: string; label: string; objects: PlacedObject[] }[];
 }
 
 /** Every real object the upload kickoff found already in the room — the "what's changeable" checklist. */
@@ -207,7 +209,7 @@ export default function Designer() {
         setRoomContext(room.roomContext);
         const restored: RoomVersion[] = [
           { imageBase64: null, objects: [], label: "Original" },
-          ...room.versions.map((v) => ({ imageBase64: v.imageBase64, objects: v.objects, label: v.label })),
+          ...room.versions.map((v) => ({ imageBase64: v.imageBase64, objects: v.objects, label: v.label, dbId: v.id })),
         ];
         setVersions(restored);
         setCurrentVersion(restored.length - 1);
@@ -466,8 +468,41 @@ export default function Designer() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ imageBase64: next.imageBase64, label: next.label, objects: next.objects }),
-      }).catch(() => {
-        // The render already succeeded and is visible — a persistence hiccup here isn't worth surfacing.
+      })
+        .then((res) => (res.ok ? res.json() : null))
+        .then((body: { id?: string } | null) => {
+          if (!body?.id) return;
+          // Match by object identity, not index — versions may have been
+          // deleted or reordered by the time this round-trip resolves.
+          setVersions((v) => v.map((ver) => (ver === next ? { ...ver, dbId: body.id } : ver)));
+        })
+        .catch(() => {
+          // The render already succeeded and is visible — a persistence hiccup here isn't worth surfacing.
+        });
+    }
+  }
+
+  /**
+   * Deletes a single rendered version — e.g. a bad/garbled render from a
+   * since-fixed masking bug. Not just tidiness: generateProposal always
+   * bases a new edit off versions[versions.length - 1] (see there), so a
+   * bad render left in place silently becomes the reference every
+   * subsequent edit builds on. Deleting it here is how that gets fixed
+   * without restarting the whole room. Version 0 ("Original") can't be
+   * deleted — it's the source photo, not a generated render.
+   */
+  function deleteVersionAt(index: number) {
+    if (index === 0) return;
+    const target = versions[index];
+    setVersions((v) => v.filter((_, i) => i !== index));
+    setCurrentVersion((cur) => {
+      if (index < cur) return cur - 1;
+      if (index === cur) return Math.max(0, index - 1);
+      return cur;
+    });
+    if (roomId && target?.dbId) {
+      fetch(`/api/rooms/${roomId}/versions/${target.dbId}`, { method: "DELETE" }).catch(() => {
+        // Already removed from the UI — a persistence hiccup here just means it may reappear on next rehydration.
       });
     }
   }
@@ -1153,24 +1188,37 @@ export default function Designer() {
           {versions.length > 1 && (
             <div className="flex gap-2 overflow-x-auto pb-1">
               {versions.map((v, i) => (
-                <button
-                  key={i}
-                  onClick={() => {
-                    setCurrentVersion(i);
-                    setIdentityWarning(null);
-                  }}
-                  className={`shrink-0 overflow-hidden rounded-lg border text-left transition ${
-                    i === currentVersion ? "border-brass ring-1 ring-brass" : "border-ink-line hover:border-brass/40"
-                  }`}
-                >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={v.imageBase64 ? `data:image/png;base64,${v.imageBase64}` : roomPreviewUrl ?? ""}
-                    alt={v.label}
-                    className="h-16 w-24 object-cover"
-                  />
-                  <div className="truncate px-1.5 py-0.5 text-[9px] text-cream-faint">{v.label}</div>
-                </button>
+                <div key={i} className="group relative shrink-0">
+                  <button
+                    onClick={() => {
+                      setCurrentVersion(i);
+                      setIdentityWarning(null);
+                    }}
+                    className={`block overflow-hidden rounded-lg border text-left transition ${
+                      i === currentVersion ? "border-brass ring-1 ring-brass" : "border-ink-line hover:border-brass/40"
+                    }`}
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={v.imageBase64 ? `data:image/png;base64,${v.imageBase64}` : roomPreviewUrl ?? ""}
+                      alt={v.label}
+                      className="h-16 w-24 object-cover"
+                    />
+                    <div className="truncate px-1.5 py-0.5 text-[9px] text-cream-faint">{v.label}</div>
+                  </button>
+                  {i !== 0 && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        deleteVersionAt(i);
+                      }}
+                      title="Delete this version"
+                      className="absolute -right-1.5 -top-1.5 hidden h-5 w-5 items-center justify-center rounded-full border border-ink-line bg-ink text-cream-faint transition hover:border-red-400 hover:text-red-400 group-hover:flex"
+                    >
+                      <X size={11} />
+                    </button>
+                  )}
+                </div>
               ))}
             </div>
           )}

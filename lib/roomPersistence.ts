@@ -105,6 +105,19 @@ export async function addVersion(
   return rows[0].id as string;
 }
 
+/**
+ * Deletes one rendered version — e.g. a bad/garbled render the user wants
+ * gone. Scoped to (id AND room_id) together, not just id, so a version id
+ * can never be used to delete a row belonging to a room the caller doesn't
+ * own (the route's getRoomOwner check already gates on roomId, this is a
+ * second belt-and-suspenders check at the query itself).
+ */
+export async function deleteVersion(roomId: string, versionId: string): Promise<void> {
+  const db = sql();
+  await db`DELETE FROM room_versions WHERE id = ${versionId} AND room_id = ${roomId}`;
+  await db`UPDATE rooms SET updated_at = now() WHERE id = ${roomId}`;
+}
+
 export async function loadRoom(roomId: string, sessionId: string): Promise<PersistedRoom | null> {
   const db = sql();
   const roomRows = await db`SELECT * FROM rooms WHERE id = ${roomId} AND session_id = ${sessionId}`;
