@@ -12,23 +12,22 @@ import type { DetectionBox } from "../types";
  * would mean re-finding it twice.
  */
 
-/** OpenAI images/edits mask convention: alpha 255 = keep original as-is, alpha 0 = region the model may edit. */
-export async function buildMaskPng(width: number, height: number, box: DetectionBox): Promise<Buffer> {
-  const channels = 4;
-  const pixels = Buffer.alloc(width * height * channels, 255); // opaque everywhere = "keep as-is"
-
-  const x0 = Math.max(0, Math.round(box.x * width));
-  const y0 = Math.max(0, Math.round(box.y * height));
-  const x1 = Math.min(width, Math.round((box.x + box.w) * width));
-  const y1 = Math.min(height, Math.round((box.y + box.h) * height));
-
-  for (let y = y0; y < y1; y++) {
-    for (let x = x0; x < x1; x++) {
-      pixels[(y * width + x) * channels + 3] = 0; // alpha 0 = "edit this region"
-    }
-  }
-
-  return sharp(pixels, { raw: { width, height, channels } }).png().toBuffer();
+/**
+ * OpenAI images/edits mask convention: alpha 255 = keep original as-is,
+ * alpha 0 = region the model may edit.
+ *
+ * featherPx softens the boundary instead of a hard rectangle cutout — a
+ * real, reported "pasted-on" look at the edge, even after this app's own
+ * local blend-back (which is feathered separately, see boxToAlphaBuffer)
+ * — because the mask OpenAI itself sees when generating was still a hard
+ * 0/255 edge, giving its own inpainting nothing to feather against. Built
+ * on boxToAlphaBuffer + alphaToOpenAiMaskPng (already correct, already
+ * used by the FLUX path) rather than a third hand-rolled implementation of
+ * the same "blur a single-channel alpha buffer safely" logic.
+ */
+export async function buildMaskPng(width: number, height: number, box: DetectionBox, featherPx = 6): Promise<Buffer> {
+  const alpha = await boxToAlphaBuffer(width, height, box, featherPx);
+  return alphaToOpenAiMaskPng(alpha, width, height);
 }
 
 /**
@@ -112,6 +111,113 @@ export async function blendEditedRegion(
 ): Promise<Buffer> {
   const alpha = await boxToAlphaBuffer(width, height, box);
   return blendWithAlpha(original, edited, width, height, alpha);
+}
+
+/**
+ * Post-composite color/tone harmonization — even with a good mask, a
+ * masked edit can come back with a subtly different color grading,
+ * exposure or white balance than the rest of the room photo. This is a
+ * known limitation of generative inpainting itself, not something a mask
+ * alone fixes — it's why tools like Photoshop's Generative Fill ship a
+ * separate "Harmonize" pass rather than relying on the fill step alone.
+ * Shifts the edited region's per-channel mean/stddev toward a sample of
+ * the room photo's OWN pixels immediately around the box — a simplified,
+ * RGB-space version of classic Reinhard color transfer (not full
+ * LAB-space, to keep this dependency-free and easy to verify) — blended
+ * in at `strength` rather than applied fully, since a small sample's
+ * statistics can be noisy and a full correction can overshoot into an
+ * unnatural result. Call this BEFORE blendEditedRegion/blendWithAlpha —
+ * it only touches pixels inside the box, so the two compose cleanly.
+ *
+ * Samples the "context" (target) color from a ring around the box rather
+ * than the whole photo — a room can have very different lighting across
+ * it (a sunlit window vs. a shaded corner), so the immediate surroundings
+ * are the relevant reference, not a global average.
+ */
+export async function harmonizeRegion(
+  original: Buffer,
+  edited: Buffer,
+  width: number,
+  height: number,
+  box: DetectionBox,
+  strength = 0.6,
+): Promise<Buffer> {
+  const [originalRgba, editedRgba] = await Promise.all([
+    sharp(original).ensureAlpha().raw().toBuffer(),
+    sharp(edited).resize(width, height).ensureAlpha().raw().toBuffer(),
+  ]);
+
+  const x0 = Math.max(0, Math.round(box.x * width));
+  const y0 = Math.max(0, Math.round(box.y * height));
+  const x1 = Math.min(width, Math.round((box.x + box.w) * width));
+  const y1 = Math.min(height, Math.round((box.y + box.h) * height));
+  if (x1 <= x0 || y1 <= y0) return edited;
+
+  const ringMargin = Math.max(8, Math.round(Math.min(x1 - x0, y1 - y0) * 0.25));
+  const rx0 = Math.max(0, x0 - ringMargin);
+  const ry0 = Math.max(0, y0 - ringMargin);
+  const rx1 = Math.min(width, x1 + ringMargin);
+  const ry1 = Math.min(height, y1 + ringMargin);
+
+  const contextSum = [0, 0, 0];
+  const contextSumSq = [0, 0, 0];
+  let contextCount = 0;
+  for (let y = ry0; y < ry1; y++) {
+    for (let x = rx0; x < rx1; x++) {
+      if (x >= x0 && x < x1 && y >= y0 && y < y1) continue; // inside the box itself, not context
+      const base = (y * width + x) * 4;
+      for (let c = 0; c < 3; c++) {
+        const v = originalRgba[base + c];
+        contextSum[c] += v;
+        contextSumSq[c] += v * v;
+      }
+      contextCount++;
+    }
+  }
+  if (contextCount === 0) return edited; // box fills the whole image — nothing to sample
+
+  const editedSum = [0, 0, 0];
+  const editedSumSq = [0, 0, 0];
+  let editedCount = 0;
+  for (let y = y0; y < y1; y++) {
+    for (let x = x0; x < x1; x++) {
+      const base = (y * width + x) * 4;
+      for (let c = 0; c < 3; c++) {
+        const v = editedRgba[base + c];
+        editedSum[c] += v;
+        editedSumSq[c] += v * v;
+      }
+      editedCount++;
+    }
+  }
+  if (editedCount === 0) return edited;
+
+  const contextMean = [0, 0, 0];
+  const contextStd = [0, 0, 0];
+  const editedMean = [0, 0, 0];
+  const editedStd = [0, 0, 0];
+  for (let c = 0; c < 3; c++) {
+    contextMean[c] = contextSum[c] / contextCount;
+    contextStd[c] = Math.sqrt(Math.max(0, contextSumSq[c] / contextCount - contextMean[c] ** 2)) || 1;
+    editedMean[c] = editedSum[c] / editedCount;
+    editedStd[c] = Math.sqrt(Math.max(0, editedSumSq[c] / editedCount - editedMean[c] ** 2)) || 1;
+  }
+
+  const out = Buffer.from(editedRgba);
+  for (let y = y0; y < y1; y++) {
+    for (let x = x0; x < x1; x++) {
+      const base = (y * width + x) * 4;
+      for (let c = 0; c < 3; c++) {
+        const v = editedRgba[base + c];
+        const ratio = contextStd[c] / editedStd[c];
+        const fullyMatched = (v - editedMean[c]) * ratio + contextMean[c];
+        const corrected = v * (1 - strength) + fullyMatched * strength;
+        out[base + c] = Math.max(0, Math.min(255, Math.round(corrected)));
+      }
+    }
+  }
+
+  return sharp(out, { raw: { width, height, channels: 4 } }).png().toBuffer();
 }
 
 /**

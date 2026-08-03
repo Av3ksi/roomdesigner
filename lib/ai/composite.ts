@@ -1,7 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import sharp from "sharp";
 import { MODEL as CLAUDE_MODEL, aiEnabled } from "./claude";
-import { blendEditedRegion, buildMaskPng } from "./imageMasking";
+import { blendEditedRegion, buildMaskPng, harmonizeRegion } from "./imageMasking";
 import { DEFAULT_CATEGORY_BOX, clampBox, describeRoughLocation, padBoxForEdit, unionBox } from "../placementBoxes";
 import type { Detection, DetectionBox, ProductCategory } from "../types";
 
@@ -294,7 +294,12 @@ export async function compositeProductIntoRoom(
   const b64 = body.data?.[0]?.b64_json;
   if (!b64) throw new Error("OpenAI response had no image data");
 
-  const blended = await blendEditedRegion(roomPhoto, Buffer.from(b64, "base64"), width, height, paddedBox);
+  // Harmonize BEFORE the feathered blend-back: matches the inserted
+  // product's color/tone to the room's real surrounding light before the
+  // edges get softened, so the two corrections compose cleanly rather
+  // than fighting each other.
+  const harmonized = await harmonizeRegion(roomPhoto, Buffer.from(b64, "base64"), width, height, paddedBox);
+  const blended = await blendEditedRegion(roomPhoto, harmonized, width, height, paddedBox);
   return { imageBase64: blended.toString("base64"), maskBox, placementSource };
 }
 
