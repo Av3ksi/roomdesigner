@@ -4,9 +4,9 @@ import { compositeProductIntoRoomFlux, fluxFillEnabled } from "@/lib/ai/fluxFill
 import { performRemoval, removalEnabled } from "@/lib/ai/removal";
 import { checkRenderedProductIdentity } from "@/lib/ai/identityCheck";
 import { isPremiumUser } from "@/lib/auth";
+import { hasCreditsRemaining, spendCredit } from "@/lib/credits";
 import { clientIp, enforceRateLimit } from "@/lib/rateLimit";
 import { getCurrentUserId, getOrCreateSessionId } from "@/lib/session";
-import { FREE_GENERATION_LIMIT, hasFreeGenerationsRemaining, recordGeneration } from "@/lib/usageLimits";
 import { clampBox, isValidBox } from "@/lib/placementBoxes";
 import type { ProductCategory } from "@/lib/types";
 
@@ -18,9 +18,9 @@ export const runtime = "nodejs";
  * (lib/ai/removal.ts's tiered removal, same as /api/remove-object), then
  * re-insert the SAME product reference photo at a new box
  * (lib/ai/composite.ts's compositeProductIntoRoom/compositeProductIntoRoomFlux,
- * same as /api/composite). One user-facing action, one free-generation
- * spend — even though it's two real, separately billed provider calls
- * under the hood.
+ * same as /api/composite). One user-facing action, one credit spend —
+ * even though it's two real, separately billed provider calls under the
+ * hood.
  *
  * There's no single "move" primitive on either provider, and this is the
  * same erase-then-reinsert workaround already decided as acceptable for
@@ -51,17 +51,15 @@ export async function POST(req: NextRequest) {
   });
   if (limited) return NextResponse.json({ error: limited.error }, { status: 429 });
 
-  // Premium accounts bypass the freemium gate entirely — see /api/composite for the same check.
-  const premium = await isPremiumUser(await getCurrentUserId());
+  // Premium accounts bypass the credit gate entirely — see /api/composite for the same check.
+  const userId = await getCurrentUserId();
+  const premium = await isPremiumUser(userId);
 
-  // Freemium gate — checked BEFORE either billed call fires, so a request
-  // past the free limit never spends money.
-  if (!premium && !(await hasFreeGenerationsRemaining(sessionId))) {
+  // Credit gate — checked BEFORE either billed call fires, so a session at
+  // zero never spends money.
+  if (!premium && !(await hasCreditsRemaining(sessionId))) {
     return NextResponse.json(
-      {
-        error: `You've used your ${FREE_GENERATION_LIMIT} free room generation. Upgrade to Pro for unlimited access.`,
-        code: "FREE_LIMIT_REACHED",
-      },
+      { error: "You're out of credits. Buy more or upgrade to Premium for unlimited access.", code: "OUT_OF_CREDITS" },
       { status: 402 },
     );
   }
@@ -107,7 +105,7 @@ export async function POST(req: NextRequest) {
       ? await compositeProductIntoRoomFlux(erasedBuffer, productBuffer, cat, [], newBox, wallAngleDeg)
       : await compositeProductIntoRoom(erasedBuffer, productBuffer, cat, [], "high", newBox, wallAngleDeg);
 
-    if (!premium) await recordGeneration(sessionId);
+    if (!premium) await spendCredit(sessionId, userId, "generation:move");
 
     const identityCheck = await checkRenderedProductIdentity(
       productBuffer,

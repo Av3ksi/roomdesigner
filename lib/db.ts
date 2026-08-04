@@ -194,16 +194,38 @@ async function runSchema(): Promise<void> {
     )
   `;
 
-  // Freemium gate for AI room generation — one row per anonymous session,
-  // incremented after each successful billed render (composite add or
-  // remove-object). See lib/usageLimits.ts.
+  // Credit-based gate for AI room generation (replaces the old single-
+  // free-generation session_usage table) — see lib/credits.ts. One row per
+  // anonymous session holding the current balance; credits_remaining is
+  // the actual gate (a single atomic UPDATE ... WHERE credits_remaining >
+  // 0, safe under concurrent requests) — credit_transactions below is a
+  // parallel append-only log for history/support, not itself read for the
+  // gating decision.
   await db`
-    CREATE TABLE IF NOT EXISTS session_usage (
+    CREATE TABLE IF NOT EXISTS credit_accounts (
       session_id TEXT PRIMARY KEY,
-      generation_count INT NOT NULL DEFAULT 0,
+      credits_remaining INT NOT NULL DEFAULT 0,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
     )
   `;
+  // amount: positive = credit added (initial grant, purchase, admin grant),
+  // negative = spent (one row per generation). user_id is opportunistic
+  // metadata (populated when the spender happens to be signed in) — NOT
+  // used for balance lookups, which stay purely session-keyed per
+  // lib/credits.ts's scope; it's here so a support question ("did this
+  // account's credits change") can be answered without a second join.
+  await db`
+    CREATE TABLE IF NOT EXISTS credit_transactions (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      session_id TEXT NOT NULL,
+      user_id UUID,
+      amount INT NOT NULL,
+      reason TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `;
+  await db`CREATE INDEX IF NOT EXISTS idx_credit_transactions_session ON credit_transactions(session_id)`;
+  await db`CREATE INDEX IF NOT EXISTS idx_credit_transactions_user ON credit_transactions(user_id)`;
 
   // Real accounts — email only by default, no passwords to hash/store/leak.
   // Login is normally a one-time link emailed via Resend (see lib/auth.ts).
@@ -220,7 +242,7 @@ async function runSchema(): Promise<void> {
   // normal account) always fails password login; only an account that
   // explicitly opted in has one.
   await db`ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT`;
-  // Unlimited AI generations, bypassing lib/usageLimits.ts's freemium gate
+  // Unlimited AI generations, bypassing lib/credits.ts's credit gate
   // entirely — set by a real Stripe subscription (app/api/checkout/premium,
   // app/api/webhooks/stripe) or manually via scripts/set-user-password.ts
   // --premium for an owner/comp account that shouldn't need to pay itself.

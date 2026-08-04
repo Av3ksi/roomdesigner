@@ -3,9 +3,9 @@ import { compositeProductIntoRoom, compositingEnabled } from "@/lib/ai/composite
 import { compositeProductIntoRoomFlux, fluxFillEnabled } from "@/lib/ai/fluxFill";
 import { checkRenderedProductIdentity } from "@/lib/ai/identityCheck";
 import { isPremiumUser } from "@/lib/auth";
+import { hasCreditsRemaining, spendCredit } from "@/lib/credits";
 import { clientIp, enforceRateLimit } from "@/lib/rateLimit";
 import { getCurrentUserId, getOrCreateSessionId } from "@/lib/session";
-import { FREE_GENERATION_LIMIT, hasFreeGenerationsRemaining, recordGeneration } from "@/lib/usageLimits";
 import type { ProductCategory } from "@/lib/types";
 
 // sharp (used by lib/ai/composite.ts) needs the Node runtime, not edge.
@@ -47,20 +47,18 @@ export async function POST(req: NextRequest) {
   });
   if (limited) return NextResponse.json({ error: limited.error }, { status: 429 });
 
-  // Premium accounts (lib/auth.ts) bypass the freemium gate entirely — a
-  // real Stripe subscription (app/api/checkout/premium), not just a higher
-  // limit. Checked before the gate below so a premium user never even
-  // touches session_usage.
-  const premium = await isPremiumUser(await getCurrentUserId());
+  // Premium accounts (lib/auth.ts) bypass the credit gate entirely — a
+  // real Stripe subscription (app/api/checkout/premium), unlimited
+  // regardless of balance. Checked before the gate below so a premium
+  // user never even touches credit_accounts.
+  const userId = await getCurrentUserId();
+  const premium = await isPremiumUser(userId);
 
-  // Freemium gate — checked BEFORE the billed OpenAI call fires, so a
-  // request past the free limit never spends money.
-  if (!premium && !(await hasFreeGenerationsRemaining(sessionId))) {
+  // Credit gate — checked BEFORE the billed OpenAI call fires, so a
+  // session at zero never spends money.
+  if (!premium && !(await hasCreditsRemaining(sessionId))) {
     return NextResponse.json(
-      {
-        error: `You've used your ${FREE_GENERATION_LIMIT} free room generation. Upgrade to Pro for unlimited access.`,
-        code: "FREE_LIMIT_REACHED",
-      },
+      { error: "You're out of credits. Buy more or upgrade to Premium for unlimited access.", code: "OUT_OF_CREDITS" },
       { status: 402 },
     );
   }
@@ -112,12 +110,12 @@ export async function POST(req: NextRequest) {
       ? await compositeProductIntoRoomFlux(roomBuffer, productBuffer, category as ProductCategory, [], explicitBox, wallAngleDeg)
       : await compositeProductIntoRoom(roomBuffer, productBuffer, category as ProductCategory, [], "high", explicitBox, wallAngleDeg);
 
-    // The render succeeded — this is the actual "one free generation" spend,
-    // counted here (not in the separate /api/rooms/[id]/versions persistence
-    // call) since that route is fire-and-forget from the client and could
-    // silently fail to record the count. Skipped for premium accounts —
-    // nothing to count against, they're unlimited regardless.
-    if (!premium) await recordGeneration(sessionId);
+    // The render succeeded — this is the actual credit spend, counted here
+    // (not in the separate /api/rooms/[id]/versions persistence call)
+    // since that route is fire-and-forget from the client and could
+    // silently fail to record it. Skipped for premium accounts — nothing
+    // to spend, they're unlimited regardless.
+    if (!premium) await spendCredit(sessionId, userId, "generation:composite");
 
     // Best-effort QA pass (Phase 2): compares the rendered region against the
     // real product photo since compositing models occasionally substitute a

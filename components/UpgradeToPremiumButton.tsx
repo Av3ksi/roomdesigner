@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Loader2 } from "lucide-react";
 
-/** Same real checkout as UpgradeModal — used here on /account, where the visitor is already known to be signed in, so there's no sign-in redirect branch to handle. */
+/** Same real checkout as BuyCreditsModal's premium button — used here on /account, where the visitor is already known to be signed in, so there's no sign-in redirect branch to handle. */
 export default function UpgradeToPremiumButton() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);

@@ -16,7 +16,7 @@ const PREMIUM_PRICE_CHF = 19;
 
 /**
  * Real Stripe subscription checkout for unlimited AI room generations —
- * the paid side of lib/usageLimits.ts's freemium gate. Requires being
+ * the paid side of lib/credits.ts's credit gate. Requires being
  * signed in first (unlike furniture checkout, which supports guests) since
  * "premium" is a property of an ACCOUNT, not a cart; there's nothing to
  * attach the subscription to otherwise. The webhook (app/api/webhooks/

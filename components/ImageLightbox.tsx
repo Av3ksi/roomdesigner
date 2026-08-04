@@ -4,8 +4,8 @@ import { useEffect, useState } from "react";
 import { X } from "lucide-react";
 
 /**
- * Click-to-zoom wrapper around an <img> — same fixed-overlay modal pattern
- * as UpgradeModal.tsx for visual consistency. Renders as a Fragment (no
+ * Click-to-zoom wrapper around an <img> — a fixed-overlay modal, consistent
+ * with the app's other modals. Renders as a Fragment (no
  * extra wrapping div) so it drops into a `position: relative` parent
  * exactly like the plain <img> it replaces — important on pages like
  * LookDetail/Designer where RoomHotspots' pins are absolutely positioned

@@ -2,9 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { performRemoval, removalEnabled } from "@/lib/ai/removal";
 import { aiEnabled } from "@/lib/ai/claude";
 import { isPremiumUser } from "@/lib/auth";
+import { hasCreditsRemaining, spendCredit } from "@/lib/credits";
 import { clientIp, enforceRateLimit } from "@/lib/rateLimit";
 import { getCurrentUserId, getOrCreateSessionId } from "@/lib/session";
-import { FREE_GENERATION_LIMIT, hasFreeGenerationsRemaining, recordGeneration } from "@/lib/usageLimits";
 import type { ProductCategory } from "@/lib/types";
 
 // sharp (compositing) needs the Node runtime, not edge.
@@ -38,17 +38,15 @@ export async function POST(req: NextRequest) {
   });
   if (limited) return NextResponse.json({ error: limited.error }, { status: 429 });
 
-  // Premium accounts bypass the freemium gate entirely — see /api/composite for the same check.
-  const premium = await isPremiumUser(await getCurrentUserId());
+  // Premium accounts bypass the credit gate entirely — see /api/composite for the same check.
+  const userId = await getCurrentUserId();
+  const premium = await isPremiumUser(userId);
 
-  // Freemium gate — checked BEFORE the billed removal call fires, so a
-  // request past the free limit never spends money.
-  if (!premium && !(await hasFreeGenerationsRemaining(sessionId))) {
+  // Credit gate — checked BEFORE the billed removal call fires, so a
+  // session at zero never spends money.
+  if (!premium && !(await hasCreditsRemaining(sessionId))) {
     return NextResponse.json(
-      {
-        error: `You've used your ${FREE_GENERATION_LIMIT} free room generation. Upgrade to Pro for unlimited access.`,
-        code: "FREE_LIMIT_REACHED",
-      },
+      { error: "You're out of credits. Buy more or upgrade to Premium for unlimited access.", code: "OUT_OF_CREDITS" },
       { status: 402 },
     );
   }
@@ -81,8 +79,8 @@ export async function POST(req: NextRequest) {
 
   try {
     const result = await performRemoval(roomBuffer, category as ProductCategory, description, knownBox);
-    // The render succeeded — this is the actual "one free generation" spend (see /api/composite for why it's recorded here, not in the versions-persistence route).
-    if (!premium) await recordGeneration(sessionId);
+    // The render succeeded — this is the actual credit spend (see /api/composite for why it's recorded here, not in the versions-persistence route).
+    if (!premium) await spendCredit(sessionId, userId, "generation:remove");
     return NextResponse.json({ imageBase64: result.imageBase64, removedBox: result.removedBox, maskSource: result.maskSource });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 500 });

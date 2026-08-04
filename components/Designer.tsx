@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, Bookmark, Check, Eraser, Loader2, MapPin, Plus, Ruler, Search, Send, Sparkles, Trash2, Upload, X } from "lucide-react";
+import { AlertTriangle, Bookmark, Check, Coins, Eraser, Loader2, MapPin, Plus, Ruler, Search, Send, Sparkles, Trash2, Upload, X } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -12,9 +12,9 @@ import {
 } from "@/lib/clientImage";
 import { boxOverlapRatio, clampBox, DEFAULT_CATEGORY_BOX, describeRoughLocation } from "@/lib/placementBoxes";
 import { ROOM_ID_STORAGE_KEY, SEED_ROOM_STORAGE_KEY } from "@/lib/designerStorage";
+import BuyCreditsModal from "@/components/BuyCreditsModal";
 import ImageLightbox from "@/components/ImageLightbox";
 import RoomHotspots, { type HotspotItem } from "@/components/RoomHotspots";
-import UpgradeModal from "@/components/UpgradeModal";
 import { useMaisonStore } from "@/lib/store";
 import type { DetectionBox, Product, ProductCategory } from "@/lib/types";
 
@@ -153,14 +153,18 @@ export default function Designer() {
   const [catalogResults, setCatalogResults] = useState<Product[]>([]);
   const [catalogSearching, setCatalogSearching] = useState(false);
   const [showCatalogPanel, setShowCatalogPanel] = useState(false);
-  // Freemium gate — null while unknown (not yet fetched), else the number of
-  // free AI generations left on this anonymous session. Purely a UX hint:
-  // the server enforces the real limit on every /api/composite and
-  // /api/remove-object call regardless of what the client thinks.
-  const [usageRemaining, setUsageRemaining] = useState<number | null>(null);
-  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+  // Credit gate (lib/credits.ts) — null while unknown (not yet fetched),
+  // else the number of credits left on this anonymous session (a real
+  // number even for a premium account, see /api/usage — premiumAccount
+  // below is what actually drives "unlimited" display/behavior). Purely a
+  // UX hint: the server enforces the real gate on every /api/composite,
+  // /api/remove-object, and /api/move-object call regardless of what the
+  // client thinks.
+  const [credits, setCredits] = useState<number | null>(null);
+  const [premiumAccount, setPremiumAccount] = useState(false);
+  const [showBuyCredits, setShowBuyCredits] = useState(false);
   // "Save to my collection" — a private bookmark of the current render,
-  // separate from the free-generation gate above (saving costs nothing).
+  // separate from the credit gate above (saving costs nothing).
   const [saveOpen, setSaveOpen] = useState(false);
   const [saveTitle, setSaveTitle] = useState("");
   const [saving, setSaving] = useState(false);
@@ -200,14 +204,17 @@ export default function Designer() {
     return () => clearInterval(id);
   }, [thinking]);
 
-  // On mount: how many free generations this session has left, so the UI
-  // can show the paywall proactively instead of only after a wasted click.
+  // On mount: how many credits this session has left, so the UI can show
+  // the paywall proactively instead of only after a wasted click.
   useEffect(() => {
     fetch("/api/usage")
       .then((res) => res.json())
-      .then((data) => setUsageRemaining(typeof data.remaining === "number" ? data.remaining : null))
+      .then((data) => {
+        setCredits(typeof data.credits === "number" ? data.credits : null);
+        setPremiumAccount(Boolean(data.premium));
+      })
       .catch(() => {
-        // Unknown is fine — the server still enforces the limit either way.
+        // Unknown is fine — the server still enforces the gate either way.
       });
   }, []);
 
@@ -469,8 +476,8 @@ export default function Designer() {
   /** Erase-then-reinsert as one user-facing action — see app/api/move-object/route.ts's doc comment for why there's no single "move" call. */
   async function confirmMove() {
     if (!movingObject || !adjustedBox || !roomFile || generating !== null) return;
-    if (usageRemaining === 0) {
-      setShowUpgradeModal(true);
+    if (credits === 0) {
+      setShowBuyCredits(true);
       return;
     }
     const category = objectCategory(movingObject.object);
@@ -504,13 +511,13 @@ export default function Designer() {
       const res = await fetch("/api/move-object", { method: "POST", body: form });
       const body = await res.json();
       if (res.status === 402) {
-        setUsageRemaining(0);
-        setShowUpgradeModal(true);
+        setCredits(0);
+        setShowBuyCredits(true);
         return;
       }
       if (!res.ok) throw new Error(body.error ?? `Move failed: ${res.status}`);
 
-      setUsageRemaining((r) => (r !== null ? Math.max(0, r - 1) : r));
+      setCredits((r) => (r !== null ? Math.max(0, r - 1) : r));
       const movedObject: PlacedObject =
         movingObject.object.kind === "catalog"
           ? { box: body.maskBox, kind: "catalog", product: movingObject.object.product }
@@ -708,8 +715,8 @@ export default function Designer() {
    */
   async function generateProposal(proposal: EditProposal, index: number, overrideBox?: DetectionBox) {
     if (!roomFile || generating !== null) return;
-    if (usageRemaining === 0) {
-      setShowUpgradeModal(true);
+    if (credits === 0) {
+      setShowBuyCredits(true);
       return;
     }
     setGenerating(index);
@@ -740,13 +747,13 @@ export default function Designer() {
         const res = await fetch("/api/remove-object", { method: "POST", body: form });
         const body = await res.json();
         if (res.status === 402) {
-          setUsageRemaining(0);
-          setShowUpgradeModal(true);
+          setCredits(0);
+          setShowBuyCredits(true);
           return;
         }
         if (!res.ok) throw new Error(body.error ?? `Removal failed: ${res.status}`);
 
-        setUsageRemaining((r) => (r !== null ? Math.max(0, r - 1) : r));
+        setCredits((r) => (r !== null ? Math.max(0, r - 1) : r));
         commitVersion(body.imageBase64, `V${versions.length} · Removed ${proposal.description ?? proposal.category}`, prevObjects);
         setProposals((p) => p.filter((_, i) => i !== index));
         return;
@@ -777,13 +784,13 @@ export default function Designer() {
       const res = await fetch("/api/composite", { method: "POST", body: form });
       const body = await res.json();
       if (res.status === 402) {
-        setUsageRemaining(0);
-        setShowUpgradeModal(true);
+        setCredits(0);
+        setShowBuyCredits(true);
         return;
       }
       if (!res.ok) throw new Error(body.error ?? `Render failed: ${res.status}`);
 
-      setUsageRemaining((r) => (r !== null ? Math.max(0, r - 1) : r));
+      setCredits((r) => (r !== null ? Math.max(0, r - 1) : r));
       const newObject: PlacedObject =
         proposal.kind === "add"
           ? { box: body.maskBox, kind: "catalog", product: proposal.product }
@@ -844,10 +851,31 @@ export default function Designer() {
 
   return (
     <>
-      {showUpgradeModal && <UpgradeModal onClose={() => setShowUpgradeModal(false)} />}
+      {showBuyCredits && <BuyCreditsModal onClose={() => setShowBuyCredits(false)} />}
       <div className="container-page py-10">
       <div className="max-w-2xl">
-        <div className="eyebrow mb-3">Designer</div>
+        <div className="flex items-center justify-between gap-3">
+          <div className="eyebrow mb-3">Designer</div>
+          {/* Persistently visible balance (requirement: know your credits before you act, not just after a blocked render) — always rendered once known, not just at 0. */}
+          {credits !== null &&
+            (premiumAccount ? (
+              <span className="mb-3 flex shrink-0 items-center gap-1.5 rounded-full border border-brass/40 bg-brass/10 px-3 py-1.5 text-xs font-semibold text-brass-bright">
+                <Coins size={13} /> Unlimited · Premium
+              </span>
+            ) : (
+              <button
+                onClick={() => setShowBuyCredits(true)}
+                className={`mb-3 flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+                  credits === 0
+                    ? "border-rose-400/40 bg-rose-400/10 text-rose-300 hover:border-rose-400/60"
+                    : "border-ink-line text-cream-dim hover:border-brass/40 hover:text-brass-bright"
+                }`}
+              >
+                <Coins size={13} />
+                {credits} credit{credits === 1 ? "" : "s"}
+              </button>
+            ))}
+        </div>
         <h1 className="font-display text-4xl leading-tight sm:text-5xl">Talk to your room.</h1>
         <p className="mt-4 text-cream-dim">
           Upload a room photo — extra angles and a floor plan help but aren&apos;t required. The AI
@@ -935,13 +963,13 @@ export default function Designer() {
               </div>
             )}
 
-            {usageRemaining === 0 && (
+            {credits === 0 && !premiumAccount && (
               <button
-                onClick={() => setShowUpgradeModal(true)}
+                onClick={() => setShowBuyCredits(true)}
                 className="flex w-full items-center justify-between gap-2 rounded-lg border border-brass/30 bg-brass/5 p-3 text-left text-xs text-cream-dim"
               >
-                <span>You&apos;ve used your free room generation.</span>
-                <span className="shrink-0 font-semibold text-brass-bright">Upgrade to Pro →</span>
+                <span>You&apos;re out of credits.</span>
+                <span className="shrink-0 font-semibold text-brass-bright">Buy more →</span>
               </button>
             )}
 
