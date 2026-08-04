@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { dbEnabled } from "@/lib/db";
-import { clearMessages, getRoomOwner } from "@/lib/roomPersistence";
-import { getOrCreateSessionId } from "@/lib/session";
+import { clearMessages, getRoomOwner, isRoomOwner } from "@/lib/roomPersistence";
+import { getCurrentUserId, getOrCreateSessionId } from "@/lib/session";
 
 export const runtime = "nodejs";
 
@@ -12,7 +12,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
   const { id } = await params;
   const sessionId = await getOrCreateSessionId();
   const owner = await getRoomOwner(id);
-  if (owner !== sessionId) {
+  if (!isRoomOwner(owner, sessionId, await getCurrentUserId())) {
     return NextResponse.json({ error: "Room not found." }, { status: 404 });
   }
 

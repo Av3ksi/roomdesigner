@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { dbEnabled } from "@/lib/db";
-import { addVersion, getRoomOwner } from "@/lib/roomPersistence";
-import { getOrCreateSessionId } from "@/lib/session";
+import { addVersion, getRoomOwner, isRoomOwner } from "@/lib/roomPersistence";
+import { getCurrentUserId, getOrCreateSessionId } from "@/lib/session";
 
 export const runtime = "nodejs";
 
@@ -18,7 +18,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const { id } = await params;
   const sessionId = await getOrCreateSessionId();
   const owner = await getRoomOwner(id);
-  if (owner !== sessionId) {
+  if (!isRoomOwner(owner, sessionId, await getCurrentUserId())) {
     return NextResponse.json({ error: "Room not found." }, { status: 404 });
   }
 

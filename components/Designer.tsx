@@ -211,34 +211,56 @@ export default function Designer() {
       });
   }, []);
 
-  // On mount: another page (LookDetail's "Customize in Designer") may have
-  // seeded a brand-new room from an existing rendered photo — a Complete
-  // Room or a My Rooms save, which this browsing session doesn't own as a
-  // live Designer room, so this always starts fresh rather than trying to
-  // resume anything. Routes through onRoomFileChange, same as picking a
-  // file by hand, so every reset it already does (clearing versions,
-  // proposals, inventory, the old roomId) applies here too.
+  // On mount — two things that can each restore a room, checked in order
+  // within ONE effect (not two separate ones) specifically so there's no
+  // race between them:
+  //
+  // 1. Another page (LookDetail's "Customize in Designer") may have seeded
+  //    a brand-new room from an existing rendered photo — a Complete Room
+  //    or a My Rooms save, which this browsing session doesn't own as a
+  //    live Designer room, so this always starts fresh rather than trying
+  //    to resume anything. Checked synchronously first and returns early —
+  //    an explicit "start fresh from this photo" action always wins over
+  //    silently resuming an old room instead. Routes through
+  //    onRoomFileChange, same as picking a file by hand, so every reset it
+  //    already does (clearing versions, proposals, inventory, the old
+  //    roomId) applies here too.
+  //
+  // 2. Otherwise, resume: a room remembered locally (DB-backed sessions
+  //    only), or — when NOTHING is remembered on this browser at all — a
+  //    signed-in visitor's most recent room from any device (GET
+  //    /api/rooms/latest, matched by account rather than the browser's
+  //    anonymous session cookie, which is necessarily different on a new
+  //    device). A signed-out visitor just gets {roomId: null} back and
+  //    falls through to the normal empty upload state, same as always.
   useEffect(() => {
-    const raw = typeof window !== "undefined" ? sessionStorage.getItem(SEED_ROOM_STORAGE_KEY) : null;
-    if (!raw) return;
-    sessionStorage.removeItem(SEED_ROOM_STORAGE_KEY);
-    try {
-      const { imageBase64 } = JSON.parse(raw) as { imageBase64: string };
-      const mime = detectImageMimeFromBase64(imageBase64);
-      onRoomFileChange(base64ToFile(imageBase64, "room", mime));
-    } catch {
-      // Malformed seed — fall through to the normal empty upload state.
+    const seedRaw = typeof window !== "undefined" ? sessionStorage.getItem(SEED_ROOM_STORAGE_KEY) : null;
+    if (seedRaw) {
+      sessionStorage.removeItem(SEED_ROOM_STORAGE_KEY);
+      try {
+        const { imageBase64 } = JSON.parse(seedRaw) as { imageBase64: string };
+        const mime = detectImageMimeFromBase64(imageBase64);
+        onRoomFileChange(base64ToFile(imageBase64, "room", mime));
+      } catch {
+        // Malformed seed — fall through to the normal empty upload state.
+      }
+      return;
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
-  // On mount: if a room was persisted last visit (DB-backed sessions only),
-  // fetch its full state back so a refresh doesn't lose the conversation.
-  useEffect(() => {
-    const storedId = typeof window !== "undefined" ? localStorage.getItem(ROOM_ID_STORAGE_KEY) : null;
-    if (!storedId) return;
-    setRehydrating(true);
     (async () => {
+      let storedId = typeof window !== "undefined" ? localStorage.getItem(ROOM_ID_STORAGE_KEY) : null;
+      if (!storedId) {
+        try {
+          const res = await fetch("/api/rooms/latest");
+          const body = await res.json();
+          if (body.roomId) storedId = body.roomId;
+        } catch {
+          // No account/room to fall back to — normal empty upload state.
+        }
+      }
+      if (!storedId) return;
+
+      setRehydrating(true);
       try {
         const res = await fetch(`/api/rooms/${storedId}`);
         if (!res.ok) throw new Error("Room not found");
@@ -257,12 +279,15 @@ export default function Designer() {
         setVersions(restored);
         setCurrentVersion(restored.length - 1);
         setUploadStage("ready");
+        // Remembered locally now too, so a later visit here doesn't need the /latest round-trip again.
+        if (typeof window !== "undefined") localStorage.setItem(ROOM_ID_STORAGE_KEY, storedId);
       } catch {
-        localStorage.removeItem(ROOM_ID_STORAGE_KEY);
+        if (typeof window !== "undefined") localStorage.removeItem(ROOM_ID_STORAGE_KEY);
       } finally {
         setRehydrating(false);
       }
     })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   /** Picking a primary photo starts a fresh room and moves to the staging step (add angles/floor plan, then analyze) — never straight into the chat view. */

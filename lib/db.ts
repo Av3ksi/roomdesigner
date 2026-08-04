@@ -57,6 +57,16 @@ async function runSchema(): Promise<void> {
   // get passed to the image-edit step.
   await db`ALTER TABLE rooms ADD COLUMN IF NOT EXISTS extra_photos TEXT[] NOT NULL DEFAULT '{}'`;
   await db`ALTER TABLE rooms ADD COLUMN IF NOT EXISTS floorplan_photo TEXT`;
+  // Which signed-in account this live Designer session belongs to, once
+  // known — NULL for a room only ever touched anonymously. Set at creation
+  // when already signed in, or backfilled (claimed) the first time a
+  // signed-in visitor loads a room that only had their anonymous
+  // session_id so far — same "start anonymous, attach identity when it
+  // matters" pattern as finished_rooms.user_id. Lets lib/roomPersistence.ts's
+  // ownership checks and getMostRecentRoomForUser find a room across a
+  // browser/device that never had this room's id in localStorage.
+  await db`ALTER TABLE rooms ADD COLUMN IF NOT EXISTS user_id UUID`;
+  await db`CREATE INDEX IF NOT EXISTS idx_rooms_user ON rooms(user_id)`;
 
   await db`
     CREATE TABLE IF NOT EXISTS room_messages (

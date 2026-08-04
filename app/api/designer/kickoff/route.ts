@@ -5,7 +5,7 @@ import { dbEnabled } from "@/lib/db";
 import { loadProductCatalog } from "@/lib/productSearchDb";
 import { clientIp, enforceRateLimit } from "@/lib/rateLimit";
 import { appendMessage, createRoom, saveConstraints, saveRoomContext } from "@/lib/roomPersistence";
-import { getOrCreateSessionId } from "@/lib/session";
+import { getCurrentUserId, getOrCreateSessionId } from "@/lib/session";
 
 // The agent's placement tool uses sharp — Node runtime required.
 export const runtime = "nodejs";
@@ -59,6 +59,7 @@ export async function POST(req: NextRequest) {
           primaryPhoto.toString("base64"),
           extraPhotos.map((p) => p.toString("base64")),
           floorplanPhoto ? floorplanPhoto.toString("base64") : null,
+          await getCurrentUserId(),
         );
         await appendMessage(roomId, "assistant", result.reply);
         await saveConstraints(roomId, result.constraints);

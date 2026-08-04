@@ -4,8 +4,8 @@ import { runDesignerTurn, type ChatTurn, type Constraint, type RoomContext } fro
 import { dbEnabled } from "@/lib/db";
 import { loadProductCatalog } from "@/lib/productSearchDb";
 import { clientIp, enforceRateLimit } from "@/lib/rateLimit";
-import { appendMessage, createRoom, getRoomOwner, saveConstraints, saveRoomContext } from "@/lib/roomPersistence";
-import { getOrCreateSessionId } from "@/lib/session";
+import { appendMessage, createRoom, getRoomOwner, isRoomOwner, saveConstraints, saveRoomContext } from "@/lib/roomPersistence";
+import { getCurrentUserId, getOrCreateSessionId } from "@/lib/session";
 
 // The agent's placement tool uses sharp — Node runtime required.
 export const runtime = "nodejs";
@@ -76,12 +76,13 @@ export async function POST(req: NextRequest) {
   if (dbEnabled()) {
     try {
       const sessionId = await getOrCreateSessionId();
+      const userId = await getCurrentUserId();
       if (roomId) {
         const owner = await getRoomOwner(roomId);
-        if (owner !== sessionId) roomId = null; // not ours (or doesn't exist) — don't persist against it
+        if (!isRoomOwner(owner, sessionId, userId)) roomId = null; // not ours (or doesn't exist) — don't persist against it
       }
       if (!roomId && roomPhoto) {
-        roomId = await createRoom(sessionId, roomPhoto.toString("base64"));
+        roomId = await createRoom(sessionId, roomPhoto.toString("base64"), [], null, userId);
       }
       if (roomId) {
         await appendMessage(roomId, "user", message);
