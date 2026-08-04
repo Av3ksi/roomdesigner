@@ -12,6 +12,7 @@ import {
 } from "@/lib/clientImage";
 import { boxOverlapRatio, clampBox, DEFAULT_CATEGORY_BOX, describeRoughLocation } from "@/lib/placementBoxes";
 import { ROOM_ID_STORAGE_KEY, SEED_ROOM_STORAGE_KEY } from "@/lib/designerStorage";
+import ImageLightbox from "@/components/ImageLightbox";
 import RoomHotspots, { type HotspotItem } from "@/components/RoomHotspots";
 import UpgradeModal from "@/components/UpgradeModal";
 import { useMaisonStore } from "@/lib/store";
@@ -1275,8 +1276,7 @@ export default function Designer() {
               </div>
             ) : canvasSrc ? (
               <div className="relative w-full">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={canvasSrc} alt="Room" className="w-full" />
+                <ImageLightbox src={canvasSrc} alt="Room" className="w-full" />
                 <RoomHotspots
                   items={(version?.objects ?? []).map((obj, i): HotspotItem => {
                     if (obj.kind === "web") {

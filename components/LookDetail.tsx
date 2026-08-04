@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { ROOM_ID_STORAGE_KEY, SEED_ROOM_STORAGE_KEY } from "@/lib/designerStorage";
 import { formatPrice } from "@/lib/products";
 import { useMaisonStore } from "@/lib/store";
+import ImageLightbox from "@/components/ImageLightbox";
 import RoomHotspots, { type HotspotItem } from "@/components/RoomHotspots";
 import type { FinishedRoom } from "@/lib/finishedRooms";
 
@@ -64,8 +65,7 @@ export default function LookDetail({ room }: { room: FinishedRoom }) {
       <div className="grid gap-10 lg:grid-cols-[1.3fr_1fr]">
         <div>
           <div className="relative">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
+            <ImageLightbox
               src={`data:image/png;base64,${room.heroImageBase64}`}
               alt={room.title}
               className="w-full rounded-2xl border border-ink-line"
