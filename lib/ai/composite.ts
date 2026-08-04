@@ -485,12 +485,21 @@ export async function composeSceneWithProducts(
     form.append(
       "prompt",
       "The first image is a room photo. Every image after it is a real product photo to composite into the masked " +
-        "region of the room — arrange them together as ONE cohesive, professionally staged room, the way a real " +
-        "interior designer would lay out real furniture: consistent scale and lighting across every piece, " +
-        "believable relative positions (e.g. a coffee table sits in front of a sofa, not overlapping it or floating " +
-        "apart from it; a sideboard sits flush against a wall), and realistic contact shadows where each item " +
-        "touches the floor. Use the EXACT product shown in each reference image for its corresponding item — never " +
-        "substitute a different piece of furniture for any of them, and never omit one. " +
+        "region of the room. The result must look like a real, professionally photographed living room — the kind " +
+        "of interior photography you'd see in a design magazine or a real-estate listing, not a sterile product " +
+        "catalog grid with items placed in a straight line facing the camera. Arrange the given pieces together as " +
+        "ONE cohesive, naturally lived-in scene, the way a real interior designer would lay out real furniture: " +
+        "consistent scale and lighting across every piece, believable relative positions (e.g. a coffee table sits " +
+        "in front of a sofa, not overlapping it or floating apart from it; a sideboard sits flush against a wall; " +
+        "an accent chair angled slightly toward the sofa as if for conversation, not aimed straight at the camera), " +
+        "and realistic contact shadows where each item touches the floor. Style what's actually there naturally, " +
+        "not symmetrically or catalog-perfect: cushions slightly overlapped or leaned rather than centered and " +
+        "upright, a throw or blanket draped loosely over an arm or seat back rather than folded flat, wall art hung " +
+        "at genuine eye height rather than centered in empty wall space. Use the EXACT product shown in each " +
+        "reference image for its corresponding item — never substitute a different piece of furniture for any of " +
+        "them, and never omit one — and do not add any additional furniture, decor, or accessories beyond what's " +
+        "listed below, no matter how much a real photograph might otherwise include; only style the arrangement of " +
+        "the given pieces, don't invent new ones. " +
         itemLines.join(" ") +
         " Leave everything outside the masked region unchanged." +
         NO_PEOPLE_INSTRUCTION,

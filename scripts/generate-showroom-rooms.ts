@@ -69,11 +69,13 @@ const CONCEPTS: Concept[] = [
     description: "Light oak tones, undyed wool, and soft daylight — a calm, airy Scandinavian living room.",
     items: [
       { category: "sofa", keywords: ["eiche", "boucle", "leinen", "beige", "linen", "3-sitzer", "sitzer sofa"], styleIds: ["scandinavian"] },
+      { category: "chair", keywords: ["eiche", "sessel", "boucle", "leinen"], styleIds: ["scandinavian"] },
       { category: "table", keywords: ["eiche", "couchtisch", "rund", "oval", "oak"], styleIds: ["scandinavian"] },
       { category: "rug", keywords: ["teppich", "wolle", "beige", "creme", "wool"], styleIds: ["scandinavian"] },
       { category: "lighting", keywords: ["stehlampe", "papier", "floor lamp"], styleIds: ["scandinavian"] },
       { category: "art", keywords: ["wandbild", "poster", "print", "leinwand"], styleIds: ["scandinavian", "minimalist"] },
       { category: "plant", keywords: ["olivenbaum", "kunstpflanze", "pflanze", "plant"], styleIds: ["scandinavian", "mediterranean"] },
+      { category: "storage", keywords: ["sideboard", "kommode", "eiche", "oak"], styleIds: ["scandinavian"] },
       { category: "textile", keywords: ["decke", "plaid", "kissen", "throw"], styleIds: ["scandinavian", "cozy"] },
     ],
   },
@@ -82,6 +84,7 @@ const CONCEPTS: Concept[] = [
     description: "Emerald velvet, marble, and brass — a moody, statement living room.",
     items: [
       { category: "sofa", keywords: ["samt", "velvet", "grun", "smaragd", "blau", "navy"], styleIds: ["darkluxury"] },
+      { category: "chair", keywords: ["samt", "velvet", "sessel", "cocktailsessel"], styleIds: ["darkluxury", "modernluxury"] },
       { category: "table", keywords: ["marmor", "marble", "couchtisch", "schwarz"], styleIds: ["darkluxury", "modernluxury"] },
       { category: "rug", keywords: ["teppich", "dunkel", "muster", "orient"], styleIds: ["darkluxury"] },
       { category: "lighting", keywords: ["stehlampe", "messing", "brass", "gold"], styleIds: ["darkluxury", "modernluxury"] },
@@ -95,11 +98,14 @@ const CONCEPTS: Concept[] = [
     description: "Low furniture, natural linen and ash, and quiet negative space — a warm Japandi / organic-modern living room.",
     items: [
       { category: "sofa", keywords: ["leinen", "linen", "niedrig", "eiche", "esche", "ash"], styleIds: ["japandi", "organicmodern"] },
+      { category: "chair", keywords: ["rattan", "eiche", "sessel", "esche"], styleIds: ["japandi", "organicmodern"] },
       { category: "table", keywords: ["niedrig", "couchtisch", "eiche", "low table"], styleIds: ["japandi"] },
       { category: "rug", keywords: ["teppich", "jute", "natur", "natural"], styleIds: ["japandi", "organicmodern"] },
       { category: "lighting", keywords: ["laterne", "papier", "stehlampe", "lantern"], styleIds: ["japandi"] },
       { category: "decor", keywords: ["vase", "dekovase", "steingutvase"], styleIds: ["japandi", "minimalist"] },
       { category: "plant", keywords: ["bonsai", "ficus", "pflanze", "plant"], styleIds: ["japandi"] },
+      { category: "storage", keywords: ["sideboard", "kommode", "eiche", "esche"], styleIds: ["japandi"] },
+      { category: "textile", keywords: ["kissen", "leinen", "cushion"], styleIds: ["japandi", "organicmodern"] },
     ],
   },
 ];
