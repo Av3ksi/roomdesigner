@@ -31,10 +31,11 @@ import { readFileSync } from "fs";
 import { checkRenderedProductIdentity } from "../lib/ai/identityCheck";
 import { compositingEnabled, composeSceneWithProducts, reshapeBoxForProduct, type SceneItem } from "../lib/ai/composite";
 import { suggestPlacements } from "../lib/ai/placement";
+import { detectSceneItems } from "../lib/ai/locate";
 import { createFinishedRoom } from "../lib/finishedRooms";
 import { dbEnabled } from "../lib/db";
 import { loadProductCatalog } from "../lib/productSearchDb";
-import type { Product } from "../lib/types";
+import type { DetectionBox, Product } from "../lib/types";
 
 try {
   process.loadEnvFile?.();
@@ -133,6 +134,27 @@ async function main() {
     }
   }
 
+  // A single vision pass over the FINISHED render locates each item's real
+  // on-image position — the box we told the model to place something at is
+  // only a suggestion inside the masked region, not guaranteed to be
+  // exactly where it landed. Without this, LookDetail's clickable hotspots
+  // (RoomHotspots) have nothing to pin against — createFinishedRoom's
+  // itemBoxes defaults to empty, and a product with no box gets no pin.
+  console.log("Detecting each item's on-image position for the clickable hotspots...");
+  const detected = await detectSceneItems(
+    finalImage,
+    products.map((p, i) => ({ index: i + 1, name: p.name, category: p.category })),
+  );
+  const itemBoxes: Record<string, DetectionBox> = {};
+  for (const d of detected) {
+    if (d.pickedIndex >= 1 && d.pickedIndex <= products.length) {
+      itemBoxes[products[d.pickedIndex - 1].id] = d.box;
+    }
+  }
+  for (const product of products) {
+    if (!itemBoxes[product.id]) console.warn(`  ⚠ "${product.name}" wasn't found in the render — it won't have a clickable pin.`);
+  }
+
   const totalPrice = products.reduce((sum, p) => sum + p.price, 0);
   const styleTags = Array.from(new Set(products.flatMap((p) => p.styles)));
 
@@ -143,6 +165,7 @@ async function main() {
     styleTags,
     heroImageBase64: finalImage.toString("base64"),
     productIds: products.map((p) => p.id),
+    itemBoxes,
     totalPrice,
   });
 

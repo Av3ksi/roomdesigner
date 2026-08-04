@@ -38,11 +38,12 @@ import { existsSync, readFileSync } from "fs";
 import { checkRenderedProductIdentity } from "../lib/ai/identityCheck";
 import { compositingEnabled, composeSceneWithProducts, reshapeBoxForProduct, type SceneItem } from "../lib/ai/composite";
 import { suggestPlacements } from "../lib/ai/placement";
+import { detectSceneItems } from "../lib/ai/locate";
 import { createFinishedRoom } from "../lib/finishedRooms";
 import { dbEnabled } from "../lib/db";
 import { loadProductCatalog } from "../lib/productSearchDb";
 import { searchProducts } from "../lib/productSearch";
-import type { Product, ProductCategory } from "../lib/types";
+import type { DetectionBox, Product, ProductCategory } from "../lib/types";
 
 try {
   process.loadEnvFile?.();
@@ -191,6 +192,29 @@ async function buildConcept(concept: Concept, catalog: Product[], roomPath: stri
     else if (check) console.log(`    ✓ "${product.name}" looks right.`);
   }
 
+  // A single vision pass over the FINISHED render locates each item's real
+  // on-image position — same technique the Looks Studio route
+  // (app/api/finished-rooms/generate) uses, and for the same reason: the
+  // box we told the model to place something at is only a suggestion
+  // inside the masked region, not guaranteed to be exactly where it landed.
+  // Without this, LookDetail's clickable hotspots (RoomHotspots) have
+  // nothing to pin against — createFinishedRoom's itemBoxes defaults to
+  // empty, and a product with no box gets no pin at all.
+  console.log("  Detecting each item's on-image position for the clickable hotspots...");
+  const detected = await detectSceneItems(
+    finalImage,
+    renderedProducts.map((p, i) => ({ index: i + 1, name: p.name, category: p.category })),
+  );
+  const itemBoxes: Record<string, DetectionBox> = {};
+  for (const d of detected) {
+    if (d.pickedIndex >= 1 && d.pickedIndex <= renderedProducts.length) {
+      itemBoxes[renderedProducts[d.pickedIndex - 1].id] = d.box;
+    }
+  }
+  for (const product of renderedProducts) {
+    if (!itemBoxes[product.id]) console.warn(`    ⚠ "${product.name}" wasn't found in the render — it won't have a clickable pin.`);
+  }
+
   const totalPrice = renderedProducts.reduce((sum, p) => sum + p.price, 0);
   const styleTags = Array.from(new Set(renderedProducts.flatMap((p) => p.styles)));
 
@@ -201,6 +225,7 @@ async function buildConcept(concept: Concept, catalog: Product[], roomPath: stri
     styleTags,
     heroImageBase64: finalImage.toString("base64"),
     productIds: renderedProducts.map((p) => p.id),
+    itemBoxes,
     totalPrice,
   });
 
