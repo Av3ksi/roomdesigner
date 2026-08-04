@@ -6,6 +6,7 @@ import { orderConfirmationEmailHtml, sendEmail } from "@/lib/email";
 import { getProductsByIds } from "@/lib/productSearchDb";
 import { formatPrice } from "@/lib/products";
 import { createVidaxlOrder, vidaxlEnabled } from "@/lib/vidaxlOrders";
+import { getUserByStripeCustomerId, setUserPremium, setUserPremiumFromStripe } from "@/lib/auth";
 
 export const runtime = "nodejs";
 
@@ -33,6 +34,21 @@ export async function POST(req: NextRequest) {
 
   if (event.type === "checkout.session.completed") {
     const session = event.data.object as Stripe.Checkout.Session;
+
+    // The premium subscription checkout (app/api/checkout/premium) — a
+    // completely separate flow from furniture checkout below, identified
+    // by mode + the userId it stamped into metadata (there's no order row
+    // for this one, nothing to fulfil, just an account flag to flip).
+    if (session.mode === "subscription") {
+      const userId = session.metadata?.userId;
+      const customerId = typeof session.customer === "string" ? session.customer : session.customer?.id;
+      const subscriptionId = typeof session.subscription === "string" ? session.subscription : session.subscription?.id;
+      if (userId && customerId && subscriptionId) {
+        await setUserPremiumFromStripe(userId, customerId, subscriptionId);
+      }
+      return NextResponse.json({ received: true });
+    }
+
     const paymentIntentId =
       typeof session.payment_intent === "string" ? session.payment_intent : session.payment_intent?.id ?? null;
     const shippingDetails = session.collected_information?.shipping_details;
@@ -71,6 +87,22 @@ export async function POST(req: NextRequest) {
           });
         }
       }
+    }
+  }
+
+  // Subscription lifecycle after the initial checkout — a cancellation, or
+  // a renewal payment that finally fails after Stripe's own retry
+  // schedule, both need premium turned back off. Matched by customer id,
+  // not subscription id, since that's the field we actually store
+  // (lib/auth.ts's setUserPremiumFromStripe) and both event payloads carry
+  // `customer` directly.
+  if (event.type === "customer.subscription.deleted" || event.type === "customer.subscription.updated") {
+    const subscription = event.data.object as Stripe.Subscription;
+    const revoked = event.type === "customer.subscription.deleted" || ["canceled", "unpaid", "incomplete_expired"].includes(subscription.status);
+    if (revoked) {
+      const customerId = typeof subscription.customer === "string" ? subscription.customer : subscription.customer.id;
+      const user = await getUserByStripeCustomerId(customerId);
+      if (user) await setUserPremium(user.id, false);
     }
   }
 

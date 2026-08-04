@@ -195,8 +195,8 @@ async function runSchema(): Promise<void> {
     )
   `;
 
-  // Real accounts — email only, no passwords to hash/store/leak. Login is a
-  // one-time link emailed via Resend (see lib/auth.ts).
+  // Real accounts — email only by default, no passwords to hash/store/leak.
+  // Login is normally a one-time link emailed via Resend (see lib/auth.ts).
   await db`
     CREATE TABLE IF NOT EXISTS users (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -204,6 +204,22 @@ async function runSchema(): Promise<void> {
       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     )
   `;
+  // One narrow exception to "no passwords": an owner/admin account can set
+  // one via scripts/set-user-password.ts instead of waiting on a magic-link
+  // email every time — see lib/password.ts. NULL (the default for every
+  // normal account) always fails password login; only an account that
+  // explicitly opted in has one.
+  await db`ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT`;
+  // Unlimited AI generations, bypassing lib/usageLimits.ts's freemium gate
+  // entirely — set by a real Stripe subscription (app/api/checkout/premium,
+  // app/api/webhooks/stripe) or manually via scripts/set-user-password.ts
+  // --premium for an owner/comp account that shouldn't need to pay itself.
+  await db`ALTER TABLE users ADD COLUMN IF NOT EXISTS is_premium BOOLEAN NOT NULL DEFAULT false`;
+  // Links this user to their Stripe subscription — set once a premium
+  // checkout completes, used by the webhook to find the right user again
+  // when the subscription later renews, updates, or cancels.
+  await db`ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_customer_id TEXT`;
+  await db`ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_subscription_id TEXT`;
   await db`
     CREATE TABLE IF NOT EXISTS login_tokens (
       token TEXT PRIMARY KEY,

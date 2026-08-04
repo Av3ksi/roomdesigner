@@ -3,8 +3,9 @@ import { compositeProductIntoRoom, compositingEnabled } from "@/lib/ai/composite
 import { compositeProductIntoRoomFlux, fluxFillEnabled } from "@/lib/ai/fluxFill";
 import { performRemoval, removalEnabled } from "@/lib/ai/removal";
 import { checkRenderedProductIdentity } from "@/lib/ai/identityCheck";
+import { isPremiumUser } from "@/lib/auth";
 import { clientIp, enforceRateLimit } from "@/lib/rateLimit";
-import { getOrCreateSessionId } from "@/lib/session";
+import { getCurrentUserId, getOrCreateSessionId } from "@/lib/session";
 import { FREE_GENERATION_LIMIT, hasFreeGenerationsRemaining, recordGeneration } from "@/lib/usageLimits";
 import { clampBox, isValidBox } from "@/lib/placementBoxes";
 import type { ProductCategory } from "@/lib/types";
@@ -50,9 +51,12 @@ export async function POST(req: NextRequest) {
   });
   if (limited) return NextResponse.json({ error: limited.error }, { status: 429 });
 
+  // Premium accounts bypass the freemium gate entirely — see /api/composite for the same check.
+  const premium = await isPremiumUser(await getCurrentUserId());
+
   // Freemium gate — checked BEFORE either billed call fires, so a request
   // past the free limit never spends money.
-  if (!(await hasFreeGenerationsRemaining(sessionId))) {
+  if (!premium && !(await hasFreeGenerationsRemaining(sessionId))) {
     return NextResponse.json(
       {
         error: `You've used your ${FREE_GENERATION_LIMIT} free room generation. Upgrade to Pro for unlimited access.`,
@@ -103,7 +107,7 @@ export async function POST(req: NextRequest) {
       ? await compositeProductIntoRoomFlux(erasedBuffer, productBuffer, cat, [], newBox, wallAngleDeg)
       : await compositeProductIntoRoom(erasedBuffer, productBuffer, cat, [], "high", newBox, wallAngleDeg);
 
-    await recordGeneration(sessionId);
+    if (!premium) await recordGeneration(sessionId);
 
     const identityCheck = await checkRenderedProductIdentity(
       productBuffer,

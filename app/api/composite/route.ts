@@ -2,8 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { compositeProductIntoRoom, compositingEnabled } from "@/lib/ai/composite";
 import { compositeProductIntoRoomFlux, fluxFillEnabled } from "@/lib/ai/fluxFill";
 import { checkRenderedProductIdentity } from "@/lib/ai/identityCheck";
+import { isPremiumUser } from "@/lib/auth";
 import { clientIp, enforceRateLimit } from "@/lib/rateLimit";
-import { getOrCreateSessionId } from "@/lib/session";
+import { getCurrentUserId, getOrCreateSessionId } from "@/lib/session";
 import { FREE_GENERATION_LIMIT, hasFreeGenerationsRemaining, recordGeneration } from "@/lib/usageLimits";
 import type { ProductCategory } from "@/lib/types";
 
@@ -46,9 +47,15 @@ export async function POST(req: NextRequest) {
   });
   if (limited) return NextResponse.json({ error: limited.error }, { status: 429 });
 
+  // Premium accounts (lib/auth.ts) bypass the freemium gate entirely — a
+  // real Stripe subscription (app/api/checkout/premium), not just a higher
+  // limit. Checked before the gate below so a premium user never even
+  // touches session_usage.
+  const premium = await isPremiumUser(await getCurrentUserId());
+
   // Freemium gate — checked BEFORE the billed OpenAI call fires, so a
   // request past the free limit never spends money.
-  if (!(await hasFreeGenerationsRemaining(sessionId))) {
+  if (!premium && !(await hasFreeGenerationsRemaining(sessionId))) {
     return NextResponse.json(
       {
         error: `You've used your ${FREE_GENERATION_LIMIT} free room generation. Upgrade to Pro for unlimited access.`,
@@ -108,8 +115,9 @@ export async function POST(req: NextRequest) {
     // The render succeeded — this is the actual "one free generation" spend,
     // counted here (not in the separate /api/rooms/[id]/versions persistence
     // call) since that route is fire-and-forget from the client and could
-    // silently fail to record the count.
-    await recordGeneration(sessionId);
+    // silently fail to record the count. Skipped for premium accounts —
+    // nothing to count against, they're unlimited regardless.
+    if (!premium) await recordGeneration(sessionId);
 
     // Best-effort QA pass (Phase 2): compares the rendered region against the
     // real product photo since compositing models occasionally substitute a
