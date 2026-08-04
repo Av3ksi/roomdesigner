@@ -1,14 +1,34 @@
 "use client";
 
-import { ArrowUpRight, ShoppingBag } from "lucide-react";
+import { ArrowUpRight, Sparkles, ShoppingBag } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { ROOM_ID_STORAGE_KEY, SEED_ROOM_STORAGE_KEY } from "@/lib/designerStorage";
 import { formatPrice } from "@/lib/products";
 import { useMaisonStore } from "@/lib/store";
 import RoomHotspots, { type HotspotItem } from "@/components/RoomHotspots";
 import type { FinishedRoom } from "@/lib/finishedRooms";
 
 export default function LookDetail({ room }: { room: FinishedRoom }) {
+  const router = useRouter();
   const addToCart = useMaisonStore((s) => s.addToCart);
   const addManyToCart = useMaisonStore((s) => s.addManyToCart);
+
+  /**
+   * "Every room on the site should be editable by prompting." This room —
+   * whether a curated Complete Room or someone's My Rooms save — isn't a
+   * live Designer session this browser owns, so there's no existing chat/
+   * version history to resume. Instead this seeds a BRAND NEW Designer room
+   * from the exact photo shown here (via Designer's SEED_ROOM_STORAGE_KEY),
+   * so the customer can immediately start adding, removing, and moving
+   * pieces with full freedom instead of being stuck with the fixed bundle.
+   * Clearing ROOM_ID_STORAGE_KEY first stops Designer's own rehydration
+   * effect from racing this with an unrelated previous session.
+   */
+  function customizeInDesigner() {
+    sessionStorage.setItem(SEED_ROOM_STORAGE_KEY, JSON.stringify({ imageBase64: room.heroImageBase64 }));
+    localStorage.removeItem(ROOM_ID_STORAGE_KEY);
+    router.push("/designer");
+  }
 
   const productHotspots: HotspotItem[] = room.items
     .filter((item) => item.box)
@@ -57,6 +77,9 @@ export default function LookDetail({ room }: { room: FinishedRoom }) {
               Click any highlighted piece. Brass and blue pins are ours; rose pins open another store.
             </p>
           )}
+          <button onClick={customizeInDesigner} className="btn-ghost mt-4 w-full justify-center !text-xs">
+            <Sparkles size={13} /> Customize this room with AI — swap, remove, or move anything
+          </button>
         </div>
 
         <div>

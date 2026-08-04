@@ -11,12 +11,12 @@ import {
   reshapeBoxToAspectRatio,
 } from "@/lib/clientImage";
 import { boxOverlapRatio, clampBox, DEFAULT_CATEGORY_BOX, describeRoughLocation } from "@/lib/placementBoxes";
+import { ROOM_ID_STORAGE_KEY, SEED_ROOM_STORAGE_KEY } from "@/lib/designerStorage";
 import RoomHotspots, { type HotspotItem } from "@/components/RoomHotspots";
 import UpgradeModal from "@/components/UpgradeModal";
 import { useMaisonStore } from "@/lib/store";
 import type { DetectionBox, Product, ProductCategory } from "@/lib/types";
 
-const ROOM_ID_STORAGE_KEY = "maison_room_id";
 const MAX_EXTRA_PHOTOS = 4;
 
 function formatChf(n: number): string {
@@ -208,6 +208,27 @@ export default function Designer() {
       .catch(() => {
         // Unknown is fine — the server still enforces the limit either way.
       });
+  }, []);
+
+  // On mount: another page (LookDetail's "Customize in Designer") may have
+  // seeded a brand-new room from an existing rendered photo — a Complete
+  // Room or a My Rooms save, which this browsing session doesn't own as a
+  // live Designer room, so this always starts fresh rather than trying to
+  // resume anything. Routes through onRoomFileChange, same as picking a
+  // file by hand, so every reset it already does (clearing versions,
+  // proposals, inventory, the old roomId) applies here too.
+  useEffect(() => {
+    const raw = typeof window !== "undefined" ? sessionStorage.getItem(SEED_ROOM_STORAGE_KEY) : null;
+    if (!raw) return;
+    sessionStorage.removeItem(SEED_ROOM_STORAGE_KEY);
+    try {
+      const { imageBase64 } = JSON.parse(raw) as { imageBase64: string };
+      const mime = detectImageMimeFromBase64(imageBase64);
+      onRoomFileChange(base64ToFile(imageBase64, "room", mime));
+    } catch {
+      // Malformed seed — fall through to the normal empty upload state.
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // On mount: if a room was persisted last visit (DB-backed sessions only),
