@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, Bookmark, Check, Coins, Eraser, Loader2, MapPin, Plus, Ruler, Search, Send, Sparkles, Trash2, Upload, X } from "lucide-react";
+import { AlertTriangle, Bookmark, Check, Eraser, Loader2, MapPin, Plus, Ruler, Search, Send, Sparkles, Trash2, Upload, X } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -854,28 +854,8 @@ export default function Designer() {
       {showBuyCredits && <BuyCreditsModal onClose={() => setShowBuyCredits(false)} />}
       <div className="container-page py-10">
       <div className="max-w-2xl">
-        <div className="flex items-center justify-between gap-3">
-          <div className="eyebrow mb-3">Designer</div>
-          {/* Persistently visible balance (requirement: know your credits before you act, not just after a blocked render) — always rendered once known, not just at 0. */}
-          {credits !== null &&
-            (premiumAccount ? (
-              <span className="mb-3 flex shrink-0 items-center gap-1.5 rounded-full border border-brass/40 bg-brass/10 px-3 py-1.5 text-xs font-semibold text-brass-bright">
-                <Coins size={13} /> Unlimited · Premium
-              </span>
-            ) : (
-              <button
-                onClick={() => setShowBuyCredits(true)}
-                className={`mb-3 flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
-                  credits === 0
-                    ? "border-rose-400/40 bg-rose-400/10 text-rose-300 hover:border-rose-400/60"
-                    : "border-ink-line text-cream-dim hover:border-brass/40 hover:text-brass-bright"
-                }`}
-              >
-                <Coins size={13} />
-                {credits} credit{credits === 1 ? "" : "s"}
-              </button>
-            ))}
-        </div>
+        {/* Credit balance now lives in the site header (components/Nav.tsx) so it's visible on every page, not just here. */}
+        <div className="eyebrow mb-3">Designer</div>
         <h1 className="font-display text-4xl leading-tight sm:text-5xl">Talk to your room.</h1>
         <p className="mt-4 text-cream-dim">
           Upload a room photo — extra angles and a floor plan help but aren&apos;t required. The AI
