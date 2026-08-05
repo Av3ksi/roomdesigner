@@ -81,7 +81,12 @@ export async function POST(req: NextRequest) {
     const result = await performRemoval(roomBuffer, category as ProductCategory, description, knownBox);
     // The render succeeded — this is the actual credit spend (see /api/composite for why it's recorded here, not in the versions-persistence route).
     if (!premium) await spendCredit(sessionId, userId, "generation:remove");
-    return NextResponse.json({ imageBase64: result.imageBase64, removedBox: result.removedBox, maskSource: result.maskSource });
+    return NextResponse.json({
+      imageBase64: result.imageBase64,
+      removedBox: result.removedBox,
+      maskSource: result.maskSource,
+      removalCheck: result.removalCheck,
+    });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 500 });
   }

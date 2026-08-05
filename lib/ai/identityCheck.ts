@@ -2,7 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import sharp from "sharp";
 import { MODEL, aiEnabled } from "./claude";
 import { describeRoughLocation } from "../placementBoxes";
-import type { DetectionBox } from "../types";
+import type { DetectionBox, ProductCategory } from "../types";
 
 /**
  * Phase 2's "Product identity QA" gate (docs/BLUEPRINT.md's honest critique
@@ -99,6 +99,72 @@ export async function checkRenderedProductIdentity(
     return { pass: parsed.pass, note: parsed.note };
   } catch (err) {
     console.error("[maison] identity check failed, skipping:", err);
+    return null;
+  }
+}
+
+const REMOVAL_SYSTEM = `You are a quality-control reviewer for Maison, an AI interior design platform. An automated tool just tried to ERASE one specific existing object from a customer's room photo via an AI image edit. You are shown two images: (1) the room photo BEFORE the edit, and (2) the room photo AFTER the edit, which should have that object gone and its space filled in naturally.
+
+Your only job: compare the two photos and decide whether the target object is now actually GONE from the after photo — not still visible anywhere, even if slightly repositioned or partially obscured by something else. A successful removal fills in the vacated space naturally (matching the surrounding floor, wall, and lighting) — that's expected and should still pass. Only fail when the same object (or something clearly recognizable as it) is still visibly present in the after photo, meaning the edit didn't actually do what was asked.
+
+Return pass=true/false and one short, plain, customer-friendly sentence explaining your reasoning (shown as a warning banner only when pass=false).`;
+
+/**
+ * The removal counterpart to checkRenderedProductIdentity — that one checks
+ * an ADD actually happened; this checks a REMOVAL actually happened. Real,
+ * confirmed gap: performRemoval had no verification step at all, so a
+ * render where the box-based inpainting missed the target (wrong box, or
+ * the model just not following the erase instruction) got saved and
+ * credited exactly like a clean removal, with nothing telling the customer
+ * it didn't work. Mirrors the add-flow check's shape (before/after
+ * comparison via Claude vision, warn-don't-block on failure — same
+ * established pattern, not a new policy) rather than inventing a different
+ * mechanism for the other half of the same problem.
+ */
+export async function checkRemovalSuccess(
+  beforeImage: Buffer,
+  afterImage: Buffer,
+  category: ProductCategory,
+  description?: string,
+): Promise<IdentityCheckResult | null> {
+  if (!aiEnabled()) return null;
+  try {
+    const [beforeJpeg, afterJpeg] = await Promise.all([
+      toJpegBase64(beforeImage, REVIEW_MAX_EDGE),
+      toJpegBase64(afterImage, REVIEW_MAX_EDGE),
+    ]);
+
+    const target = description ? `a ${category} (${description})` : `a ${category}`;
+
+    const response = await new Anthropic().messages.create({
+      model: MODEL,
+      max_tokens: 2048,
+      thinking: { type: "adaptive" },
+      system: REMOVAL_SYSTEM,
+      output_config: {
+        format: { type: "json_schema", schema: IDENTITY_SCHEMA as unknown as Record<string, unknown> },
+      },
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: `Room photo BEFORE the edit — the target to remove is ${target}:` },
+            { type: "image", source: { type: "base64", media_type: "image/jpeg", data: beforeJpeg } },
+            { type: "text", text: "Room photo AFTER the edit:" },
+            { type: "image", source: { type: "base64", media_type: "image/jpeg", data: afterJpeg } },
+          ],
+        },
+      ],
+    });
+
+    if (response.stop_reason === "refusal") return null;
+    const text = response.content.find((b) => b.type === "text")?.text;
+    if (!text) return null;
+    const parsed = JSON.parse(text) as Record<string, unknown>;
+    if (typeof parsed.pass !== "boolean" || typeof parsed.note !== "string") return null;
+    return { pass: parsed.pass, note: parsed.note };
+  } catch (err) {
+    console.error("[maison] removal check failed, skipping:", err);
     return null;
   }
 }

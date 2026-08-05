@@ -44,6 +44,25 @@ interface MaisonStore {
 
   consultations: ConsultationRequest[];
   requestConsultation: (req: Omit<ConsultationRequest, "id" | "createdAt">) => ConsultationRequest;
+
+  /**
+   * Shared credit balance (lib/credits.ts) — a single source of truth so the
+   * header's CreditBadge and Designer.tsx's own gating logic never
+   * disagree. Real, confirmed bug this fixes: each used to fetch /api/usage
+   * into its own local useState, so a spend on the Designer page updated
+   * Designer's own count but left the header badge showing the stale
+   * pre-spend balance until a full page reload. Never persisted (see
+   * partialize below) — always comes fresh from the server, since a cached
+   * balance could go stale across sessions/devices/purchases.
+   */
+  credits: number | null;
+  premiumAccount: boolean;
+  setCredits: (credits: number | null) => void;
+  setPremiumAccount: (premium: boolean) => void;
+  /** Optimistic local decrement right after a confirmed render succeeds — the server already spent it; this just keeps the UI in sync without a round-trip. */
+  spendCreditLocally: () => void;
+  /** Fetches the real balance from the server — call once on mount (CreditBadge does); other components just read the store. */
+  refreshCredits: () => Promise<void>;
 }
 
 export const useMaisonStore = create<MaisonStore>()(
@@ -171,6 +190,25 @@ export const useMaisonStore = create<MaisonStore>()(
         };
         set((s) => ({ consultations: [request, ...s.consultations] }));
         return request;
+      },
+
+      credits: null,
+      premiumAccount: false,
+      setCredits: (credits) => set({ credits }),
+      setPremiumAccount: (premiumAccount) => set({ premiumAccount }),
+      spendCreditLocally: () =>
+        set((s) => ({ credits: s.credits !== null ? Math.max(0, s.credits - 1) : s.credits })),
+      refreshCredits: async () => {
+        try {
+          const res = await fetch("/api/usage");
+          const data = await res.json();
+          set({
+            credits: typeof data.credits === "number" ? data.credits : null,
+            premiumAccount: Boolean(data.premium),
+          });
+        } catch {
+          // Unknown is fine — the server still enforces the gate either way.
+        }
       },
     }),
     {

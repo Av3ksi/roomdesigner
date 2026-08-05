@@ -2,6 +2,7 @@ import { compositingEnabled, removeExistingObject } from "./composite";
 import { fluxFillEnabled, removeExistingObjectFlux, removeExistingObjectFluxWithMask } from "./fluxFill";
 import { segmentExistingFurniture } from "./vision/segmentation";
 import { locateExistingObject } from "./locate";
+import { checkRemovalSuccess, type IdentityCheckResult } from "./identityCheck";
 import { clampBox, isValidBox } from "../placementBoxes";
 import type { DetectionBox, ProductCategory } from "../types";
 
@@ -30,6 +31,8 @@ export interface RemovalOutcome {
   imageBase64: string;
   removedBox: DetectionBox;
   maskSource: "segmentation" | "box";
+  /** Whether the target object is actually gone from the result — see lib/ai/identityCheck.ts's checkRemovalSuccess. Null when the check itself couldn't run (e.g. ANTHROPIC_API_KEY unset). */
+  removalCheck: IdentityCheckResult | null;
 }
 
 export async function performRemoval(
@@ -47,7 +50,9 @@ export async function performRemoval(
     const seg = await segmentExistingFurniture(roomBuffer, category, description);
     if (seg) {
       const result = await removeExistingObjectFluxWithMask(roomBuffer, seg, category);
-      return { imageBase64: result.imageBase64, removedBox: seg.box, maskSource: "segmentation" };
+      const resultBuffer = Buffer.from(result.imageBase64, "base64");
+      const removalCheck = await checkRemovalSuccess(roomBuffer, resultBuffer, category, description);
+      return { imageBase64: result.imageBase64, removedBox: seg.box, maskSource: "segmentation", removalCheck };
     }
     // Segmentation didn't find the object (a model miss, not a config
     // problem) — fall through to the box tier below, still on FLUX.
@@ -63,5 +68,7 @@ export async function performRemoval(
   const result = useFlux
     ? await removeExistingObjectFlux(roomBuffer, box, category)
     : await removeExistingObject(roomBuffer, box, category);
-  return { imageBase64: result.imageBase64, removedBox: box, maskSource: "box" };
+  const resultBuffer = Buffer.from(result.imageBase64, "base64");
+  const removalCheck = await checkRemovalSuccess(roomBuffer, resultBuffer, category, description);
+  return { imageBase64: result.imageBase64, removedBox: box, maskSource: "box", removalCheck };
 }

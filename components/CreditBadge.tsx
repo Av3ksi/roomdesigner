@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Coins } from "lucide-react";
 import BuyCreditsModal from "@/components/BuyCreditsModal";
+import { useMaisonStore } from "@/lib/store";
 
 /**
  * Site-wide credit balance pill (lib/credits.ts) — lives in the header
@@ -10,23 +11,23 @@ import BuyCreditsModal from "@/components/BuyCreditsModal";
  * anonymous session cookie, not to being signed in: a signed-out visitor
  * still has a balance and should be able to see it anywhere, not only on
  * the one page that happens to spend it.
+ *
+ * Reads from the shared store (lib/store.ts), not its own local state — a
+ * real, confirmed bug had this component fetch into a local useState, so a
+ * spend on /designer updated Designer.tsx's own count but left this badge
+ * showing the stale pre-spend balance until a full reload. This is also
+ * the one place that actually triggers the initial fetch (Nav is always
+ * mounted, on every page), so nothing else needs to.
  */
 export default function CreditBadge() {
-  const [credits, setCredits] = useState<number | null>(null);
-  const [premium, setPremium] = useState(false);
+  const credits = useMaisonStore((s) => s.credits);
+  const premium = useMaisonStore((s) => s.premiumAccount);
+  const refreshCredits = useMaisonStore((s) => s.refreshCredits);
   const [showBuyCredits, setShowBuyCredits] = useState(false);
 
   useEffect(() => {
-    fetch("/api/usage")
-      .then((res) => res.json())
-      .then((data) => {
-        setCredits(typeof data.credits === "number" ? data.credits : null);
-        setPremium(Boolean(data.premium));
-      })
-      .catch(() => {
-        // Unknown is fine — stays hidden, the server still enforces the gate either way.
-      });
-  }, []);
+    refreshCredits();
+  }, [refreshCredits]);
 
   if (credits === null) return null;
 

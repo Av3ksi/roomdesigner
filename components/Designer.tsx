@@ -153,15 +153,6 @@ export default function Designer() {
   const [catalogResults, setCatalogResults] = useState<Product[]>([]);
   const [catalogSearching, setCatalogSearching] = useState(false);
   const [showCatalogPanel, setShowCatalogPanel] = useState(false);
-  // Credit gate (lib/credits.ts) — null while unknown (not yet fetched),
-  // else the number of credits left on this anonymous session (a real
-  // number even for a premium account, see /api/usage — premiumAccount
-  // below is what actually drives "unlimited" display/behavior). Purely a
-  // UX hint: the server enforces the real gate on every /api/composite,
-  // /api/remove-object, and /api/move-object call regardless of what the
-  // client thinks.
-  const [credits, setCredits] = useState<number | null>(null);
-  const [premiumAccount, setPremiumAccount] = useState(false);
   const [showBuyCredits, setShowBuyCredits] = useState(false);
   // "Save to my collection" — a private bookmark of the current render,
   // separate from the credit gate above (saving costs nothing).
@@ -189,6 +180,18 @@ export default function Designer() {
   const overlayRef = useRef<HTMLDivElement | null>(null);
   const dragRef = useRef<{ mode: "move" | "resize"; startX: number; startY: number; box: DetectionBox; rect: DOMRect } | null>(null);
   const addToCart = useMaisonStore((s) => s.addToCart);
+  // Credit gate (lib/credits.ts) — shared with the header's CreditBadge via
+  // the store (lib/store.ts), not local state: null while unknown (not yet
+  // fetched), else the number of credits left on this anonymous session (a
+  // real number even for a premium account — premiumAccount below is what
+  // actually drives "unlimited" display/behavior). Purely a UX hint: the
+  // server enforces the real gate on every /api/composite,
+  // /api/remove-object, and /api/move-object call regardless of what the
+  // client thinks.
+  const credits = useMaisonStore((s) => s.credits);
+  const premiumAccount = useMaisonStore((s) => s.premiumAccount);
+  const setCredits = useMaisonStore((s) => s.setCredits);
+  const spendCreditLocally = useMaisonStore((s) => s.spendCreditLocally);
 
   // Ticks while waiting on a chat reply so the loading text can be honest
   // about how long it's actually been — a message that might involve a real
@@ -204,19 +207,9 @@ export default function Designer() {
     return () => clearInterval(id);
   }, [thinking]);
 
-  // On mount: how many credits this session has left, so the UI can show
-  // the paywall proactively instead of only after a wasted click.
-  useEffect(() => {
-    fetch("/api/usage")
-      .then((res) => res.json())
-      .then((data) => {
-        setCredits(typeof data.credits === "number" ? data.credits : null);
-        setPremiumAccount(Boolean(data.premium));
-      })
-      .catch(() => {
-        // Unknown is fine — the server still enforces the gate either way.
-      });
-  }, []);
+  // Credit balance itself is fetched by the header's CreditBadge (always
+  // mounted, in the root layout) into the shared store above — no need to
+  // fetch it again here.
 
   // On mount — two things that can each restore a room, checked in order
   // within ONE effect (not two separate ones) specifically so there's no
@@ -517,7 +510,7 @@ export default function Designer() {
       }
       if (!res.ok) throw new Error(body.error ?? `Move failed: ${res.status}`);
 
-      setCredits((r) => (r !== null ? Math.max(0, r - 1) : r));
+      spendCreditLocally();
       const movedObject: PlacedObject =
         movingObject.object.kind === "catalog"
           ? { box: body.maskBox, kind: "catalog", product: movingObject.object.product }
@@ -753,9 +746,12 @@ export default function Designer() {
         }
         if (!res.ok) throw new Error(body.error ?? `Removal failed: ${res.status}`);
 
-        setCredits((r) => (r !== null ? Math.max(0, r - 1) : r));
+        spendCreditLocally();
         commitVersion(body.imageBase64, `V${versions.length} · Removed ${proposal.description ?? proposal.category}`, prevObjects);
         setProposals((p) => p.filter((_, i) => i !== index));
+        if (body.removalCheck && body.removalCheck.pass === false) {
+          setIdentityWarning(body.removalCheck.note);
+        }
         return;
       }
 
@@ -790,7 +786,7 @@ export default function Designer() {
       }
       if (!res.ok) throw new Error(body.error ?? `Render failed: ${res.status}`);
 
-      setCredits((r) => (r !== null ? Math.max(0, r - 1) : r));
+      spendCreditLocally();
       const newObject: PlacedObject =
         proposal.kind === "add"
           ? { box: body.maskBox, kind: "catalog", product: proposal.product }
