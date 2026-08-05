@@ -45,7 +45,7 @@ export function compositingEnabled(): boolean {
   return Boolean(process.env.OPENAI_API_KEY);
 }
 
-const MODEL = "gpt-image-1.5";
+export const MODEL = "gpt-image-1.5";
 
 /**
  * The mask only constrains *where editing is allowed*, not how the model

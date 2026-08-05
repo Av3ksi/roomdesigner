@@ -3,14 +3,10 @@
  * hand-picked set of real catalog products composited into it in a single
  * scene, saved as a fixed sellable look (lib/finishedRooms.ts). This is the
  * IKEA-showroom model: you supply the room photo and choose the products;
- * this script does the compositing and saves the result. Not automated
- * curation — you're the designer here, same as a real IKEA room-set stylist.
- *
- * All products are composited in ONE OpenAI call (composeSceneWithProducts)
- * rather than one call per product — chaining separate single-object edits
- * produced a scattered, disconnected-looking room in real testing, since
- * each call only knew its own category's generic box with no awareness of
- * the others. One call lets the model arrange the whole scene cohesively.
+ * lib/finishedRoomPipeline.ts does the compositing and saves the result.
+ * Not automated curation — you're the designer here, same as a real IKEA
+ * room-set stylist. (scripts/generate-looks.ts is the automated sibling —
+ * same pipeline, AI-picked room photo and products instead.)
  *
  * Real money: one OpenAI image-edit call (~$0.02-0.06 depending on quality
  * and how many products are in the scene) plus a few cheap Claude vision
@@ -28,14 +24,11 @@
  * Reads ANTHROPIC_API_KEY, OPENAI_API_KEY, DATABASE_URL from .env.
  */
 import { readFileSync } from "fs";
-import { checkRenderedProductIdentity } from "../lib/ai/identityCheck";
-import { compositingEnabled, composeSceneWithProducts, reshapeBoxForProduct, type SceneItem } from "../lib/ai/composite";
-import { suggestPlacements } from "../lib/ai/placement";
-import { detectSceneItems } from "../lib/ai/locate";
-import { createFinishedRoom } from "../lib/finishedRooms";
+import { compositingEnabled } from "../lib/ai/composite";
+import { composeAndSaveFinishedRoom } from "../lib/finishedRoomPipeline";
 import { dbEnabled } from "../lib/db";
 import { loadProductCatalog } from "../lib/productSearchDb";
-import type { DetectionBox, Product } from "../lib/types";
+import type { Product } from "../lib/types";
 
 try {
   process.loadEnvFile?.();
@@ -98,78 +91,19 @@ async function main() {
     seenCategories.add(p.category);
   }
 
-  console.log("Analyzing room placement (one Claude vision call)...");
+  console.log(`Compositing ${products.length} product(s) into the room (${quality} quality)...`);
   const roomPhoto = readFileSync(roomPath);
-  const placement = await suggestPlacements(roomPhoto);
-  if (!placement) {
-    console.error("Room placement analysis failed (check ANTHROPIC_API_KEY) — aborting rather than guessing blindly.");
-    process.exit(1);
-  }
-
-  console.log(`Fetching ${products.length} product photo(s)...`);
-  const items: SceneItem[] = [];
-  for (const product of products) {
-    const productRes = await fetch(product.imageUrl!);
-    if (!productRes.ok) {
-      console.error(`Failed to fetch product photo for "${product.name}": ${productRes.status}`);
-      process.exit(1);
-    }
-    const productBuffer = Buffer.from(await productRes.arrayBuffer());
-    const suggestion = placement.placements[product.category];
-    const box = await reshapeBoxForProduct(suggestion.box, productBuffer);
-    items.push({ productPhoto: productBuffer, category: product.category, box, wallAngleDeg: suggestion.wallAngleDeg });
-  }
-
-  console.log(`Compositing the whole scene in one call (${quality} quality)...`);
-  const result = await composeSceneWithProducts(roomPhoto, items, quality);
-  const finalImage = Buffer.from(result.imageBase64, "base64");
-
-  console.log("Reviewing the result against each product photo...");
-  for (const [i, product] of products.entries()) {
-    const check = await checkRenderedProductIdentity(items[i].productPhoto, finalImage, items[i].box);
-    if (check && !check.pass) {
-      console.warn(`  ⚠ "${product.name}": ${check.note}`);
-    } else if (check) {
-      console.log(`  ✓ "${product.name}" looks right.`);
-    }
-  }
-
-  // A single vision pass over the FINISHED render locates each item's real
-  // on-image position — the box we told the model to place something at is
-  // only a suggestion inside the masked region, not guaranteed to be
-  // exactly where it landed. Without this, LookDetail's clickable hotspots
-  // (RoomHotspots) have nothing to pin against — createFinishedRoom's
-  // itemBoxes defaults to empty, and a product with no box gets no pin.
-  console.log("Detecting each item's on-image position for the clickable hotspots...");
-  const detected = await detectSceneItems(
-    finalImage,
-    products.map((p, i) => ({ index: i + 1, name: p.name, category: p.category })),
-  );
-  const itemBoxes: Record<string, DetectionBox> = {};
-  for (const d of detected) {
-    if (d.pickedIndex >= 1 && d.pickedIndex <= products.length) {
-      itemBoxes[products[d.pickedIndex - 1].id] = d.box;
-    }
-  }
-  for (const product of products) {
-    if (!itemBoxes[product.id]) console.warn(`  ⚠ "${product.name}" wasn't found in the render — it won't have a clickable pin.`);
-  }
-
-  const totalPrice = products.reduce((sum, p) => sum + p.price, 0);
-  const styleTags = Array.from(new Set(products.flatMap((p) => p.styles)));
-
-  console.log("Saving finished room...");
-  const id = await createFinishedRoom({
+  const result = await composeAndSaveFinishedRoom({
+    roomPhoto,
     title,
     description: description ?? "",
-    styleTags,
-    heroImageBase64: finalImage.toString("base64"),
-    productIds: products.map((p) => p.id),
-    itemBoxes,
-    totalPrice,
+    products,
+    quality,
+    source: "curated",
   });
 
-  console.log(`Done. Finished room id: ${id} — CHF ${totalPrice} across ${products.length} product(s). View at /looks/${id}.`);
+  for (const name of result.unpinned) console.warn(`  ⚠ "${name}" wasn't found in the render — it won't have a clickable pin.`);
+  console.log(`Done. Finished room id: ${result.id} — CHF ${result.totalPrice} across ${products.length} product(s). View at /looks/${result.id}.`);
 }
 
 main().catch((err) => {
