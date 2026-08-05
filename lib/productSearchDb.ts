@@ -22,6 +22,7 @@ function rowToProduct(row: Record<string, unknown>): Product {
       costPrice: row.cost_price != null ? Number(row.cost_price) : 0,
     },
     imageUrl: (row.image_url as string | null) ?? undefined,
+    imageUrls: (row.image_urls as string[] | null) ?? undefined,
     productUrl: (row.product_url as string | null) ?? undefined,
     dimensionsCm: dimensionsCm ?? undefined,
   };

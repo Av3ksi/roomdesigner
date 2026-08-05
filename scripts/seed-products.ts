@@ -61,11 +61,11 @@ async function main() {
     await db`
       INSERT INTO products (
         id, supplier_id, supplier_label, sku, name, brand, category, price, rating, reviews,
-        styles, color, blurb, image_url, product_url, cost_price, dimensions_cm, updated_at
+        styles, color, blurb, image_url, image_urls, product_url, cost_price, dimensions_cm, updated_at
       ) VALUES (
         ${p.id}, ${p.supplier?.id ?? ""}, ${p.supplier?.label ?? ""}, ${p.supplier?.sku ?? ""},
         ${p.name}, ${p.brand}, ${p.category}, ${p.price}, ${p.rating}, ${p.reviews},
-        ${p.styles}, ${p.color}, ${p.blurb}, ${p.imageUrl ?? null}, ${p.productUrl ?? null},
+        ${p.styles}, ${p.color}, ${p.blurb}, ${p.imageUrl ?? null}, ${p.imageUrls ?? null}, ${p.productUrl ?? null},
         ${p.supplier?.costPrice ?? null}, ${p.dimensionsCm ? JSON.stringify(p.dimensionsCm) : null}, now()
       )
       ON CONFLICT (id) DO UPDATE SET
@@ -82,6 +82,7 @@ async function main() {
         color = EXCLUDED.color,
         blurb = EXCLUDED.blurb,
         image_url = EXCLUDED.image_url,
+        image_urls = EXCLUDED.image_urls,
         product_url = EXCLUDED.product_url,
         cost_price = EXCLUDED.cost_price,
         dimensions_cm = EXCLUDED.dimensions_cm,

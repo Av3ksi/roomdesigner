@@ -1,11 +1,9 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Mail } from "lucide-react";
 
 export default function LoginForm() {
-  const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   // Magic link is the default for everyone — password is an opt-in reveal,
@@ -35,8 +33,10 @@ export default function LoginForm() {
         });
         const body = await res.json();
         if (!res.ok) throw new Error(body.error ?? "Something went wrong.");
-        router.push("/account");
-        router.refresh();
+        // Hard nav, not router.push — Nav's AccountWidget/CreditBadge live in
+        // the root layout and only fetch once on mount, so a soft navigation
+        // would leave them showing the signed-out state until a manual reload.
+        window.location.href = "/account";
         return;
       }
 

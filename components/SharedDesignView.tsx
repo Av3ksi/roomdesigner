@@ -6,7 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
 import PricingPanel from "@/components/PricingPanel";
 import ProductDetailPanel from "@/components/ProductDetailPanel";
-import ProductGlyph from "@/components/room/ProductGlyph";
+import ProductThumb from "@/components/room/ProductThumb";
 import RoomScene from "@/components/room/RoomScene";
 import Immersive3D from "@/components/studio/Immersive3D";
 import { formatPrice } from "@/lib/products";
@@ -130,7 +130,7 @@ export default function SharedDesignView() {
                     className="flex min-w-0 flex-1 items-center gap-3 text-left"
                   >
                     <div className="h-14 w-[70px] shrink-0 overflow-hidden rounded-md">
-                      <ProductGlyph product={p} className="h-full w-full" />
+                      <ProductThumb product={p} className="h-full w-full" />
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="truncate text-sm font-medium">{p.name}</div>

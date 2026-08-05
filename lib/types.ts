@@ -104,8 +104,10 @@ export interface Product {
   blurb: string;
   /** Set on products ingested from a dropship supplier feed; absent for the curated catalog. */
   supplier?: { id: string; label: string; sku: string; costPrice: number };
-  /** Real product photo URL, when the source is a supplier feed rather than the procedural catalog. */
+  /** Real product photo URL, when the source is a supplier feed rather than the procedural catalog. Always the clean, isolated shot used as the AI compositing reference — see lib/suppliers/mapping.ts's pickProductImageUrl. */
   imageUrl?: string;
+  /** Every real photo the supplier feed provided for this SKU (lifestyle shots, angles, etc.), when there's more than one — for the product detail gallery only, never used for compositing. */
+  imageUrls?: string[];
   /** Real purchase-page URL at the supplier, when known — not every supplier feed/endpoint includes this. */
   productUrl?: string;
   /** Real physical dimensions in cm, when the supplier feed provides them — powers room/placement size-fit checks. */

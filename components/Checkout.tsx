@@ -18,7 +18,7 @@ import {
   Zap,
 } from "lucide-react";
 import { useEffect, useState } from "react";
-import ProductGlyph from "@/components/room/ProductGlyph";
+import ProductThumb from "@/components/room/ProductThumb";
 import { formatPrice } from "@/lib/products";
 import { cartTotal, useMaisonStore } from "@/lib/store";
 import { DELIVERY, INSTALLATION, type DeliveryId, type InstallId } from "@/lib/checkoutOptions";
@@ -246,7 +246,7 @@ export default function Checkout() {
               {cart.map(({ product, qty }) => (
                 <li key={product.id} className="flex items-center gap-4 px-5 py-4">
                   <div className="h-16 w-20 shrink-0 overflow-hidden rounded-lg">
-                    <ProductGlyph product={product} className="h-full w-full" />
+                    <ProductThumb product={product} className="h-full w-full" />
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-sm font-semibold">{product.name}</div>

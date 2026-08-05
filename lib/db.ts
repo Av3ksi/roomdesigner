@@ -126,6 +126,10 @@ async function runSchema(): Promise<void> {
   `;
   await db`CREATE INDEX IF NOT EXISTS idx_products_category ON products(category)`;
   await db`CREATE INDEX IF NOT EXISTS idx_products_price ON products(price)`;
+  // Every real photo the supplier feed had for this SKU, not just the one
+  // clean shot in image_url — the product detail gallery only, never read
+  // for compositing (see lib/suppliers/mapping.ts's pickProductImageUrl).
+  await db`ALTER TABLE products ADD COLUMN IF NOT EXISTS image_urls TEXT[]`;
 
   // Curated, fixed "shop the whole look" bundles (the IKEA-style showroom
   // model) — a hero image of a real room with a hand-picked set of real

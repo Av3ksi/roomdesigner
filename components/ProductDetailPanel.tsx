@@ -11,7 +11,7 @@ import {
   Truck,
   X,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import BoardSaveButton from "@/components/BoardSaveButton";
 import ProductGlyph from "@/components/room/ProductGlyph";
@@ -88,6 +88,14 @@ export default function ProductDetailPanel({
     product.name.includes(" — ") ? product.name.split(" — ")[1] : "As shown",
   );
   const [material, setMaterial] = useState<string | null>(null);
+  // Only real photos, only when there's more than one — falls back to the
+  // single hero shot, then to the procedural glyph, never inventing images.
+  const gallery = useMemo(
+    () => (product.imageUrls && product.imageUrls.length > 1 ? product.imageUrls : product.imageUrl ? [product.imageUrl] : []),
+    [product.imageUrls, product.imageUrl],
+  );
+  const [activeImage, setActiveImage] = useState(0);
+  useEffect(() => setActiveImage(0), [product.id]);
   const addToCart = useMaisonStore((s) => s.addToCart);
   const toggleWishlist = useMaisonStore((s) => s.toggleWishlist);
   const isWishlisted = useMaisonStore((s) => s.isWishlisted(product.id));
@@ -142,8 +150,30 @@ export default function ProductDetailPanel({
         </div>
 
         <div className="aspect-[5/4] shrink-0 border-b border-ink-line">
-          <ProductGlyph product={displayProduct} className="h-full w-full" />
+          {gallery.length > 0 ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={gallery[activeImage]} alt={displayProduct.name} className="h-full w-full object-cover" />
+          ) : (
+            <ProductGlyph product={displayProduct} className="h-full w-full" />
+          )}
         </div>
+        {gallery.length > 1 && (
+          <div className="flex shrink-0 gap-2 overflow-x-auto border-b border-ink-line bg-ink-panel/40 p-3">
+            {gallery.map((url, i) => (
+              <button
+                key={url}
+                onClick={() => setActiveImage(i)}
+                className={`h-14 w-14 shrink-0 overflow-hidden rounded-lg border transition ${
+                  i === activeImage ? "border-brass" : "border-ink-line hover:border-brass/40"
+                }`}
+                aria-label={`View photo ${i + 1}`}
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={url} alt="" className="h-full w-full object-cover" />
+              </button>
+            ))}
+          </div>
+        )}
 
         <div className="flex-1 p-5">
           <div className="flex items-start justify-between gap-3">
