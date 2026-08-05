@@ -2,9 +2,11 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { Crown } from "lucide-react";
 import { getUserById } from "@/lib/auth";
-import { getCurrentUserId } from "@/lib/session";
+import { getCreditBalance } from "@/lib/credits";
+import { getCurrentUserId, getOrCreateSessionId } from "@/lib/session";
 import LogoutButton from "@/components/LogoutButton";
 import UpgradeToPremiumButton from "@/components/UpgradeToPremiumButton";
+import AccountBuyCreditsButton from "@/components/AccountBuyCreditsButton";
 
 export const metadata: Metadata = { title: "Account" };
 export const dynamic = "force-dynamic";
@@ -16,6 +18,7 @@ export default async function AccountPage({ searchParams }: { searchParams: Prom
   const user = await getUserById(userId);
   if (!user) redirect("/login");
 
+  const credits = user.isPremium ? null : await getCreditBalance(await getOrCreateSessionId());
   const { upgraded } = await searchParams;
 
   return (
@@ -48,8 +51,16 @@ export default async function AccountPage({ searchParams }: { searchParams: Prom
             </div>
           ) : (
             <>
-              <div className="text-sm text-cream-dim">You&apos;re on the free plan — one AI room generation, then a paywall.</div>
-              <div className="mt-4">
+              <div className="text-sm text-cream-dim">
+                {credits === 0
+                  ? "You're out of credits."
+                  : `You have ${credits} credit${credits === 1 ? "" : "s"} left.`}
+              </div>
+              <p className="mt-1 text-xs text-cream-faint">
+                Each AI room render — add, remove, or move — spends one credit.
+              </p>
+              <div className="mt-4 space-y-2">
+                <AccountBuyCreditsButton />
                 <UpgradeToPremiumButton />
               </div>
             </>

@@ -11,6 +11,11 @@ import BuyCreditsModal from "@/components/BuyCreditsModal";
 // below is something the app actually does today. FREE_CREDITS (3) is a
 // one-time starting grant, not a monthly allowance, so the free tier says
 // so plainly instead of implying a recurring reset.
+//
+// A fourth "Pro/Studio" tier (client workspaces, API access, trade pricing)
+// was deliberately dropped rather than shipped — none of that exists in the
+// app yet. Revisit once there's real demand from design firms/agencies, not
+// before; a tier promising unbuilt features isn't conservative pricing.
 const FREE_FEATURES = [
   "3 free AI room generations to start",
   "All 10 signature styles",
