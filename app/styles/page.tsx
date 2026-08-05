@@ -19,7 +19,7 @@ export default function StylesPage() {
           Not filters. Design languages.
         </h1>
         <p className="mt-4 text-cream-dim">
-          Each Maison style is a complete system — palette, materials,
+          Each Vistroom style is a complete system — palette, materials,
           silhouettes, lighting logic and a curated product universe. Below,
           every style rendered in its three concept variants.
         </p>

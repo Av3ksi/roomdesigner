@@ -17,7 +17,7 @@ import BoardSaveButton from "@/components/BoardSaveButton";
 import ProductGlyph from "@/components/room/ProductGlyph";
 import { alternativesFor, formatPrice, tierOf, tierOptions } from "@/lib/products";
 import { getProductDetails, STOCK_LABEL } from "@/lib/productDetails";
-import { useMaisonStore } from "@/lib/store";
+import { useVistroomStore } from "@/lib/store";
 import type { BudgetTier, Product } from "@/lib/types";
 
 interface ProductDetailPanelProps {
@@ -96,9 +96,9 @@ export default function ProductDetailPanel({
   );
   const [activeImage, setActiveImage] = useState(0);
   useEffect(() => setActiveImage(0), [product.id]);
-  const addToCart = useMaisonStore((s) => s.addToCart);
-  const toggleWishlist = useMaisonStore((s) => s.toggleWishlist);
-  const isWishlisted = useMaisonStore((s) => s.isWishlisted(product.id));
+  const addToCart = useVistroomStore((s) => s.addToCart);
+  const toggleWishlist = useVistroomStore((s) => s.toggleWishlist);
+  const isWishlisted = useVistroomStore((s) => s.isWishlisted(product.id));
 
   const details = useMemo(() => getProductDetails(product), [product]);
   const alts = useMemo(() => alternativesFor(product, styleId), [product, styleId]);

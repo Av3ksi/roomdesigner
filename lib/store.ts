@@ -9,7 +9,7 @@ export interface CartItem {
   qty: number;
 }
 
-interface MaisonStore {
+interface VistroomStore {
   cart: CartItem[];
   cartOpen: boolean;
   addToCart: (product: Product) => void;
@@ -65,7 +65,7 @@ interface MaisonStore {
   refreshCredits: () => Promise<void>;
 }
 
-export const useMaisonStore = create<MaisonStore>()(
+export const useVistroomStore = create<VistroomStore>()(
   persist(
     (set, get) => ({
       cart: [],
@@ -212,7 +212,7 @@ export const useMaisonStore = create<MaisonStore>()(
       },
     }),
     {
-      name: "maison-store",
+      name: "vistroom-store",
       partialize: (s) => ({
         cart: s.cart,
         wishlist: s.wishlist,

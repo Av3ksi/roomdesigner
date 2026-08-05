@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ChevronDown, Heart, Menu, ShoppingBag, Sparkles, X } from "lucide-react";
 import { useState } from "react";
-import { cartCount, useMaisonStore } from "@/lib/store";
+import { cartCount, useVistroomStore } from "@/lib/store";
 import AccountWidget from "@/components/AccountWidget";
 import CreditBadge from "@/components/CreditBadge";
 
@@ -30,9 +30,9 @@ export default function Nav() {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
-  const cart = useMaisonStore((s) => s.cart);
-  const wishlist = useMaisonStore((s) => s.wishlist);
-  const setCartOpen = useMaisonStore((s) => s.setCartOpen);
+  const cart = useVistroomStore((s) => s.cart);
+  const wishlist = useVistroomStore((s) => s.wishlist);
+  const setCartOpen = useVistroomStore((s) => s.setCartOpen);
   const count = cartCount(cart);
   const onMoreLink = MORE_LINKS.some((l) => l.href === pathname);
 
@@ -41,7 +41,7 @@ export default function Nav() {
       <div className="container-page flex h-16 items-center justify-between gap-4">
         <Link href="/" className="group flex shrink-0 items-baseline gap-2">
           <span className="font-display text-2xl tracking-tight text-cream">
-            Maison
+            Vistroom
           </span>
           <span className="hidden text-[10px] font-semibold uppercase tracking-[0.3em] text-brass sm:block">
             AI Interior Design

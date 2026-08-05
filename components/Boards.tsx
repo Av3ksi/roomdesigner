@@ -4,15 +4,15 @@ import { ArrowLeft, LayoutGrid, Pencil, Plus, ShoppingBag, Trash2, X } from "luc
 import { useState } from "react";
 import ProductThumb from "@/components/room/ProductThumb";
 import { formatPrice } from "@/lib/products";
-import { useMaisonStore } from "@/lib/store";
+import { useVistroomStore } from "@/lib/store";
 
 export default function Boards() {
-  const boards = useMaisonStore((s) => s.boards);
-  const createBoard = useMaisonStore((s) => s.createBoard);
-  const deleteBoard = useMaisonStore((s) => s.deleteBoard);
-  const renameBoard = useMaisonStore((s) => s.renameBoard);
-  const removeFromBoard = useMaisonStore((s) => s.removeFromBoard);
-  const addManyToCart = useMaisonStore((s) => s.addManyToCart);
+  const boards = useVistroomStore((s) => s.boards);
+  const createBoard = useVistroomStore((s) => s.createBoard);
+  const deleteBoard = useVistroomStore((s) => s.deleteBoard);
+  const renameBoard = useVistroomStore((s) => s.renameBoard);
+  const removeFromBoard = useVistroomStore((s) => s.removeFromBoard);
+  const addManyToCart = useVistroomStore((s) => s.addManyToCart);
   const [openId, setOpenId] = useState<string | null>(null);
   const [newName, setNewName] = useState("");
 

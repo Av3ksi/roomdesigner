@@ -1,6 +1,6 @@
-# Maison — Your AI Interior Designer
+# Vistroom — Your AI Interior Designer
 
-Upload a photo of your room. Maison's AI reads the space — dimensions, walls,
+Upload a photo of your room. Vistroom's AI reads the space — dimensions, walls,
 windows, doors, flooring, furniture, lighting, colors, materials, spatial
 layout — then designs it back to you in eight signature styles. Every concept
 is fully shoppable: the furniture in the render maps to real marketplace
@@ -37,7 +37,7 @@ products you can buy in one click.
 
 ## The AI intelligence layer
 
-Maison behaves like a professional interior designer, in five systems:
+Vistroom behaves like a professional interior designer, in five systems:
 
 1. **Room understanding** — vision analysis of architecture, dimensions,
    furniture placement, lighting, materials and colors (multi-angle photos +

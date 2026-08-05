@@ -2,17 +2,17 @@
 
 import { Check, LayoutGrid, Plus } from "lucide-react";
 import { useState } from "react";
-import { useMaisonStore } from "@/lib/store";
+import { useVistroomStore } from "@/lib/store";
 import type { Product } from "@/lib/types";
 
 /** Popover button that saves a product into one or more named inspiration boards. */
 export default function BoardSaveButton({ product }: { product: Product }) {
   const [open, setOpen] = useState(false);
   const [newName, setNewName] = useState("");
-  const boards = useMaisonStore((s) => s.boards);
-  const addToBoard = useMaisonStore((s) => s.addToBoard);
-  const removeFromBoard = useMaisonStore((s) => s.removeFromBoard);
-  const createBoard = useMaisonStore((s) => s.createBoard);
+  const boards = useVistroomStore((s) => s.boards);
+  const addToBoard = useVistroomStore((s) => s.addToBoard);
+  const removeFromBoard = useVistroomStore((s) => s.removeFromBoard);
+  const createBoard = useVistroomStore((s) => s.createBoard);
 
   const inAnyBoard = boards.some((b) => b.products.some((p) => p.id === product.id));
 

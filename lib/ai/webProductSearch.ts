@@ -153,7 +153,7 @@ export async function searchWebForProduct(query: string, market: TargetMarket = 
     });
 
     if (response.stop_reason === "refusal") {
-      console.log(`[maison] web product search refused for query "${query}"`);
+      console.log(`[vistroom] web product search refused for query "${query}"`);
       return null;
     }
     const text = response.content
@@ -165,14 +165,14 @@ export async function searchWebForProduct(query: string, market: TargetMarket = 
       // Genuinely diagnostic — did the model even attempt the JSON contract,
       // or did it just narrate/refuse in prose? Log the tail of its reply so
       // a real failure is visible in server logs instead of a bare null.
-      console.log(`[maison] web product search: no JSON object found for query "${query}". Model's reply (last 500 chars): ${text.slice(-500)}`);
+      console.log(`[vistroom] web product search: no JSON object found for query "${query}". Model's reply (last 500 chars): ${text.slice(-500)}`);
       return null;
     }
 
     const name = typeof parsed.name === "string" ? parsed.name.trim() : "";
     const url = typeof parsed.url === "string" ? parsed.url.trim() : "";
     if (!name || !/^https?:\/\//i.test(url)) {
-      console.log(`[maison] web product search: model reported no genuine product page for query "${query}"`);
+      console.log(`[vistroom] web product search: model reported no genuine product page for query "${query}"`);
       return null;
     }
 
@@ -182,7 +182,7 @@ export async function searchWebForProduct(query: string, market: TargetMarket = 
       // a usable photo — this is a different failure than "nothing found",
       // and the caller currently discards it too, so it's worth knowing
       // this happened rather than looking identical to a total miss.
-      console.log(`[maison] web product search: found "${name}" at ${url} but no extractable photo URL for query "${query}"`);
+      console.log(`[vistroom] web product search: found "${name}" at ${url} but no extractable photo URL for query "${query}"`);
     }
 
     return {
@@ -193,7 +193,7 @@ export async function searchWebForProduct(query: string, market: TargetMarket = 
       imageUrl: /^https?:\/\//i.test(imageUrl) ? imageUrl : null,
     };
   } catch (err) {
-    console.error("[maison] web product search failed:", err);
+    console.error("[vistroom] web product search failed:", err);
     return null;
   }
 }
@@ -301,7 +301,7 @@ export async function extractRequestedExtras(
       .map((i) => ({ category: i.category as ProductCategory, webQuery: (i.webQuery as string).trim() }))
       .slice(0, 5);
   } catch (err) {
-    console.error("[maison] extractRequestedExtras failed:", err);
+    console.error("[vistroom] extractRequestedExtras failed:", err);
     return [];
   }
 }

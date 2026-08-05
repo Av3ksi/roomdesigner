@@ -6,7 +6,7 @@ import { clientIp, enforceRateLimit } from "@/lib/rateLimit";
 
 export const runtime = "nodejs";
 
-// Matches the "Maison Plus" price already published on the marketing
+// Matches the "Vistroom Plus" price already published on the marketing
 // /pricing page (components/landing/PricingSection.tsx) — one real,
 // working subscription behind that page's otherwise-static plan cards.
 // Not read from an env var: unlike the furniture catalog (real, variable
@@ -57,7 +57,7 @@ export async function POST(req: NextRequest) {
           currency: "chf",
           unit_amount: toStripeAmount(PREMIUM_PRICE_CHF),
           recurring: { interval: "month" },
-          product_data: { name: "Maison Premium", description: "Unlimited AI room generations." },
+          product_data: { name: "Vistroom Premium", description: "Unlimited AI room generations." },
         },
       },
     ],

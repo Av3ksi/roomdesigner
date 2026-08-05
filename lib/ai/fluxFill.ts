@@ -94,7 +94,7 @@ export async function compositeProductIntoRoomFlux(
   const placementSource: CompositeResult["placementSource"] = explicitBox ? "explicit" : detectedBox ? "detection" : "default";
 
   const paddedBox = padBoxForEdit(maskBox);
-  console.log("[maison] compositeProductIntoRoomFlux mask", { placementSource, maskBox, paddedBox });
+  console.log("[vistroom] compositeProductIntoRoomFlux mask", { placementSource, maskBox, paddedBox });
 
   // The mask fed to the model itself stays hard-edged (no feather) — the
   // feathering that makes the seam look natural happens locally in the

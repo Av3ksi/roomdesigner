@@ -69,7 +69,7 @@ const PLACEMENT_SCHEMA = {
   },
 } as const;
 
-const PLACEMENT_SYSTEM = `You are the placement engine of Maison, an AI interior design platform. Given one photograph of a real room, you decide where each kind of furniture would genuinely be placed by an interior designer working with THIS room's actual geometry.
+const PLACEMENT_SYSTEM = `You are the placement engine of Vistroom, an AI interior design platform. Given one photograph of a real room, you decide where each kind of furniture would genuinely be placed by an interior designer working with THIS room's actual geometry.
 
 For every category, return a bounding box (x, y, w, h — relative to the image, 0–1, origin top-left) marking where that item should sit if added to the room, AND a wallAngleDeg estimate for the surface it rests against:
 

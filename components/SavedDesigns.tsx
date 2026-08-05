@@ -6,7 +6,7 @@ import { useState } from "react";
 import RoomScene from "@/components/room/RoomScene";
 import { encodeSnapshot, shareUrlFor } from "@/lib/share";
 import { formatPrice, pricingBreakdown } from "@/lib/products";
-import { useMaisonStore } from "@/lib/store";
+import { useVistroomStore } from "@/lib/store";
 import type { RoomSnapshot } from "@/lib/types";
 
 function DesignCard({
@@ -20,10 +20,10 @@ function DesignCard({
   selected: boolean;
   onToggleSelect: () => void;
 }) {
-  const removeDesign = useMaisonStore((s) => s.removeDesign);
-  const renameDesign = useMaisonStore((s) => s.renameDesign);
-  const addCollaborator = useMaisonStore((s) => s.addCollaborator);
-  const removeCollaborator = useMaisonStore((s) => s.removeCollaborator);
+  const removeDesign = useVistroomStore((s) => s.removeDesign);
+  const renameDesign = useVistroomStore((s) => s.renameDesign);
+  const addCollaborator = useVistroomStore((s) => s.addCollaborator);
+  const removeCollaborator = useVistroomStore((s) => s.removeCollaborator);
   const [copied, setCopied] = useState(false);
   const [inviting, setInviting] = useState(false);
   const [inviteName, setInviteName] = useState("");
@@ -161,7 +161,7 @@ function DesignCard({
 }
 
 export default function SavedDesigns() {
-  const savedDesigns = useMaisonStore((s) => s.savedDesigns);
+  const savedDesigns = useVistroomStore((s) => s.savedDesigns);
   const [compareMode, setCompareMode] = useState(false);
   const [selected, setSelected] = useState<string[]>([]);
 

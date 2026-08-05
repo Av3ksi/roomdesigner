@@ -178,7 +178,7 @@ export async function describeProductForPrompt(productPhoto: Buffer): Promise<st
     const text = response.content.find((b) => b.type === "text")?.text;
     return text?.trim() || null;
   } catch (err) {
-    console.error("[maison] product description failed, compositing without it:", err);
+    console.error("[vistroom] product description failed, compositing without it:", err);
     return null;
   }
 }
@@ -209,7 +209,7 @@ export async function compositeProductIntoRoom(
   const maskBox = explicitBox ? clampBox(explicitBox) : detectedBox ?? DEFAULT_CATEGORY_BOX[category];
   const placementSource: CompositeResult["placementSource"] = explicitBox ? "explicit" : detectedBox ? "detection" : "default";
 
-  console.log("[maison] compositeProductIntoRoom (unmasked full-image edit)", {
+  console.log("[vistroom] compositeProductIntoRoom (unmasked full-image edit)", {
     originalSize: await sharp(roomPhotoInput).metadata().then((m) => `${m.width}x${m.height}`),
     resizedTo: `${width}x${height}`,
     placementSource,
@@ -436,7 +436,7 @@ export async function composeSceneWithProducts(
       description: await describeProductForPrompt(item.productPhoto),
     })),
   );
-  console.log(`[maison] timing: product descriptions (${items.length}x, parallel) took ${Date.now() - descriptionsStart}ms`);
+  console.log(`[vistroom] timing: product descriptions (${items.length}x, parallel) took ${Date.now() - descriptionsStart}ms`);
 
   const itemLines: string[] = [];
   for (const [i, item] of items.entries()) {
@@ -455,7 +455,7 @@ export async function composeSceneWithProducts(
   if (restyle) {
     // No mask: the whole image may change (walls, lighting, floor mood),
     // constrained to the room's real architecture by the prompt instead.
-    console.log("[maison] composeSceneWithProducts restyle", { width, height, itemCount: items.length, quality, styleDirection });
+    console.log("[vistroom] composeSceneWithProducts restyle", { width, height, itemCount: items.length, quality, styleDirection });
     form.append(
       "prompt",
       "The first image is a photo of a real room. Every image after it is a real product photo. Edit this exact " +
@@ -479,7 +479,7 @@ export async function composeSceneWithProducts(
   } else {
     const union = unionBox(items.map((i) => i.box));
     const maskRegion = padBoxForEdit(union);
-    console.log("[maison] composeSceneWithProducts mask", { width, height, itemCount: items.length, quality, maskRegion });
+    console.log("[vistroom] composeSceneWithProducts mask", { width, height, itemCount: items.length, quality, maskRegion });
     const maskPng = await buildMaskPng(width, height, maskRegion);
     form.append("mask", new Blob([new Uint8Array(maskPng)], { type: "image/png" }), "mask.png");
     form.append(
@@ -522,7 +522,7 @@ export async function composeSceneWithProducts(
     headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}` },
     body: form,
   });
-  console.log(`[maison] timing: OpenAI image render (quality=${quality}, ${restyle ? "restyle" : "mask"}) took ${Date.now() - renderStart}ms`);
+  console.log(`[vistroom] timing: OpenAI image render (quality=${quality}, ${restyle ? "restyle" : "mask"}) took ${Date.now() - renderStart}ms`);
 
   if (!res.ok) {
     const errText = await res.text();

@@ -25,7 +25,7 @@ export const runtime = "nodejs";
  * There's no single "move" primitive on either provider, and this is the
  * same erase-then-reinsert workaround already decided as acceptable for
  * product swaps — see lib/ai/composite.ts's module doc comment and
- * docs/BLUEPRINT.md §9 item 9. Only works for objects Maison itself placed
+ * docs/BLUEPRINT.md §9 item 9. Only works for objects Vistroom itself placed
  * (a catalog product or a web-sourced one): re-insertion needs a clean
  * product reference photo, which we have for those. An object that was
  * already physically in the customer's original photo has no such
@@ -95,7 +95,7 @@ export async function POST(req: NextRequest) {
   const productBuffer = Buffer.from(await productRes.arrayBuffer());
   const cat = category as ProductCategory;
 
-  console.log("[maison] /api/move-object", { category: cat, oldBox, newBox, wallAngleDeg });
+  console.log("[vistroom] /api/move-object", { category: cat, oldBox, newBox, wallAngleDeg });
 
   try {
     const erased = await performRemoval(roomBuffer, cat, undefined, oldBox);

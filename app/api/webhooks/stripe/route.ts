@@ -28,7 +28,7 @@ export async function POST(req: NextRequest) {
   try {
     event = stripe().webhooks.constructEvent(rawBody, signature, secret);
   } catch (err) {
-    console.error("[maison] stripe webhook signature verification failed:", err);
+    console.error("[vistroom] stripe webhook signature verification failed:", err);
     return NextResponse.json({ error: "Invalid signature." }, { status: 400 });
   }
 
@@ -62,7 +62,7 @@ export async function POST(req: NextRequest) {
       const products = await getProductsByIds(order.productIds);
       await sendEmail({
         to: order.email,
-        subject: "Your Maison order is confirmed",
+        subject: "Your Vistroom order is confirmed",
         html: orderConfirmationEmailHtml({
           orderId: order.id,
           totalLabel: formatPrice(order.totalPrice),
@@ -80,7 +80,7 @@ export async function POST(req: NextRequest) {
           const result = await createVidaxlOrder(order, products);
           await setOrderFulfillment(order.id, { status: "fulfilled", vidaxlOrderId: result.vidaxlOrderId });
         } catch (err) {
-          console.error("[maison] VidaXL order creation failed:", err);
+          console.error("[vistroom] VidaXL order creation failed:", err);
           await setOrderFulfillment(order.id, {
             status: "fulfillment_failed",
             vidaxlOrderError: err instanceof Error ? err.message : String(err),

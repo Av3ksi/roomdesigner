@@ -7,7 +7,7 @@
  */
 
 /** Which live Designer room (lib/roomPersistence.ts's `rooms` table) to rehydrate on mount. */
-export const ROOM_ID_STORAGE_KEY = "maison_room_id";
+export const ROOM_ID_STORAGE_KEY = "vistroom_room_id";
 
 /**
  * Set by a source page right before navigating to /designer, to seed a
@@ -17,4 +17,4 @@ export const ROOM_ID_STORAGE_KEY = "maison_room_id";
  * ROOM_ID_STORAGE_KEY — the writer is expected to clear that key too, so
  * the two mechanisms never race over which room wins.
  */
-export const SEED_ROOM_STORAGE_KEY = "maison_seed_room";
+export const SEED_ROOM_STORAGE_KEY = "vistroom_seed_room";

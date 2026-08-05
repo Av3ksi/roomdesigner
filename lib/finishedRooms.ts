@@ -143,7 +143,7 @@ export async function listFinishedRooms(): Promise<FinishedRoom[]> {
     ]);
     return rows.map((r) => resolveRow(r, catalog));
   } catch (err) {
-    console.error("[maison] listFinishedRooms failed:", err);
+    console.error("[vistroom] listFinishedRooms failed:", err);
     return [];
   }
 }
@@ -169,7 +169,7 @@ export async function getUserFinishedRooms(owner: { sessionId: string; userId: s
     ]);
     return rows.map((r) => resolveRow(r, catalog));
   } catch (err) {
-    console.error("[maison] getUserFinishedRooms failed:", err);
+    console.error("[vistroom] getUserFinishedRooms failed:", err);
     return [];
   }
 }
@@ -211,7 +211,7 @@ export async function getFinishedRoom(id: string): Promise<FinishedRoom | null> 
     if (!rows.length) return null;
     return resolveRow(rows[0], catalog);
   } catch (err) {
-    console.error("[maison] getFinishedRoom failed:", err);
+    console.error("[vistroom] getFinishedRoom failed:", err);
     return null;
   }
 }

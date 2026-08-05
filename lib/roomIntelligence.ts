@@ -84,7 +84,7 @@ export function energyEfficiency(analysis: RoomAnalysis, products: Product[]): E
   if (lightingPieces === 0) {
     tips.push("No dedicated lighting in this basket yet — a dim-to-warm LED floor or table lamp cuts overhead-only energy use significantly.");
   } else {
-    tips.push(`${lightingPieces} lighting piece${lightingPieces === 1 ? "" : "s"} selected — all Maison lighting defaults to dim-to-warm LED.`);
+    tips.push(`${lightingPieces} lighting piece${lightingPieces === 1 ? "" : "s"} selected — all Vistroom lighting defaults to dim-to-warm LED.`);
   }
   return { score, tips: tips.slice(0, 3) };
 }

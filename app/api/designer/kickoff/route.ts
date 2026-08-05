@@ -72,7 +72,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ ...result, roomId });
   } catch (err) {
-    console.error("[maison] /api/designer/kickoff failed:", err);
+    console.error("[vistroom] /api/designer/kickoff failed:", err);
     return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 500 });
   }
 }

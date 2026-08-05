@@ -7,7 +7,7 @@ import ProductDetailPanel from "@/components/ProductDetailPanel";
 import ProductThumb from "@/components/room/ProductThumb";
 import { formatPrice } from "@/lib/products";
 import { STYLES } from "@/lib/styles";
-import { useMaisonStore } from "@/lib/store";
+import { useVistroomStore } from "@/lib/store";
 import type { Product, ProductCategory } from "@/lib/types";
 
 const CATEGORIES: { id: ProductCategory | "all"; label: string }[] = [
@@ -50,9 +50,9 @@ export default function Marketplace({
   styleId: string;
 }) {
   const [detailProduct, setDetailProduct] = useState<Product | null>(null);
-  const addToCart = useMaisonStore((s) => s.addToCart);
-  const toggleWishlist = useMaisonStore((s) => s.toggleWishlist);
-  const isWishlisted = useMaisonStore((s) => s.isWishlisted);
+  const addToCart = useVistroomStore((s) => s.addToCart);
+  const toggleWishlist = useVistroomStore((s) => s.toggleWishlist);
+  const isWishlisted = useVistroomStore((s) => s.isWishlisted);
 
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
 
@@ -64,7 +64,7 @@ export default function Marketplace({
           If it&apos;s in the render, it&apos;s real.
         </h1>
         <p className="mt-4 text-cream-dim">
-          Every piece Maison places in a design is a purchasable product from
+          Every piece Vistroom places in a design is a purchasable product from
           a vetted retail partner — matched to the style, sized to your room.
         </p>
       </div>

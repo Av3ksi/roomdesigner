@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { Coins } from "lucide-react";
 import BuyCreditsModal from "@/components/BuyCreditsModal";
-import { useMaisonStore } from "@/lib/store";
+import { useVistroomStore } from "@/lib/store";
 
 /**
  * Site-wide credit balance pill (lib/credits.ts) — lives in the header
@@ -20,9 +20,9 @@ import { useMaisonStore } from "@/lib/store";
  * mounted, on every page), so nothing else needs to.
  */
 export default function CreditBadge() {
-  const credits = useMaisonStore((s) => s.credits);
-  const premium = useMaisonStore((s) => s.premiumAccount);
-  const refreshCredits = useMaisonStore((s) => s.refreshCredits);
+  const credits = useVistroomStore((s) => s.credits);
+  const premium = useVistroomStore((s) => s.premiumAccount);
+  const refreshCredits = useVistroomStore((s) => s.refreshCredits);
   const [showBuyCredits, setShowBuyCredits] = useState(false);
 
   useEffect(() => {

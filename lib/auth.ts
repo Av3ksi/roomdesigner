@@ -47,7 +47,7 @@ export async function requestLoginLink(email: string, baseUrl: string): Promise<
   const loginUrl = `${baseUrl}/api/auth/callback?token=${token}`;
   const sent = await sendEmail({
     to: normalized,
-    subject: "Your Maison sign-in link",
+    subject: "Your Vistroom sign-in link",
     html: loginEmailHtml(loginUrl),
   });
   return { sent };

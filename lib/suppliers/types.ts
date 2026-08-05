@@ -2,7 +2,7 @@ import type { Product } from "../types";
 
 /**
  * Generic shape every supplier adapter normalizes its own feed into before
- * mapping to a Maison Product. Only sku/title/vendorCategory/costPrice/
+ * mapping to a Vistroom Product. Only sku/title/vendorCategory/costPrice/
  * stockQty are guaranteed — that's the full field set VidaXL's real
  * `GET /api_customer/products` endpoint returns (id, name, code,
  * category_path, quantity, price — no description, images, or a separate

@@ -52,7 +52,7 @@ export default function Hero() {
             Buy everything.
           </h1>
           <p className="mt-6 max-w-lg text-lg leading-relaxed text-cream-dim">
-            One photo. Maison reads the architecture, the light and what you
+            One photo. Vistroom reads the architecture, the light and what you
             own — then hands you designer-grade concepts you can step inside,
             customize and buy down to the last cushion. A professional
             interior designer, available instantly.
@@ -107,7 +107,7 @@ export default function Hero() {
               </div>
             }
             beforeLabel="Their photo"
-            afterLabel={`Maison · ${activeStyle.name}`}
+            afterLabel={`Vistroom · ${activeStyle.name}`}
             initial={46}
           />
           <div className="mt-3 flex items-center justify-center gap-3">

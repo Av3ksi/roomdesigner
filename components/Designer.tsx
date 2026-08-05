@@ -15,7 +15,7 @@ import { ROOM_ID_STORAGE_KEY, SEED_ROOM_STORAGE_KEY } from "@/lib/designerStorag
 import BuyCreditsModal from "@/components/BuyCreditsModal";
 import ImageLightbox from "@/components/ImageLightbox";
 import RoomHotspots, { type HotspotItem } from "@/components/RoomHotspots";
-import { useMaisonStore } from "@/lib/store";
+import { useVistroomStore } from "@/lib/store";
 import type { DetectionBox, Product, ProductCategory } from "@/lib/types";
 
 const MAX_EXTRA_PHOTOS = 4;
@@ -179,7 +179,7 @@ export default function Designer() {
   const chatEndRef = useRef<HTMLDivElement | null>(null);
   const overlayRef = useRef<HTMLDivElement | null>(null);
   const dragRef = useRef<{ mode: "move" | "resize"; startX: number; startY: number; box: DetectionBox; rect: DOMRect } | null>(null);
-  const addToCart = useMaisonStore((s) => s.addToCart);
+  const addToCart = useVistroomStore((s) => s.addToCart);
   // Credit gate (lib/credits.ts) — shared with the header's CreditBadge via
   // the store (lib/store.ts), not local state: null while unknown (not yet
   // fetched), else the number of credits left on this anonymous session (a
@@ -188,10 +188,10 @@ export default function Designer() {
   // server enforces the real gate on every /api/composite,
   // /api/remove-object, and /api/move-object call regardless of what the
   // client thinks.
-  const credits = useMaisonStore((s) => s.credits);
-  const premiumAccount = useMaisonStore((s) => s.premiumAccount);
-  const setCredits = useMaisonStore((s) => s.setCredits);
-  const spendCreditLocally = useMaisonStore((s) => s.spendCreditLocally);
+  const credits = useVistroomStore((s) => s.credits);
+  const premiumAccount = useVistroomStore((s) => s.premiumAccount);
+  const setCredits = useVistroomStore((s) => s.setCredits);
+  const spendCreditLocally = useVistroomStore((s) => s.spendCreditLocally);
 
   // Ticks while waiting on a chat reply so the loading text can be honest
   // about how long it's actually been — a message that might involve a real
@@ -977,7 +977,7 @@ export default function Designer() {
                     <div className="min-w-0 flex-1">
                       <div className="truncate text-sm font-semibold">{p.webProduct.name}</div>
                       <div className="text-xs text-rose-300">
-                        {p.webProduct.priceText ?? "See price"} · from {p.webProduct.retailer}, not sold by Maison
+                        {p.webProduct.priceText ?? "See price"} · from {p.webProduct.retailer}, not sold by Vistroom
                       </div>
                     </div>
                   </div>

@@ -5,7 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { CheckCircle2, Mail, ShoppingBag } from "lucide-react";
 import { formatPrice } from "@/lib/products";
-import { useMaisonStore } from "@/lib/store";
+import { useVistroomStore } from "@/lib/store";
 
 interface OrderStatus {
   id: string;
@@ -19,7 +19,7 @@ const POLL_INTERVAL_MS = 1500;
 
 export default function CheckoutSuccess() {
   const sessionId = useSearchParams().get("session_id");
-  const clearCart = useMaisonStore((s) => s.clearCart);
+  const clearCart = useVistroomStore((s) => s.clearCart);
   const clearedRef = useRef(false);
   const [order, setOrder] = useState<OrderStatus | null>(null);
   const [settled, setSettled] = useState(false);

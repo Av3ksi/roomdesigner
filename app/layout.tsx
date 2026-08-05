@@ -6,11 +6,11 @@ import CartDrawer from "@/components/CartDrawer";
 
 export const metadata: Metadata = {
   title: {
-    default: "Maison — Your AI Interior Designer",
-    template: "%s · Maison",
+    default: "Vistroom — Your AI Interior Designer",
+    template: "%s · Vistroom",
   },
   description:
-    "Upload a photo of your room. Maison's AI reads the space — dimensions, light, materials, furniture — and designs it back to you in eight signature styles, fully shoppable.",
+    "Upload a photo of your room. Vistroom's AI reads the space — dimensions, light, materials, furniture — and designs it back to you in eight signature styles, fully shoppable.",
   keywords: [
     "AI interior design",
     "room redesign",

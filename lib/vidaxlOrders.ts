@@ -10,7 +10,7 @@ export interface VidaxlOrderResult {
 
 /**
  * Places the order with VidaXL via POST /api_customer/orders so nobody has
- * to manually re-key a paid Maison order into their dashboard.
+ * to manually re-key a paid Vistroom order into their dashboard.
  *
  * IMPORTANT: unlike lib/suppliers/vidaxl.ts's product-catalog fetch (which
  * is wired against VidaXL's real, confirmed API docs), this request body

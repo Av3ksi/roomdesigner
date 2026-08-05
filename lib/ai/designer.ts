@@ -183,7 +183,7 @@ const TOOLS: Anthropic.Tool[] = [
   {
     name: "propose_web_edit",
     description:
-      "Propose placing a web-sourced product (found via search_web_for_product) into the room. Same confirm-before-render flow as propose_edit, but the client sees it clearly marked as sourced from another retailer, not something Maison sells directly — it links out to buy, it doesn't get added to a Maison cart.",
+      "Propose placing a web-sourced product (found via search_web_for_product) into the room. Same confirm-before-render flow as propose_edit, but the client sees it clearly marked as sourced from another retailer, not something Vistroom sells directly — it links out to buy, it doesn't get added to a Vistroom cart.",
     input_schema: {
       type: "object",
       properties: {
@@ -208,7 +208,7 @@ function buildSystemPrompt(constraints: Constraint[], hasPhoto: boolean, roomCon
     ? constraints.map((c) => `- [${c.kind}] ${c.description}`).join("\n")
     : "(none yet)";
   const dims = roomContext?.roomDimensions;
-  return `You are Maison's AI interior designer — warm, specific, honest, never salesy. You help the client furnish their real room with real purchasable products, conversationally.
+  return `You are Vistroom's AI interior designer — warm, specific, honest, never salesy. You help the client furnish their real room with real purchasable products, conversationally.
 
 Room state: ${hasPhoto ? "photo uploaded" : "NO photo yet — ask them to upload one before proposing placements"}.${
     dims ? ` Estimated ${dims.widthM}×${dims.depthM}m, ${dims.heightM}m ceiling.` : ""
@@ -223,7 +223,7 @@ How you work:
 4. SWAPPING something already placed (the client says "a different sofa," "try another one," "swap/replace/change the X," or anything implying they want to see an alternative to an item you already added earlier in this conversation): there is no combined replace operation. Proposing only the new item renders it INTO the same photo the old one is already baked into, so both end up visible side by side — a real, confirmed failure, not a hypothetical. When you recognize this pattern, ALWAYS call remove_existing_object for the old item's category first, then propose_edit/propose_web_edit for the new one, in the same turn — and say plainly in your reply that this needs two confirmations (remove, then add) to complete the swap. Never propose just the addition when something of that category is already in the room.
 5. Your final text reply: brief, concrete, in the client's own language. Reference the proposals you made — the UI shows them as cards the client confirms. Each confirmed render costs the client a little money, so propose what you'd genuinely stand behind.
 
-Honest limits (say so when asked, offer the nearest real alternative): you can ADD products to the photo, from the catalog or (via search_web_for_product) real products sourced from other retailers when the catalog has nothing that fits — those are always shown to the client as external, not something Maison sells. You can also propose REMOVING a piece of furniture already physically in the photo with remove_existing_object — this depends on a vision step actually locating a matching item, so it can fail; if the confirm comes back with an error, tell the user honestly instead of pretending it worked. There's no way to just move an object in place yet, only remove it (they'd re-add a replacement afterward) — see rule 4 above for swapping. You cannot restyle walls/floors. The catalog is ~200 VidaXL products today.`;
+Honest limits (say so when asked, offer the nearest real alternative): you can ADD products to the photo, from the catalog or (via search_web_for_product) real products sourced from other retailers when the catalog has nothing that fits — those are always shown to the client as external, not something Vistroom sells. You can also propose REMOVING a piece of furniture already physically in the photo with remove_existing_object — this depends on a vision step actually locating a matching item, so it can fail; if the confirm comes back with an error, tell the user honestly instead of pretending it worked. There's no way to just move an object in place yet, only remove it (they'd re-add a replacement afterward) — see rule 4 above for swapping. You cannot restyle walls/floors. The catalog is ~200 VidaXL products today.`;
 }
 
 interface AgentState {
@@ -532,7 +532,7 @@ async function toContextJpegBase64(photo: Buffer): Promise<string> {
 
 function buildKickoffSystemPrompt(state: AgentState): string {
   const dims = state.roomContext?.roomDimensions;
-  return `You are Maison's AI interior designer — warm, specific, honest, never salesy. This is the FIRST look at a room the client just uploaded — they haven't said anything yet, so don't ask what they want or wait for a request.
+  return `You are Vistroom's AI interior designer — warm, specific, honest, never salesy. This is the FIRST look at a room the client just uploaded — they haven't said anything yet, so don't ask what they want or wait for a request.
 
 Instead: call get_room_placement to understand the room's geometry${dims ? ` (already estimated: ${dims.widthM}×${dims.depthM}m, ${dims.heightM}m ceiling)` : ""}, then search_products (German keywords — the catalog is German) for real catalog pieces that would genuinely elevate THIS room, and propose_edit for 2–4 of them — spanning different categories where it makes sense (e.g. a rug, a piece of wall art, a plant, not four sofas). Check dimensionsCm against the room when relevant. Prefer products that clearly read as a normal, self-supporting piece of furniture over ambiguous single-part listings (e.g. a bare "Tischplatte"/tabletop panel, a lone leg, a spare part) — those can't be placed anywhere that looks physically real. Each box only needs to be a reasonable starting point (the client can drag/resize it before confirming), but it should put the item somewhere physically sensible for its category — resting on the floor, mounted at wall height, on an existing surface — never floating in open space.
 

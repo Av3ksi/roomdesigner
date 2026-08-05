@@ -4,11 +4,11 @@ import { Minus, Plus, ShoppingBag, Trash2, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import ProductThumb from "@/components/room/ProductThumb";
 import { formatPrice } from "@/lib/products";
-import { cartTotal, useMaisonStore } from "@/lib/store";
+import { cartTotal, useVistroomStore } from "@/lib/store";
 
 export default function CartDrawer() {
   const { cart, cartOpen, setCartOpen, setQty, removeFromCart, clearCart } =
-    useMaisonStore();
+    useVistroomStore();
   const total = cartTotal(cart);
   const router = useRouter();
 

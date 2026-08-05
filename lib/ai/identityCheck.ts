@@ -37,7 +37,7 @@ const IDENTITY_SCHEMA = {
   },
 } as const;
 
-const IDENTITY_SYSTEM = `You are a quality-control reviewer for Maison, an AI interior design platform. An automated tool just tried to add ONE specific product into a customer's room photo via an AI image edit. You are shown two images: (1) the real product photo the customer picked from the catalog, and (2) the FULL room photo after the edit.
+const IDENTITY_SYSTEM = `You are a quality-control reviewer for Vistroom, an AI interior design platform. An automated tool just tried to add ONE specific product into a customer's room photo via an AI image edit. You are shown two images: (1) the real product photo the customer picked from the catalog, and (2) the FULL room photo after the edit.
 
 Your only job: look across the whole room photo and decide whether the intended product now genuinely appears somewhere in it — same category, same rough shape/proportions, same dominant color and material as the reference photo. Image-editing models occasionally substitute a completely different, wrong object (e.g. a console table where a sofa should be), or place the result somewhere other than where it was supposed to go — so check the whole frame, not just one area. Minor differences from lighting, camera angle, or scale are normal and should still pass. Only fail when you cannot find a plausible match for the reference product anywhere in the room.
 
@@ -98,12 +98,12 @@ export async function checkRenderedProductIdentity(
     if (typeof parsed.pass !== "boolean" || typeof parsed.note !== "string") return null;
     return { pass: parsed.pass, note: parsed.note };
   } catch (err) {
-    console.error("[maison] identity check failed, skipping:", err);
+    console.error("[vistroom] identity check failed, skipping:", err);
     return null;
   }
 }
 
-const REMOVAL_SYSTEM = `You are a quality-control reviewer for Maison, an AI interior design platform. An automated tool just tried to ERASE one specific existing object from a customer's room photo via an AI image edit. You are shown two images: (1) the room photo BEFORE the edit, and (2) the room photo AFTER the edit, which should have that object gone and its space filled in naturally.
+const REMOVAL_SYSTEM = `You are a quality-control reviewer for Vistroom, an AI interior design platform. An automated tool just tried to ERASE one specific existing object from a customer's room photo via an AI image edit. You are shown two images: (1) the room photo BEFORE the edit, and (2) the room photo AFTER the edit, which should have that object gone and its space filled in naturally.
 
 Your only job: compare the two photos and decide whether the target object is now actually GONE from the after photo — not still visible anywhere, even if slightly repositioned or partially obscured by something else. A successful removal fills in the vacated space naturally (matching the surrounding floor, wall, and lighting) — that's expected and should still pass. Only fail when the same object (or something clearly recognizable as it) is still visibly present in the after photo, meaning the edit didn't actually do what was asked.
 
@@ -164,7 +164,7 @@ export async function checkRemovalSuccess(
     if (typeof parsed.pass !== "boolean" || typeof parsed.note !== "string") return null;
     return { pass: parsed.pass, note: parsed.note };
   } catch (err) {
-    console.error("[maison] removal check failed, skipping:", err);
+    console.error("[vistroom] removal check failed, skipping:", err);
     return null;
   }
 }

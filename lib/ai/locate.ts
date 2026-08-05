@@ -102,7 +102,7 @@ export async function locateExistingObject(roomPhoto: Buffer, category: ProductC
     if (parsed.found !== true || !isValidBox(parsed.box)) return null;
     return { box: clampBox(parsed.box) };
   } catch (err) {
-    console.error("[maison] locate failed, existing-object removal unavailable this turn:", err);
+    console.error("[vistroom] locate failed, existing-object removal unavailable this turn:", err);
     return null;
   }
 }
@@ -160,7 +160,7 @@ export async function locateProductInImage(
     if (parsed.found !== true || !isValidBox(parsed.box)) return null;
     return { box: clampBox(parsed.box) };
   } catch (err) {
-    console.error("[maison] locateProductInImage failed:", err);
+    console.error("[vistroom] locateProductInImage failed:", err);
     return null;
   }
 }
@@ -195,7 +195,7 @@ export interface UnaccountedItem {
   description: string;
   /** English phrase for a web product search when our catalog has no match, e.g. "dark wood bed frame with upholstered headboard". */
   webQuery: string;
-  /** Best-guess Maison category, for locating the item's position in the render. */
+  /** Best-guess Vistroom category, for locating the item's position in the render. */
   category: ProductCategory;
 }
 
@@ -265,7 +265,7 @@ export async function detectUnaccountedItems(roomPhoto: Buffer, alreadyIncluded:
       })
       .slice(0, 6);
   } catch (err) {
-    console.error("[maison] detectUnaccountedItems failed, skipping auto-match:", err);
+    console.error("[vistroom] detectUnaccountedItems failed, skipping auto-match:", err);
     return [];
   }
 }
@@ -401,7 +401,7 @@ export async function detectSceneItems(render: Buffer, picked: PickedProductRef[
       }))
       .slice(0, 20);
   } catch (err) {
-    console.error("[maison] detectSceneItems failed:", err);
+    console.error("[vistroom] detectSceneItems failed:", err);
     return [];
   }
 }

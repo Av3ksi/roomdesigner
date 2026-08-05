@@ -4,15 +4,15 @@ import { ArrowUpRight, Sparkles, ShoppingBag } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { ROOM_ID_STORAGE_KEY, SEED_ROOM_STORAGE_KEY } from "@/lib/designerStorage";
 import { formatPrice } from "@/lib/products";
-import { useMaisonStore } from "@/lib/store";
+import { useVistroomStore } from "@/lib/store";
 import ImageLightbox from "@/components/ImageLightbox";
 import RoomHotspots, { type HotspotItem } from "@/components/RoomHotspots";
 import type { FinishedRoom } from "@/lib/finishedRooms";
 
 export default function LookDetail({ room }: { room: FinishedRoom }) {
   const router = useRouter();
-  const addToCart = useMaisonStore((s) => s.addToCart);
-  const addManyToCart = useMaisonStore((s) => s.addManyToCart);
+  const addToCart = useVistroomStore((s) => s.addToCart);
+  const addManyToCart = useVistroomStore((s) => s.addManyToCart);
 
   /**
    * "Every room on the site should be editable by prompting." This room —

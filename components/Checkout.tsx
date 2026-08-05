@@ -20,7 +20,7 @@ import {
 import { useEffect, useState } from "react";
 import ProductThumb from "@/components/room/ProductThumb";
 import { formatPrice } from "@/lib/products";
-import { cartTotal, useMaisonStore } from "@/lib/store";
+import { cartTotal, useVistroomStore } from "@/lib/store";
 import { DELIVERY, INSTALLATION, type DeliveryId, type InstallId } from "@/lib/checkoutOptions";
 
 function addDays(offset: number): Date {
@@ -64,9 +64,9 @@ function DatePicker({
 }
 
 export default function Checkout() {
-  const { cart, setQty, removeFromCart, clearCart } = useMaisonStore();
-  const checkoutDefaults = useMaisonStore((s) => s.checkoutDefaults);
-  const setCheckoutDefaults = useMaisonStore((s) => s.setCheckoutDefaults);
+  const { cart, setQty, removeFromCart, clearCart } = useVistroomStore();
+  const checkoutDefaults = useVistroomStore((s) => s.checkoutDefaults);
+  const setCheckoutDefaults = useVistroomStore((s) => s.setCheckoutDefaults);
   const [delivery, setDelivery] = useState<DeliveryId>((checkoutDefaults?.delivery as DeliveryId) ?? "whiteglove");
   const [installation, setInstallation] = useState<InstallId>((checkoutDefaults?.installation as InstallId) ?? "assembly");
   const [orderId, setOrderId] = useState<string | null>(null);

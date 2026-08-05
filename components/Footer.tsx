@@ -45,13 +45,13 @@ export default function Footer() {
     <footer className="border-t border-ink-line/70 bg-ink-soft">
       <div className="container-page grid gap-10 py-14 md:grid-cols-[1.2fr_repeat(4,1fr)]">
         <div>
-          <div className="font-display text-2xl text-cream">Maison</div>
+          <div className="font-display text-2xl text-cream">Vistroom</div>
           <p className="mt-3 max-w-xs text-sm leading-relaxed text-cream-faint">
-            The AI interior designer. Photograph your room, and Maison reads
+            The AI interior designer. Photograph your room, and Vistroom reads
             the space, designs it back to you, and lets you buy the result.
           </p>
           <p className="mt-6 text-xs text-cream-faint/70">
-            © {new Date().getFullYear()} Maison Design Intelligence, Inc.
+            © {new Date().getFullYear()} Vistroom Design Intelligence, Inc.
           </p>
         </div>
         {COLUMNS.map((col) => (

@@ -65,7 +65,7 @@ export default function BeyondTheRender() {
             A design platform, not a demo.
           </h2>
           <p className="mt-4 text-cream-dim">
-            The parts that make Maison feel like a finished product, not a proof of concept.
+            The parts that make Vistroom feel like a finished product, not a proof of concept.
           </p>
         </Reveal>
 

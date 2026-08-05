@@ -1,8 +1,8 @@
 import { randomUUID } from "crypto";
 import { cookies } from "next/headers";
 
-const COOKIE_NAME = "maison_session";
-const USER_COOKIE_NAME = "maison_user";
+const COOKIE_NAME = "vistroom_session";
+const USER_COOKIE_NAME = "vistroom_user";
 const ONE_YEAR = 60 * 60 * 24 * 365;
 
 /**

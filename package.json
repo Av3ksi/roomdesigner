@@ -1,8 +1,8 @@
 {
-  "name": "maison",
+  "name": "vistroom",
   "version": "0.1.0",
   "private": true,
-  "description": "Maison — the AI interior designer. Upload a photo of your room, get photoreal redesign concepts, shop the look.",
+  "description": "Vistroom — the AI interior designer. Upload a photo of your room, get photoreal redesign concepts, shop the look.",
   "scripts": {
     "dev": "next dev",
     "build": "next build",

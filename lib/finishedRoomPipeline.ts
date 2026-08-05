@@ -64,7 +64,7 @@ export async function composeAndSaveFinishedRoom(input: ComposeFinishedRoomInput
   // rather than silently discarding a render real money already paid for.
   for (const [i, product] of products.entries()) {
     const check = await checkRenderedProductIdentity(items[i].productPhoto, finalImage, items[i].box);
-    if (check && !check.pass) console.warn(`[maison] "${product.name}": ${check.note}`);
+    if (check && !check.pass) console.warn(`[vistroom] "${product.name}": ${check.note}`);
   }
 
   // Locates each item's real on-image position for LookDetail's clickable

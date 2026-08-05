@@ -6,13 +6,13 @@ import { useState } from "react";
 import ProductDetailPanel from "@/components/ProductDetailPanel";
 import ProductThumb from "@/components/room/ProductThumb";
 import { formatPrice } from "@/lib/products";
-import { useMaisonStore } from "@/lib/store";
+import { useVistroomStore } from "@/lib/store";
 import type { Product } from "@/lib/types";
 
 export default function Wishlist() {
-  const wishlist = useMaisonStore((s) => s.wishlist);
-  const toggleWishlist = useMaisonStore((s) => s.toggleWishlist);
-  const addManyToCart = useMaisonStore((s) => s.addManyToCart);
+  const wishlist = useVistroomStore((s) => s.wishlist);
+  const toggleWishlist = useVistroomStore((s) => s.toggleWishlist);
+  const addManyToCart = useVistroomStore((s) => s.addManyToCart);
   const [detailProduct, setDetailProduct] = useState<Product | null>(null);
 
   const total = wishlist.reduce((n, p) => n + p.price, 0);

@@ -144,7 +144,7 @@ export async function segmentExistingFurniture(
 
     const refs = extractMaskRefs(output);
     if (refs.length === 0) {
-      console.log(`[maison] segmentation: model returned no mask for "${prompt}"`);
+      console.log(`[vistroom] segmentation: model returned no mask for "${prompt}"`);
       return null;
     }
 
@@ -168,13 +168,13 @@ export async function segmentExistingFurniture(
 
     const box = boundingBoxFromAlpha(alpha, width, height);
     if (!box) {
-      console.log(`[maison] segmentation: mask returned but empty for "${prompt}"`);
+      console.log(`[vistroom] segmentation: mask returned but empty for "${prompt}"`);
       return null;
     }
 
     return { box, alpha, width, height };
   } catch (err) {
-    console.error(`[maison] segmentation failed for "${prompt}", falling back to box-based removal:`, err);
+    console.error(`[vistroom] segmentation failed for "${prompt}", falling back to box-based removal:`, err);
     return null;
   }
 }

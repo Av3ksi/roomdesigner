@@ -12,7 +12,7 @@ import Immersive3D from "@/components/studio/Immersive3D";
 import { formatPrice } from "@/lib/products";
 import { SAMPLE_ROOMS } from "@/lib/rooms";
 import { decodeSnapshot, shareUrlFor } from "@/lib/share";
-import { useMaisonStore } from "@/lib/store";
+import { useVistroomStore } from "@/lib/store";
 import type { Product } from "@/lib/types";
 
 export default function SharedDesignView() {
@@ -21,11 +21,11 @@ export default function SharedDesignView() {
   const encoded = params.get("d");
   const snapshot = useMemo(() => (encoded ? decodeSnapshot(encoded) : null), [encoded]);
 
-  const addManyToCart = useMaisonStore((s) => s.addManyToCart);
-  const addToCart = useMaisonStore((s) => s.addToCart);
-  const toggleWishlist = useMaisonStore((s) => s.toggleWishlist);
-  const isWishlisted = useMaisonStore((s) => s.isWishlisted);
-  const saveDesign = useMaisonStore((s) => s.saveDesign);
+  const addManyToCart = useVistroomStore((s) => s.addManyToCart);
+  const addToCart = useVistroomStore((s) => s.addToCart);
+  const toggleWishlist = useVistroomStore((s) => s.toggleWishlist);
+  const isWishlisted = useVistroomStore((s) => s.isWishlisted);
+  const saveDesign = useVistroomStore((s) => s.saveDesign);
 
   const [products, setProducts] = useState<Product[]>(snapshot?.products ?? []);
   const [exploring, setExploring] = useState(false);

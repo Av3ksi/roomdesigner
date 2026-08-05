@@ -7,7 +7,7 @@ export default function PrivacyPage() {
   return (
     <LegalPage title="Privacy Policy" lastUpdated="Draft">
       <p>
-        This describes what Maison collects and why, written to match what this app actually does technically —
+        This describes what Vistroom collects and why, written to match what this app actually does technically —
         replace bracketed fields with your real details, and have a lawyer confirm it satisfies GDPR/Swiss FADP
         obligations for your actual customer base before launch.
       </p>

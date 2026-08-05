@@ -13,7 +13,7 @@ export const DELIVERY = [
 export const INSTALLATION = [
   { id: "none", label: "No installation", note: "I'll set it up myself", price: 0 },
   { id: "assembly", label: "Professional assembly", note: "Every piece assembled & packaging removed", price: 149 },
-  { id: "styling", label: "Assembly + designer styling visit", note: "A Maison designer stages the room to the concept", price: 399 },
+  { id: "styling", label: "Assembly + designer styling visit", note: "A Vistroom designer stages the room to the concept", price: 399 },
 ] as const;
 
 export type DeliveryId = (typeof DELIVERY)[number]["id"];

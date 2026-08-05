@@ -2,9 +2,9 @@ import type { Product, ProductCategory } from "../types";
 import type { RawSupplierProduct } from "./types";
 
 /**
- * Wholesale feeds don't come with Maison's category/style/color taxonomy —
+ * Wholesale feeds don't come with Vistroom's category/style/color taxonomy —
  * they come with a vendor's own category tree and free-text titles/
- * descriptions. These helpers infer Maison's fields deterministically from
+ * descriptions. These helpers infer Vistroom's fields deterministically from
  * that text, the same "AI understands intent, code resolves the actual
  * data" split used throughout the app (here it's keyword-matching rather
  * than an LLM call, since it's cheap, instant, and auditable at catalog-
@@ -60,7 +60,7 @@ export function inferCategory(raw: RawSupplierProduct): ProductCategory {
 /**
  * Lightweight relevance check for a general wholesaler feed (VidaXL sells
  * everything from pet supplies to garden tools, not just home furniture):
- * true if the text hits one of Maison's known furniture/decor categories
+ * true if the text hits one of Vistroom's known furniture/decor categories
  * at all, false if nothing matched (a "Cat Tree" or "Ride-on Excavator"
  * won't hit any of the CATEGORY_KEYWORDS groups). This is a stand-in for
  * real category_path-based curation — good enough to get an on-theme

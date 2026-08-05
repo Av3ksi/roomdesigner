@@ -14,7 +14,7 @@ import sampleFeedData from "./data/vidaxl-sample.json";
  * - GET /api_customer/products returns a lean, flat field set — id, name,
  *   code, category_path, quantity, price, created_at, updated_at. No
  *   description, no images, no separate cost/RRP split: `price` is the
- *   wholesale cost VidaXL charges, and Maison's own markup is applied on
+ *   wholesale cost VidaXL charges, and Vistroom's own markup is applied on
  *   top in mapping.ts's computeRetailPrice().
  * - Pagination via ?limit=&offset=, with the response carrying a
  *   `pagination: { offset, limit, total }` block alongside the products.
@@ -117,7 +117,7 @@ const SAMPLE_BY_SKU = new Map(SAMPLE_FEED.map((p) => [p.sku, p]));
 
 /**
  * Maps an ingested VidaXL feed (the shape scripts/ingest-vidaxl-feed.py
- * writes) into Maison Products, through the exact same sampleToRaw +
+ * writes) into Vistroom Products, through the exact same sampleToRaw +
  * mapSupplierProduct + price>0 filter used for the bundled sample. The seed
  * script (scripts/seed-products.ts) uses this to load the FULL catalog file
  * — which is far too big to bundle as a build-time import — straight into

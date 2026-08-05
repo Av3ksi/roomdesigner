@@ -6,7 +6,7 @@ import type { ProductCategory } from "@/lib/types";
 export const metadata: Metadata = {
   title: "Marketplace",
   description:
-    "Every piece Maison places in a render is a real product. Browse the curated catalog by style and category.",
+    "Every piece Vistroom places in a render is a real product. Browse the curated catalog by style and category.",
 };
 
 // Always query the current catalog — a stale build-time snapshot would hide

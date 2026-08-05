@@ -22,7 +22,7 @@ function client(): Resend {
 // Resend requires a verified sending domain — until one is configured,
 // their own onboarding@resend.dev address works for testing (delivers only
 // to the account owner's own verified email, per Resend's sandbox rules).
-const FROM = process.env.EMAIL_FROM || "Maison <onboarding@resend.dev>";
+const FROM = process.env.EMAIL_FROM || "Vistroom <onboarding@resend.dev>";
 
 export interface SendEmailInput {
   to: string;
@@ -33,27 +33,27 @@ export interface SendEmailInput {
 /** Returns true if the email was actually sent (or would have been, in demo mode logging). */
 export async function sendEmail(input: SendEmailInput): Promise<boolean> {
   if (!emailEnabled()) {
-    console.log(`[maison] email disabled (no RESEND_API_KEY) — would have sent to ${input.to}: "${input.subject}"`);
+    console.log(`[vistroom] email disabled (no RESEND_API_KEY) — would have sent to ${input.to}: "${input.subject}"`);
     return false;
   }
   try {
     const result = await client().emails.send({ from: FROM, to: input.to, subject: input.subject, html: input.html });
     if (result.error) {
-      console.error("[maison] Resend send failed:", result.error);
+      console.error("[vistroom] Resend send failed:", result.error);
       return false;
     }
     return true;
   } catch (err) {
-    console.error("[maison] Resend send threw:", err);
+    console.error("[vistroom] Resend send threw:", err);
     return false;
   }
 }
 
 const EMAIL_WRAPPER = (bodyHtml: string) => `
 <div style="font-family: Georgia, serif; max-width: 480px; margin: 0 auto; padding: 32px 24px; color: #22211F;">
-  <div style="font-size: 22px; font-weight: 600; letter-spacing: 0.02em; margin-bottom: 24px;">Maison</div>
+  <div style="font-size: 22px; font-weight: 600; letter-spacing: 0.02em; margin-bottom: 24px;">Vistroom</div>
   ${bodyHtml}
-  <p style="margin-top: 32px; font-size: 12px; color: #8A8378;">Maison — AI interior design.</p>
+  <p style="margin-top: 32px; font-size: 12px; color: #8A8378;">Vistroom — AI interior design.</p>
 </div>
 `;
 
@@ -61,7 +61,7 @@ export function loginEmailHtml(loginUrl: string): string {
   return EMAIL_WRAPPER(`
     <p style="font-size: 15px; line-height: 1.6;">Click below to sign in. This link works once and expires in 15 minutes.</p>
     <p style="margin: 24px 0;">
-      <a href="${loginUrl}" style="display: inline-block; background: #C8A96E; color: #22211F; padding: 12px 24px; border-radius: 999px; text-decoration: none; font-weight: 600;">Sign in to Maison</a>
+      <a href="${loginUrl}" style="display: inline-block; background: #C8A96E; color: #22211F; padding: 12px 24px; border-radius: 999px; text-decoration: none; font-weight: 600;">Sign in to Vistroom</a>
     </p>
     <p style="font-size: 13px; color: #8A8378;">If you didn't request this, you can safely ignore this email.</p>
   `);

@@ -1,4 +1,4 @@
-# Maison 2.0 — Product & Architecture Blueprint
+# Vistroom 2.0 — Product & Architecture Blueprint
 
 **Status:** Design document — the target architecture, written from first principles.
 **Relationship to the current code:** The prototype in this repo validated the core loop
@@ -27,7 +27,7 @@ suppliers, and lets you buy the result.
 | Generic AI photo restylers | Pretty renders of fake furniture | Every object in our render is a real SKU with a price and a delivery date |
 
 **The business loop (validated already in the prototype):** wholesale supplier feed →
-Maison markup (~40% margin measured on real VidaXL data) → sale happens inside Maison →
+Vistroom markup (~40% margin measured on real VidaXL data) → sale happens inside Vistroom →
 supplier drop-ships. Every render is a shop window. The AI designer is the salesperson.
 
 **North-star metric:** renders that convert to checkout. Everything in this document
@@ -54,7 +54,7 @@ Every recognizable object in every render is tappable → product drawer
    ↓
 "Add to cart" per object, or "shop this whole room."
    ↓
-Maison checkout (Stripe). Supplier fulfillment happens behind the curtain.
+Vistroom checkout (Stripe). Supplier fulfillment happens behind the curtain.
 ```
 
 ### 2.2 Interface principles
@@ -219,7 +219,7 @@ Constraint discovered and verified in the prototype: **VidaXL order creation is 
 payment is manual** in their dashboard. Design accordingly:
 
 ```
-Customer: cart → Maison checkout (Stripe: cards + TWINT for CH) → order confirmed
+Customer: cart → Vistroom checkout (Stripe: cards + TWINT for CH) → order confirmed
 Backend:  order record → fulfillment queue → per-supplier task:
             - VidaXL: POST /api_customer/orders (API) → ops pays in dashboard
               (manual step, tracked in an internal ops console) → status/tracking

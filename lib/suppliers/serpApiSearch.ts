@@ -65,7 +65,7 @@ export async function searchProductViaSerpApi(query: string, market: TargetMarke
       signal: AbortSignal.timeout(15_000),
     });
     if (!res.ok) {
-      console.error(`[maison] SerpApi search failed: ${res.status} ${await res.text()}`);
+      console.error(`[vistroom] SerpApi search failed: ${res.status} ${await res.text()}`);
       return null;
     }
 
@@ -76,7 +76,7 @@ export async function searchProductViaSerpApi(query: string, market: TargetMarke
       (r) => typeof r.title === "string" && r.title.trim() && typeof r.thumbnail === "string" && (r.product_link || r.link),
     );
     if (!best) {
-      console.log(`[maison] SerpApi: no usable shopping result (title + thumbnail + link) for query "${query}"`);
+      console.log(`[vistroom] SerpApi: no usable shopping result (title + thumbnail + link) for query "${query}"`);
       return null;
     }
 
@@ -92,7 +92,7 @@ export async function searchProductViaSerpApi(query: string, market: TargetMarke
       imageUrl: best.thumbnail!,
     };
   } catch (err) {
-    console.error(`[maison] SerpApi search failed for query "${query}":`, err);
+    console.error(`[vistroom] SerpApi search failed for query "${query}":`, err);
     return null;
   }
 }

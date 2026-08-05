@@ -97,7 +97,7 @@ export async function POST(req: NextRequest) {
 
   // Per-step wall-clock timing for the whole pipeline — the only way to tell
   // "which of the ~10 AI calls in a generate actually took the time" instead
-  // of guessing. Every step logs "[maison] timing: <step> took Nms"; grep the
+  // of guessing. Every step logs "[vistroom] timing: <step> took Nms"; grep the
   // dev server output for "timing:" after a slow run to see the breakdown.
   const requestStart = Date.now();
   const timings: Record<string, number> = {};
@@ -108,7 +108,7 @@ export async function POST(req: NextRequest) {
     } finally {
       const ms = Date.now() - start;
       timings[label] = ms;
-      console.log(`[maison] timing: ${label} took ${ms}ms`);
+      console.log(`[vistroom] timing: ${label} took ${ms}ms`);
     }
   }
 
@@ -281,7 +281,7 @@ export async function POST(req: NextRequest) {
     const totalPrice = allProducts.reduce((sum, p) => sum + p.price, 0);
     const styleTags = Array.from(new Set(allProducts.flatMap((p) => p.styles)));
 
-    console.log(`[maison] timing: TOTAL generate request took ${Date.now() - requestStart}ms`, timings);
+    console.log(`[vistroom] timing: TOTAL generate request took ${Date.now() - requestStart}ms`, timings);
 
     return NextResponse.json({
       imageBase64: result.imageBase64,

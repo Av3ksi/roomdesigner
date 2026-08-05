@@ -1,5 +1,5 @@
 /**
- * Markets Maison's web-sourced "shop the look" extras (posters, items not
+ * Markets Vistroom's web-sourced "shop the look" extras (posters, items not
  * in our own catalog) can be scoped to. Deliberately client-safe — no SDK
  * imports — so it can be imported from both the server-only search prompt
  * (lib/ai/webProductSearch.ts) and the client-side Looks Studio form

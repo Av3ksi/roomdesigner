@@ -6,14 +6,14 @@ export const metadata: Metadata = { title: "Terms of Service" };
 export default function TermsPage() {
   return (
     <LegalPage title="Terms of Service" lastUpdated="Draft">
-      <p>Governs use of the Maison website and purchases made through it. Replace bracketed fields before launch.</p>
+      <p>Governs use of the Vistroom website and purchases made through it. Replace bracketed fields before launch.</p>
 
       <h2>Who we are</h2>
-      <p>Maison is operated by [your registered company name] ("we", "us"). See our Imprint for full details.</p>
+      <p>Vistroom is operated by [your registered company name] ("we", "us"). See our Imprint for full details.</p>
 
       <h2>The service</h2>
       <p>
-        Maison generates AI-assisted interior design concepts from photos you upload, and lets you purchase
+        Vistroom generates AI-assisted interior design concepts from photos you upload, and lets you purchase
         real products (sourced through our dropship supplier(s)) that appear in those designs. Products shown
         as "sourced from another store" are not sold by us — they link to a third-party retailer's own listing
         and are subject to that retailer's own terms.
