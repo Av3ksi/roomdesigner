@@ -3,6 +3,16 @@ import sharp from "sharp";
 import { MODEL as CLAUDE_MODEL, aiEnabled } from "./claude";
 import { blendEditedRegion, buildMaskPng } from "./imageMasking";
 import {
+  CAMERA_MATCH_DIRECTION,
+  CATALOG_ONLY_SCENE_CONSTRAINT,
+  LIGHTING_MATCH_DIRECTION,
+  MASK_DISCIPLINE,
+  MATERIAL_FIDELITY_DIRECTION,
+  NO_PEOPLE_INSTRUCTION as NO_PEOPLE,
+  buildProductInsertionPrompt,
+  buildRemovalPrompt,
+} from "./prompts";
+import {
   COMPOSITE_MAX_EDGE,
   DEFAULT_CATEGORY_BOX,
   clampBox,
@@ -76,9 +86,7 @@ export const CATEGORY_PLACEMENT_HINT: Record<ProductCategory, string> = {
  * instruction, since a multi-image edit can still copy what it visually
  * sees in the reference photo regardless of what the text says.
  */
-export const NO_PEOPLE_INSTRUCTION =
-  " Do not include any people, children, hands, models, or pets that may appear in the reference photo or its " +
-  "description — depict only the product itself, unoccupied, with no person or animal present.";
+export { NO_PEOPLE_INSTRUCTION } from "./prompts";
 
 const CATEGORY_LABEL_ALIASES: Record<ProductCategory, string[]> = {
   sofa: ["sofa", "sectional", "couch"],
@@ -193,6 +201,10 @@ export async function compositeProductIntoRoom(
   explicitBox?: DetectionBox,
   /** Estimated angle of the wall/floor plane the box sits against — see lib/ai/placement.ts. 0 or undefined = no rotation hint. */
   wallAngleDeg?: number,
+  /** The product's REAL size, when the supplier feed carries it — grounds the render in centimetres instead of the model's aesthetic guess. See scaleGroundingDirection in ./prompts. */
+  dimensionsCm?: { l: number; w: number; h: number } | null,
+  /** The room's estimated real dimensions (lib/ai/placement.ts), used to express the product as a proportion of the space. */
+  roomDimensions?: { widthM: number; depthM: number; heightM: number } | null,
 ): Promise<CompositeResult> {
   if (!compositingEnabled()) throw new Error("OPENAI_API_KEY not configured");
 
@@ -236,40 +248,24 @@ export async function compositeProductIntoRoom(
   // (currently unquantified) risk of unwanted whole-room drift for
   // reliably getting the actual requested product into the render, which
   // real testing found the masked approach was failing at more often.
-  const wallAngleInstruction =
-    wallAngleDeg && Math.abs(wallAngleDeg) > 2
-      ? ` The wall or floor plane at that position recedes at approximately ${Math.round(wallAngleDeg)}° from the camera ` +
-        `(${wallAngleDeg > 0 ? "receding away to the right" : "receding away to the left"}, matching this photo's actual ` +
-        "vanishing lines) — rotate the product so its parallel edges (front face, top, base) align exactly with that " +
-        "plane. It must lie flush and parallel against its real surface, not face the camera head-on."
-      : wallAngleDeg === 0
-        ? " The wall at that position faces the camera directly (no perspective recession) — keep the product's front face parallel to the camera plane."
-        : "";
-
   form.append(
     "prompt",
-    "The first image is a real customer's real room photo, not a stock photo to reimagine. The second image is a " +
-      `real product photo — a real ${category}${productDescription ? `: ${productDescription}` : ""}. Add the EXACT ` +
-      `product shown in the second image into the first image, placed ${describeRoughLocation(maskBox)}. Never ` +
-      "substitute a different piece of furniture or object for it, even if it seems like a more natural fit for the " +
-      "room — if the reference photo is unclear, still insert something that resembles it as closely as possible, " +
-      "do not default to a generic or different object. " +
-      "Keep the room's actual architecture EXACTLY as photographed: same walls, wall color, window and door " +
-      "positions, ceiling height, floor material, camera angle and perspective. Keep every existing piece of " +
-      "furniture and every existing decor item exactly where and how it is. The ONLY change to this photo should " +
-      "be the addition of this one product — do not repaint walls, change the floor, adjust the lighting mood, or " +
-      "add, remove, or move anything else. " +
-      "Ground it exactly on the real floor plane at that position — resting flush on the floor, never floating " +
-      "above it or sinking into it. Match the room's actual lighting: the highlight and shadow direction on the " +
-      "product must follow the same light source(s) already visible in the room photo, not a generic studio " +
-      "light. Add a soft, physically plausible contact shadow directly beneath and behind it, consistent with " +
-      "that same light direction. Scale it realistically against real reference points already visible in the " +
-      "room — door height, window sill, floor plank or tile width, existing furniture. " +
-      (explicitBox
-        ? "The described position is the exact intended placement — fit the product naturally there."
-        : `Place it realistically the way it would actually sit in a lived-in room: ${CATEGORY_PLACEMENT_HINT[category]}.`) +
-      wallAngleInstruction +
-      NO_PEOPLE_INSTRUCTION,
+    buildProductInsertionPrompt({
+      category,
+      productDescription,
+      box: maskBox,
+      explicitBox: Boolean(explicitBox),
+      placementHint: CATEGORY_PLACEMENT_HINT[category],
+      wallAngleDeg,
+      dimensionsCm,
+      roomDimensions,
+      // Deliberately no `mask` field on this path — see the block comment
+      // above about why every masked variant tried produced its own
+      // confirmed failure. "Leave the rest of the room alone" is carried
+      // entirely by PRESERVE_ROOM_DISCIPLINE in the prompt instead.
+      masked: false,
+      hasReferenceImage: true,
+    }),
   );
   form.append("quality", quality);
   form.append("input_fidelity", "high");
@@ -316,6 +312,8 @@ export async function removeExistingObject(
   roomPhotoInput: Buffer,
   box: DetectionBox,
   category: ProductCategory,
+  /** A specific item description ("dark oak coffee table") when the caller has one — a far better erase target than the bare category. */
+  removalDescription?: string,
 ): Promise<RemovalResult> {
   if (!compositingEnabled()) throw new Error("OPENAI_API_KEY not configured");
 
@@ -336,12 +334,7 @@ export async function removeExistingObject(
   form.append("model", MODEL);
   form.append("image[]", roomImage.blob, roomImage.filename);
   form.append("mask", new Blob([new Uint8Array(maskPng)], { type: "image/png" }), "mask.png");
-  form.append(
-    "prompt",
-    `Remove the ${category} from the masked region entirely. Fill in what would realistically be behind it — ` +
-      "matching the existing floor, wall, and lighting exactly, as if the object was never there. " +
-      "Leave everything outside the masked region unchanged.",
-  );
+  form.append("prompt", buildRemovalPrompt(category, removalDescription));
   form.append("quality", "low");
   form.append("input_fidelity", "high");
   form.append("size", "auto");
@@ -458,23 +451,26 @@ export async function composeSceneWithProducts(
     console.log("[vistroom] composeSceneWithProducts restyle", { width, height, itemCount: items.length, quality, styleDirection });
     form.append(
       "prompt",
-      "The first image is a photo of a real room. Every image after it is a real product photo. Edit this exact " +
-        "room photo according to this direction: " +
+      "You are a professional interior photographer and retoucher. The first image is a photograph of a real " +
+        "room. Every image after it is a photograph of a real product. Edit this exact room photograph " +
+        "according to this art direction: " +
         `${styleDirection!.trim()}. ` +
-        "This is a real customer's real room, not a stock photo to reimagine — preserve it as closely as possible. " +
-        "Keep the room's actual architecture EXACTLY as photographed: same walls, wall color, window and door " +
-        "positions, ceiling height, floor material, camera angle and perspective. Keep every piece of existing " +
-        "furniture and every existing decor item exactly where and how it is, unless the direction above " +
-        "explicitly says to change or remove it. Do not repaint walls, change the floor, add a rug, adjust the " +
-        "lighting mood, or add any cushions, books, plants, wall art, or other staging accents UNLESS the " +
-        "direction above explicitly asks for that specific thing — add nothing else, no matter how tastefully it " +
-        "would round out the scene. The only things you should add or change are: the placed products below, and " +
-        "whatever is explicitly named in the direction above. The featured products are the heroes of the scene: " +
-        "use the EXACT product shown in each reference image — never substitute a different piece for any of " +
-        "them, and never omit one. " +
+        "Preserve the room's actual architecture exactly as photographed: the same walls, window and door " +
+        "positions, ceiling height, floor material, camera position and perspective. Keep every existing piece " +
+        "of furniture and decor precisely where and as it is, UNLESS the direction above explicitly says to " +
+        "change or remove it. " +
+        "The direction above is the ONLY licence you have to change anything beyond adding the listed products: " +
+        "do not repaint walls, change flooring, add a rug, alter the lighting mood, or introduce cushions, " +
+        "books, plants, wall art or any other staging accessory unless that specific thing is named in it. Add " +
+        "nothing else, however tastefully it would round out the scene — anything you invent is unpurchasable " +
+        "and breaks the shoppable render. " +
+        "The featured products are the heroes of the frame: use the EXACT product shown in each reference " +
+        "image, never substituting a different piece and never omitting one. " +
         itemLines.join(" ") +
-        " Consistent scale, perspective and lighting across everything; realistic contact shadows where items touch the floor." +
-        NO_PEOPLE_INSTRUCTION,
+        LIGHTING_MATCH_DIRECTION +
+        CAMERA_MATCH_DIRECTION +
+        MATERIAL_FIDELITY_DIRECTION +
+        NO_PEOPLE,
     );
   } else {
     const union = unionBox(items.map((i) => i.box));
@@ -484,25 +480,29 @@ export async function composeSceneWithProducts(
     form.append("mask", new Blob([new Uint8Array(maskPng)], { type: "image/png" }), "mask.png");
     form.append(
       "prompt",
-      "The first image is a room photo. Every image after it is a real product photo to composite into the masked " +
-        "region of the room. The result must look like a real, professionally photographed living room — the kind " +
-        "of interior photography you'd see in a design magazine or a real-estate listing, not a sterile product " +
-        "catalog grid with items placed in a straight line facing the camera. Arrange the given pieces together as " +
-        "ONE cohesive, naturally lived-in scene, the way a real interior designer would lay out real furniture: " +
-        "consistent scale and lighting across every piece, believable relative positions (e.g. a coffee table sits " +
-        "in front of a sofa, not overlapping it or floating apart from it; a sideboard sits flush against a wall; " +
-        "an accent chair angled slightly toward the sofa as if for conversation, not aimed straight at the camera), " +
-        "and realistic contact shadows where each item touches the floor. Style what's actually there naturally, " +
-        "not symmetrically or catalog-perfect: cushions slightly overlapped or leaned rather than centered and " +
-        "upright, a throw or blanket draped loosely over an arm or seat back rather than folded flat, wall art hung " +
-        "at genuine eye height rather than centered in empty wall space. Use the EXACT product shown in each " +
-        "reference image for its corresponding item — never substitute a different piece of furniture for any of " +
-        "them, and never omit one — and do not add any additional furniture, decor, or accessories beyond what's " +
-        "listed below, no matter how much a real photograph might otherwise include; only style the arrangement of " +
-        "the given pieces, don't invent new ones. " +
+      "You are a professional interior photographer and retoucher. The first image is a photograph of a real " +
+        "room. Every image after it is a photograph of a real product to composite into the masked region. The " +
+        "result must read as a single unretouched interior photograph of the kind published in a design " +
+        "magazine or a high-end property listing — never as a catalogue grid with items lined up facing the " +
+        "camera. " +
+        "Arrange the given pieces as ONE cohesive, naturally lived-in scene, the way an interior designer " +
+        "would actually lay out real furniture: consistent scale and shared lighting across every piece, " +
+        "believable relative positions (a coffee table sits in front of a sofa, not overlapping or floating " +
+        "apart from it; a sideboard sits flush against a wall; an accent chair angles slightly toward the " +
+        "seating as if for conversation, never square to the camera), and realistic contact shadows and " +
+        "ambient occlusion where each item meets the floor. Style the arrangement with a human hand rather " +
+        "than symmetrically: cushions leaned or overlapped rather than centred and upright, a throw draped " +
+        "loosely over an arm rather than folded flat, wall art hung at true eye height rather than centred in " +
+        "the available wall space. " +
+        "Use the EXACT product shown in each reference image for its corresponding item — never substitute a " +
+        "different piece for any of them, and never omit one. " +
         itemLines.join(" ") +
-        " Leave everything outside the masked region unchanged." +
-        NO_PEOPLE_INSTRUCTION,
+        LIGHTING_MATCH_DIRECTION +
+        CAMERA_MATCH_DIRECTION +
+        MATERIAL_FIDELITY_DIRECTION +
+        MASK_DISCIPLINE +
+        CATALOG_ONLY_SCENE_CONSTRAINT +
+        NO_PEOPLE,
     );
   }
   form.append("quality", quality);

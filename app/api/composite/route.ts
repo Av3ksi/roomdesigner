@@ -81,6 +81,18 @@ export async function POST(req: NextRequest) {
     ? { x: coords[0], y: coords[1], w: coords[2], h: coords[3] }
     : undefined;
 
+  // Optional real-world grounding. The client sends these when the catalog
+  // row actually carries them; absent, the prompt simply omits the
+  // dimensions block rather than inventing a size (see ./prompts).
+  const dimsRaw = ["widthCm", "depthCm", "heightCm"].map((k) => Number.parseFloat(String(form.get(k) ?? "")));
+  const dimensionsCm = dimsRaw.every((n) => Number.isFinite(n) && n > 0)
+    ? { l: dimsRaw[0], w: dimsRaw[1], h: dimsRaw[2] }
+    : null;
+  const roomDimsRaw = ["roomWidthM", "roomDepthM", "roomHeightM"].map((k) => Number.parseFloat(String(form.get(k) ?? "")));
+  const roomDimensions = roomDimsRaw.every((n) => Number.isFinite(n) && n > 0)
+    ? { widthM: roomDimsRaw[0], depthM: roomDimsRaw[1], heightM: roomDimsRaw[2] }
+    : null;
+
   const wallAngleRaw = Number.parseFloat(String(form.get("wallAngleDeg") ?? ""));
   const wallAngleDeg = Number.isFinite(wallAngleRaw) ? wallAngleRaw : undefined;
 
@@ -107,8 +119,8 @@ export async function POST(req: NextRequest) {
     // "high" is the next real test of whether quality tier is still the
     // ceiling; it costs meaningfully more per render than medium.
     const result = useFlux
-      ? await compositeProductIntoRoomFlux(roomBuffer, productBuffer, category as ProductCategory, [], explicitBox, wallAngleDeg)
-      : await compositeProductIntoRoom(roomBuffer, productBuffer, category as ProductCategory, [], "high", explicitBox, wallAngleDeg);
+      ? await compositeProductIntoRoomFlux(roomBuffer, productBuffer, category as ProductCategory, [], explicitBox, wallAngleDeg, dimensionsCm, roomDimensions)
+      : await compositeProductIntoRoom(roomBuffer, productBuffer, category as ProductCategory, [], "high", explicitBox, wallAngleDeg, dimensionsCm, roomDimensions);
 
     // The render succeeded — this is the actual credit spend, counted here
     // (not in the separate /api/rooms/[id]/versions persistence call)
@@ -125,6 +137,9 @@ export async function POST(req: NextRequest) {
       productBuffer,
       Buffer.from(result.imageBase64, "base64"),
       result.maskBox,
+      // The pre-edit room, so the same review call can also report any
+      // object the model invented — see strayObjects in lib/ai/identityCheck.ts.
+      roomBuffer,
     ).catch(() => null);
 
     return NextResponse.json({ ...result, identityCheck });

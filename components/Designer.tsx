@@ -20,6 +20,26 @@ import type { DetectionBox, Product, ProductCategory } from "@/lib/types";
 
 const MAX_EXTRA_PHOTOS = 4;
 
+/**
+ * Turns a render QA result into the one sentence worth showing the
+ * customer, or null when the render was clean. Two independent failure
+ * modes, both surfaced through the same banner: the intended product
+ * didn't actually appear, and/or the model invented objects that aren't in
+ * the catalogue (see strayObjects in lib/ai/identityCheck.ts). The second
+ * can happen on a render that otherwise passed, so it's checked separately
+ * rather than nested under the identity verdict.
+ */
+function renderWarningFrom(check: { pass?: boolean; note?: string; strayObjects?: string[] } | null | undefined): string | null {
+  if (!check) return null;
+  if (check.pass === false && check.note) return check.note;
+  const stray = check.strayObjects ?? [];
+  if (stray.length > 0) {
+    return `This render added ${stray.join(", ")}, which ${stray.length === 1 ? "isn't a product" : "aren't products"} you can buy here — only the item you confirmed is shoppable.`;
+  }
+  return null;
+}
+
+
 function formatChf(n: number): string {
   return n.toLocaleString("en-US", { style: "currency", currency: "CHF", maximumFractionDigits: 0 });
 }
@@ -519,9 +539,7 @@ export default function Designer() {
 
       commitVersion(body.imageBase64, `V${versions.length} · Moved ${objectName(movingObject.object)}`, nextObjects);
       cancelMove();
-      if (body.identityCheck && body.identityCheck.pass === false) {
-        setIdentityWarning(body.identityCheck.note);
-      }
+      setIdentityWarning(renderWarningFrom(body.identityCheck));
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -776,6 +794,24 @@ export default function Designer() {
       form.append("boxW", String(box.w));
       form.append("boxH", String(box.h));
       form.append("wallAngleDeg", String(proposal.wallAngleDeg));
+      // Real-world grounding for the render prompt: the product's true size
+      // in cm, plus the room's estimated dimensions from the placement pass.
+      // Only sent when genuinely known — a catalog row without dimensions
+      // (or a web-sourced item, which never has them) sends nothing rather
+      // than a guess, and the prompt omits its scale block accordingly.
+      const dims = proposal.kind === "add" ? proposal.product.dimensionsCm : undefined;
+      if (dims) {
+        form.append("widthCm", String(dims.l));
+        form.append("depthCm", String(dims.w));
+        form.append("heightCm", String(dims.h));
+      }
+      const rd = (roomContext as { roomDimensions?: { widthM: number; depthM: number; heightM: number } | null } | null)
+        ?.roomDimensions;
+      if (rd) {
+        form.append("roomWidthM", String(rd.widthM));
+        form.append("roomDepthM", String(rd.depthM));
+        form.append("roomHeightM", String(rd.heightM));
+      }
 
       const res = await fetch("/api/composite", { method: "POST", body: form });
       const body = await res.json();
@@ -828,9 +864,7 @@ export default function Designer() {
         setActiveProposalIndex(null);
         setAdjustedBox(null);
       }
-      if (body.identityCheck && body.identityCheck.pass === false) {
-        setIdentityWarning(body.identityCheck.note);
-      }
+      setIdentityWarning(renderWarningFrom(body.identityCheck));
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {

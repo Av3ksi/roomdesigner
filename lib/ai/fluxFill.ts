@@ -4,12 +4,12 @@ import type { SegmentationResult } from "./vision/segmentation";
 import { alphaToGreyscaleMaskPng, blendWithAlpha, boxToAlphaBuffer } from "./imageMasking";
 import {
   CATEGORY_PLACEMENT_HINT,
-  NO_PEOPLE_INSTRUCTION,
   describeProductForPrompt,
   matchingDetectionBox,
   type CompositeResult,
   type RemovalResult,
 } from "./composite";
+import { buildProductInsertionPrompt, buildRemovalPrompt } from "./prompts";
 import { COMPOSITE_MAX_EDGE, DEFAULT_CATEGORY_BOX, clampBox, padBoxForEdit } from "../placementBoxes";
 import type { Detection, DetectionBox, ProductCategory } from "../types";
 
@@ -78,6 +78,10 @@ export async function compositeProductIntoRoomFlux(
   explicitBox?: DetectionBox,
   /** Estimated angle of the wall/floor plane the box sits against — see lib/ai/placement.ts. 0 or undefined = no rotation hint. */
   wallAngleDeg?: number,
+  /** The product's REAL size, when the supplier feed carries it — see scaleGroundingDirection in ./prompts. */
+  dimensionsCm?: { l: number; w: number; h: number } | null,
+  /** The room's estimated real dimensions (lib/ai/placement.ts). */
+  roomDimensions?: { widthM: number; depthM: number; heightM: number } | null,
 ): Promise<CompositeResult> {
   if (!fluxFillEnabled()) throw new Error("REPLICATE_API_TOKEN not configured");
 
@@ -104,24 +108,23 @@ export async function compositeProductIntoRoomFlux(
   const roomPng = await sharp(roomPhoto).png().toBuffer();
   const productDescription = await describeProductForPrompt(productPhoto);
 
-  const wallAngleInstruction =
-    wallAngleDeg && Math.abs(wallAngleDeg) > 2
-      ? ` The wall or floor plane behind this position recedes at approximately ${Math.round(wallAngleDeg)}° from the camera ` +
-        `(${wallAngleDeg > 0 ? "receding away to the right" : "receding away to the left"}, matching this photo's actual ` +
-        "vanishing lines) — rotate the product so its parallel edges align exactly with that plane."
-      : wallAngleDeg === 0
-        ? " The wall behind this position faces the camera directly — keep the product's front face parallel to the camera plane."
-        : "";
-
-  const prompt =
-    `A real ${category}${productDescription ? `: ${productDescription}` : ""}, composited naturally into this room photo ` +
-    "at the masked location — matching the room's real perspective, scale, and lighting, with a realistic contact shadow " +
-    "where it touches the floor or wall. " +
-    (explicitBox
-      ? "The masked region marks the exact intended position — fit the product naturally within it."
-      : `Place it realistically the way it would actually sit in a lived-in room: ${CATEGORY_PLACEMENT_HINT[category]}.`) +
-    wallAngleInstruction +
-    NO_PEOPLE_INSTRUCTION;
+  // FLUX Fill takes image + mask + prompt only — there is no second
+  // reference-image input, so the product exists for this model purely as
+  // the text description above. hasReferenceImage: false drops the "use the
+  // product in image 2" language that would otherwise reference an input
+  // this provider never received.
+  const prompt = buildProductInsertionPrompt({
+    category,
+    productDescription,
+    box: maskBox,
+    explicitBox: Boolean(explicitBox),
+    placementHint: CATEGORY_PLACEMENT_HINT[category],
+    wallAngleDeg,
+    dimensionsCm,
+    roomDimensions,
+    masked: true,
+    hasReferenceImage: false,
+  });
 
   const output = await runReplicateModel(modelSlug(), {
     image: `data:image/png;base64,${roomPng.toString("base64")}`,
@@ -148,16 +151,12 @@ export async function compositeProductIntoRoomFlux(
   return { imageBase64: blended.toString("base64"), maskBox, placementSource };
 }
 
-const REMOVAL_PROMPT = (category: ProductCategory) =>
-  `Remove the ${category} from the masked region entirely. Fill in what would realistically be behind it — ` +
-  "matching the existing floor, wall, and lighting exactly, as if the object was never there.";
-
 async function runFluxRemovalBuffer(roomPhoto: Buffer, maskPng: Buffer, category: ProductCategory): Promise<Buffer> {
   const roomPng = await sharp(roomPhoto).png().toBuffer();
   const output = await runReplicateModel(modelSlug(), {
     image: `data:image/png;base64,${roomPng.toString("base64")}`,
     mask: `data:image/png;base64,${maskPng.toString("base64")}`,
-    prompt: REMOVAL_PROMPT(category),
+    prompt: buildRemovalPrompt(category),
   });
   const imageRef = extractImageRef(output);
   if (!imageRef) throw new Error("FLUX Fill returned no image output");

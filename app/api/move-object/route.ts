@@ -111,6 +111,9 @@ export async function POST(req: NextRequest) {
       productBuffer,
       Buffer.from(result.imageBase64, "base64"),
       result.maskBox,
+      // The pre-edit room, so the same review call can also report any
+      // object the model invented — see strayObjects in lib/ai/identityCheck.ts.
+      roomBuffer,
     ).catch(() => null);
 
     return NextResponse.json({ ...result, identityCheck });
