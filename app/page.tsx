@@ -4,7 +4,7 @@ import Intelligence from "@/components/landing/Intelligence";
 import ImmersiveTeaser from "@/components/landing/ImmersiveTeaser";
 import BeyondTheRender from "@/components/landing/BeyondTheRender";
 import StyleShowcase from "@/components/landing/StyleShowcase";
-import Testimonials from "@/components/landing/Testimonials";
+import Principles from "@/components/landing/Principles";
 import PricingSection from "@/components/landing/PricingSection";
 import CTA from "@/components/landing/CTA";
 
@@ -17,7 +17,7 @@ export default function HomePage() {
       <ImmersiveTeaser />
       <StyleShowcase />
       <BeyondTheRender />
-      <Testimonials />
+      <Principles />
       <PricingSection />
       <CTA />
     </>

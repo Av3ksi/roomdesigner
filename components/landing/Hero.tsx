@@ -7,6 +7,7 @@ import BeforeAfterSlider from "@/components/BeforeAfterSlider";
 import RoomScene from "@/components/room/RoomScene";
 import { SAMPLE_ROOMS } from "@/lib/rooms";
 import { STYLES } from "@/lib/styles";
+import { FREE_CREDITS } from "@/lib/credits";
 
 const CYCLE_STYLES = ["japandi", "darkluxury", "scandinavian", "mediterranean"];
 
@@ -83,11 +84,17 @@ export default function Hero() {
               Browse the styles
             </Link>
           </div>
+          {/* Verifiable product facts, derived from the same constants the app
+              runs on, so they cannot drift out of date. These replaced three
+              invented metrics ("2.4M rooms transformed", "4.9★
+              designer-rated", "31s median analysis") — fabricated traction
+              figures on a pre-launch site are misleading advertising under
+              UWG Art. 3, and they contradicted our own /press page. */}
           <div className="mt-10 flex flex-wrap gap-x-10 gap-y-4">
             {[
-              ["31s", "median analysis time"],
-              ["2.4M", "rooms transformed"],
-              ["4.9★", "designer-rated output"],
+              [String(STYLES.length), "signature styles"],
+              [String(FREE_CREDITS), "free renders to start"],
+              ["100%", "shoppable — every item"],
             ].map(([v, l]) => (
               <div key={l}>
                 <div className="font-display text-2xl text-cream">{v}</div>
