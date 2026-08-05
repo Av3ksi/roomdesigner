@@ -7,7 +7,7 @@ import { makeVariantSpec, STYLES, VARIANT_NAMES } from "@/lib/styles";
 export const metadata: Metadata = {
   title: "Signature Styles",
   description:
-    "Eight complete design languages — from Japandi to Art Deco Revival — each applied to your real room.",
+    "Ten complete design languages — from Scandinavian to Dark Luxury — each applied to your real room.",
 };
 
 export default function StylesPage() {

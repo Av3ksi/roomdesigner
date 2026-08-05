@@ -4,7 +4,7 @@ const COLUMNS: { title: string; links: { label: string; href: string }[] }[] = [
   {
     title: "Product",
     links: [
-      { label: "Design Studio", href: "/studio" },
+      { label: "Designer", href: "/designer" },
       { label: "Signature Styles", href: "/styles" },
       { label: "Marketplace", href: "/marketplace" },
       { label: "Pricing", href: "/pricing" },
@@ -14,19 +14,19 @@ const COLUMNS: { title: string; links: { label: string; href: string }[] }[] = [
   {
     title: "Company",
     links: [
-      { label: "About", href: "/" },
-      { label: "Careers", href: "/" },
-      { label: "Press", href: "/" },
-      { label: "Contact", href: "/" },
+      { label: "About", href: "/about" },
+      { label: "Careers", href: "/careers" },
+      { label: "Press", href: "/press" },
+      { label: "Contact", href: "/contact" },
     ],
   },
   {
     title: "Resources",
     links: [
-      { label: "Design Journal", href: "/" },
-      { label: "Trade Program", href: "/" },
-      { label: "Retail Partners", href: "/marketplace" },
-      { label: "API", href: "/" },
+      { label: "Design Journal", href: "/journal" },
+      { label: "Trade Program", href: "/trade" },
+      { label: "Retail Partners", href: "/partners" },
+      { label: "API", href: "/developers" },
     ],
   },
   {
