@@ -6,7 +6,7 @@ import { detectSceneItems } from "./locate";
 import { searchWebForProduct, type WebProduct } from "./webProductSearch";
 import { searchProductViaSerpApi, serpApiEnabled } from "../suppliers/serpApiSearch";
 import { searchProducts, toAgentProductSummary } from "../productSearch";
-import { DEFAULT_CATEGORY_BOX, clampBox, isValidBox } from "../placementBoxes";
+import { DEFAULT_CATEGORY_BOX, clampBox, isValidBox, scaleBoxToRealWidth } from "../placementBoxes";
 import type { DetectionBox, Product, ProductCategory } from "../types";
 
 /**
@@ -229,6 +229,15 @@ Honest limits (say so when asked, offer the nearest real alternative): you can A
 interface AgentState {
   catalog: Product[];
   roomPhoto: Buffer | null;
+  /**
+   * The room's floor plan, when the client uploaded one — passed to the
+   * placement pass (lib/ai/placement.ts) as the authoritative source for
+   * real measurements. A drawn plan states the room's true geometry;
+   * a photograph only implies it, so scale estimated from the plan beats
+   * scale estimated from perspective cues. Null for rooms without one,
+   * which is the common case.
+   */
+  floorplanPhoto: Buffer | null;
   roomContext: RoomContext | null;
   constraints: Constraint[];
   proposals: EditProposal[];
@@ -244,6 +253,28 @@ interface AgentState {
 // when SERPAPI_KEY isn't set) can take up to its own 100s budget.
 const MAX_WEB_SEARCHES_PER_TURN = 1;
 
+/**
+ * Applies the real-world size correction to a proposed box, using the
+ * spanM the placement pass estimated for that category's position (see
+ * lib/placementBoxes.ts's scaleBoxToRealWidth). Silently returns the box
+ * unchanged whenever the inputs aren't trustworthy — no placement run yet,
+ * a default (context-blind) placement, a category whose spanM came back
+ * implausible, or a product whose feed carries no width. Scaling against a
+ * number we don't have would be worse than the model's own visual guess,
+ * which at least looked at the room.
+ */
+function scaleProposedBox(
+  box: DetectionBox,
+  category: ProductCategory,
+  realWidthCm: number | undefined,
+  state: AgentState,
+): DetectionBox {
+  if (!realWidthCm || state.roomContext?.source !== "claude") return box;
+  const spanM = state.roomContext.placements[category]?.spanM;
+  if (!spanM) return box;
+  return scaleBoxToRealWidth(box, spanM, realWidthCm);
+}
+
 async function executeTool(name: string, input: Record<string, unknown>, state: AgentState): Promise<string> {
   switch (name) {
     case "search_products": {
@@ -253,12 +284,12 @@ async function executeTool(name: string, input: Record<string, unknown>, state: 
     case "get_room_placement": {
       if (!state.roomContext) {
         if (!state.roomPhoto) return JSON.stringify({ error: "No room photo uploaded yet." });
-        const suggested = await suggestPlacements(state.roomPhoto);
+        const suggested = await suggestPlacements(state.roomPhoto, state.floorplanPhoto);
         state.roomContext = suggested
           ? { placements: suggested.placements, roomDimensions: suggested.roomDimensions, source: "claude" }
           : {
               placements: Object.fromEntries(
-                Object.entries(DEFAULT_CATEGORY_BOX).map(([c, box]) => [c, { box, wallAngleDeg: 0 }]),
+                Object.entries(DEFAULT_CATEGORY_BOX).map(([c, box]) => [c, { box, wallAngleDeg: 0, spanM: null }]),
               ) as PlacementMap,
               roomDimensions: null,
               source: "default",
@@ -276,7 +307,12 @@ async function executeTool(name: string, input: Record<string, unknown>, state: 
         kind: "add",
         product,
         category: product.category,
-        box: clampBox(input.box),
+        // The model proposes a box for the CATEGORY ("a sofa goes here");
+        // this rescales it to the product's REAL width, so a 40cm side
+        // table and a 180cm dining table don't get identical boxes just
+        // because they're both "table". No-ops when the supplier feed has
+        // no dimensions or the placement call gave no trustworthy spanM.
+        box: scaleProposedBox(clampBox(input.box), product.category, product.dimensionsCm?.l, state),
         wallAngleDeg: typeof input.wallAngleDeg === "number" ? input.wallAngleDeg : 0,
         rationale: String(input.rationale ?? ""),
       };
@@ -443,6 +479,10 @@ export async function runDesignerTurn(
   const state: AgentState = {
     catalog,
     roomPhoto,
+    // Turns run after kickoff, which already computed and persisted
+    // roomContext from the floor plan when there was one — so there's
+    // nothing left for a plan to inform here.
+    floorplanPhoto: null,
     roomContext,
     constraints: [...constraints],
     proposals: [],
@@ -523,6 +563,7 @@ export async function runDesignerKickoff(
   const state: AgentState = {
     catalog,
     roomPhoto: primaryPhoto,
+    floorplanPhoto,
     roomContext: null,
     constraints: [],
     proposals: [],

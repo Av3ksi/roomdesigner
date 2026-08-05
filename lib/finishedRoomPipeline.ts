@@ -3,6 +3,7 @@ import { composeSceneWithProducts, reshapeBoxForProduct, type SceneItem } from "
 import { suggestPlacements } from "./ai/placement";
 import { detectSceneItems } from "./ai/locate";
 import { createFinishedRoom } from "./finishedRooms";
+import { scaleBoxToRealWidth } from "./placementBoxes";
 import type { DetectionBox, Product } from "./types";
 
 export interface ComposeFinishedRoomInput {
@@ -46,7 +47,12 @@ export async function composeAndSaveFinishedRoom(input: ComposeFinishedRoomInput
     if (!productRes.ok) throw new Error(`Failed to fetch product photo for "${product.name}": ${productRes.status}`);
     const productBuffer = Buffer.from(await productRes.arrayBuffer());
     const suggestion = placement.placements[product.category];
-    const box = await reshapeBoxForProduct(suggestion.box, productBuffer);
+    // Real-size first (the category box is generic — "a table goes here"),
+    // then aspect ratio from the product's own photo for the height.
+    const sized = suggestion.spanM && product.dimensionsCm?.l
+      ? scaleBoxToRealWidth(suggestion.box, suggestion.spanM, product.dimensionsCm.l)
+      : suggestion.box;
+    const box = await reshapeBoxForProduct(sized, productBuffer);
     items.push({ productPhoto: productBuffer, category: product.category, box, wallAngleDeg: suggestion.wallAngleDeg });
   }
 

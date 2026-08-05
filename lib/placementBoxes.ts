@@ -59,6 +59,58 @@ export function isValidBox(box: unknown): box is DetectionBox {
   return ["x", "y", "w", "h"].every((k) => typeof b[k] === "number" && Number.isFinite(b[k] as number));
 }
 
+/**
+ * How far a rescale is allowed to move from the suggested box, as a
+ * multiplier on its width. The placement box comes from a vision model
+ * that actually looked at THIS room; the real-size rescale is a
+ * correction on top of it, not a replacement for it. Clamping keeps a bad
+ * spanM estimate (or a mislabeled supplier dimension — a "200cm" value
+ * that's really the shipping carton, or millimetres) from producing an
+ * absurd box that fills the frame or collapses to a dot, while still
+ * allowing the large corrections that are the whole point (a 40cm side
+ * table proposed with a 180cm dining table's box).
+ */
+const MIN_SCALE_FACTOR = 0.2;
+const MAX_SCALE_FACTOR = 4;
+
+/**
+ * Rescales a placement box so its on-image width reflects the product's
+ * REAL width, instead of the category-generic width a vision model
+ * suggested for "a sofa" / "a table" in the abstract.
+ *
+ * spanM is the real-world width, in metres, that the suggested box spans
+ * at its own position and depth in the photo (estimated by the same
+ * placement call — see lib/ai/placement.ts). That single number is what
+ * converts between image space and world space here: if the box spans
+ * 1.8m and the product is really 0.4m wide, the box should be 0.4/1.8 of
+ * its suggested width. Anchored on the box's horizontal centre and its
+ * bottom edge, so a rescaled item stays in the same spot on the same
+ * floor line rather than drifting sideways or hovering.
+ *
+ * Height is deliberately NOT set here — callers derive it from the
+ * product photo's real aspect ratio afterwards (reshapeBoxForProduct /
+ * reshapeBoxToAspectRatio), which is a better height signal than the
+ * supplier's height field (the photo's framing is what the compositor
+ * actually sees).
+ */
+export function scaleBoxToRealWidth(box: DetectionBox, spanM: number, realWidthCm: number): DetectionBox {
+  if (!Number.isFinite(spanM) || spanM <= 0) return box;
+  if (!Number.isFinite(realWidthCm) || realWidthCm <= 0) return box;
+
+  const realWidthM = realWidthCm / 100;
+  const rawFactor = realWidthM / spanM;
+  const factor = Math.min(MAX_SCALE_FACTOR, Math.max(MIN_SCALE_FACTOR, rawFactor));
+
+  const centerX = box.x + box.w / 2;
+  const bottom = box.y + box.h;
+  const w = box.w * factor;
+  // Height scales with width here purely to keep the box's proportions
+  // stable until the aspect-ratio pass replaces it — a width-only change
+  // would briefly distort the preview box.
+  const h = box.h * factor;
+  return clampBox({ x: centerX - w / 2, y: bottom - h, w, h });
+}
+
 /** Plain-English position for a box's center — a soft hint in a text prompt, not a coordinate. */
 export function describeRoughLocation(box: DetectionBox): string {
   const cx = box.x + box.w / 2;

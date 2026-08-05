@@ -37,13 +37,14 @@ const CATEGORIES: ProductCategory[] = [
 const placementItemSchema = {
   type: "object",
   additionalProperties: false,
-  required: ["x", "y", "w", "h", "wallAngleDeg"],
+  required: ["x", "y", "w", "h", "wallAngleDeg", "spanM"],
   properties: {
     x: { type: "number" },
     y: { type: "number" },
     w: { type: "number" },
     h: { type: "number" },
     wallAngleDeg: { type: "number" },
+    spanM: { type: "number" },
   },
 } as const;
 
@@ -81,7 +82,11 @@ For every category, return a bounding box (x, y, w, h — relative to the image,
 
 wallAngleDeg: estimate the angle (in degrees) of the wall or floor plane the item rests against, relative to the camera's image plane, using the room's actual vanishing lines. 0 = directly facing the camera (a wall square-on, no visible recession). Positive = the surface recedes away to the right (e.g. a wall on the right side of a corner shot, or a side wall in a corner-facing photo). Negative = recedes away to the left. For floor items with no single wall (rug, freestanding table), estimate the floor plane's own recession instead. Be as precise as you can from the vanishing lines actually visible in the photo — this rotates the product to sit flush against its real surface instead of facing the camera.
 
-roomDimensions: estimate the room's real-world width, depth and height in meters, the same way a surveyor would from a single photo — use architectural cues (door heights ~2.03m, ceiling lines, floorboard/tile widths, known furniture scale, window proportions). This powers a size-fit check against real product dimensions, so err toward a plausible, conservative estimate over a wild guess.`;
+spanM: THE SCALE KEY — the real-world width, in metres, that your box's width covers at that box's own position and depth. Not the room's width, and not the size of any product: the physical distance along the floor or wall that the left edge of your box and the right edge of your box are actually separated by, in that part of the room. Example: if a box sits against the back wall and spans the width of a typical three-seat sofa there, spanM ≈ 2.1. If a small box sits on a nearby side table, spanM might be 0.4. Because perspective shrinks distant objects, the SAME real width covers fewer image pixels further from the camera — so two boxes of identical pixel width at different depths must have different spanM values. Measure it from the same architectural cues you use for roomDimensions (door widths ~0.8m, door heights ~2.03m, floorboard/tile widths, existing furniture of known size). This is the single number the app uses to resize a real product to its true physical size in the photo, so a careless value visibly breaks the render — take it seriously, and be consistent with the perspective you described in the box itself.
+
+roomDimensions: estimate the room's real-world width, depth and height in meters, the same way a surveyor would from a single photo — use architectural cues (door heights ~2.03m, ceiling lines, floorboard/tile widths, known furniture scale, window proportions). This powers a size-fit check against real product dimensions, so err toward a plausible, conservative estimate over a wild guess.
+
+If a FLOOR PLAN image is supplied alongside the photograph, treat it as the authoritative source for roomDimensions and as a strong cross-check for every spanM: read its printed measurements and/or scale bar directly rather than estimating those numbers from the photograph. A drawn plan states the room's real geometry; a photograph only implies it. Use the photograph for what the plan cannot show — where things actually are in frame, perspective, wall angles, and existing furniture.`;
 
 /** Long edge the photo is downscaled to before the vision call — plenty for layout, keeps tokens cheap. */
 const ANALYSIS_MAX_EDGE = 768;
@@ -90,6 +95,16 @@ export interface PlacementSuggestion {
   box: DetectionBox;
   /** See PLACEMENT_SYSTEM's wallAngleDeg description. 0 for the context-blind defaults (no geometry to estimate from). */
   wallAngleDeg: number;
+  /**
+   * Real-world width in metres that this box's width spans at its own
+   * depth — the conversion factor between image space and world space, so
+   * a product's real dimensionsCm can be turned into a correctly-sized box
+   * (lib/placementBoxes.ts's scaleBoxToRealWidth). Null for the
+   * context-blind defaults and whenever the model's value came back
+   * missing or implausible: callers then keep the suggested box as-is
+   * rather than rescaling against a number they can't trust.
+   */
+  spanM: number | null;
 }
 
 export type PlacementMap = Record<ProductCategory, PlacementSuggestion>;
@@ -110,6 +125,22 @@ function isValidPlacementItem(value: unknown): value is DetectionBox & { wallAng
   return isValidBox(value) && typeof (value as { wallAngleDeg?: unknown }).wallAngleDeg === "number";
 }
 
+/**
+ * Rejects an unusable spanM rather than rescaling against it. The bounds
+ * are deliberately wide — anything a real interior could plausibly need —
+ * so this only catches genuine nonsense (0, negative, a stray millimetre
+ * value, a hallucinated room-sized number for a coaster).
+ */
+const MIN_PLAUSIBLE_SPAN_M = 0.05;
+const MAX_PLAUSIBLE_SPAN_M = 20;
+
+function readSpanM(value: unknown): number | null {
+  const span = (value as { spanM?: unknown } | null)?.spanM;
+  if (typeof span !== "number" || !Number.isFinite(span)) return null;
+  if (span < MIN_PLAUSIBLE_SPAN_M || span > MAX_PLAUSIBLE_SPAN_M) return null;
+  return span;
+}
+
 function isValidRoomDimensions(value: unknown): value is RoomDimensionsEstimate {
   if (typeof value !== "object" || value === null) return false;
   const v = value as Record<string, unknown>;
@@ -121,12 +152,18 @@ function isValidRoomDimensions(value: unknown): value is RoomDimensionsEstimate 
  * swallow it into a graceful fallback (suggestPlacements) or surface the
  * reason to the user (suggestPlacementsStrict).
  */
-async function runPlacement(roomPhoto: Buffer): Promise<PlacementResult> {
-  const jpeg = await sharp(roomPhoto)
-    .rotate() // respect EXIF orientation so coordinates match what the user sees
-    .resize(ANALYSIS_MAX_EDGE, ANALYSIS_MAX_EDGE, { fit: "inside", withoutEnlargement: true })
-    .jpeg({ quality: 80 })
-    .toBuffer();
+async function runPlacement(roomPhoto: Buffer, floorplanPhoto?: Buffer | null): Promise<PlacementResult> {
+  const toJpeg = (buf: Buffer) =>
+    sharp(buf)
+      .rotate() // respect EXIF orientation so coordinates match what the user sees
+      .resize(ANALYSIS_MAX_EDGE, ANALYSIS_MAX_EDGE, { fit: "inside", withoutEnlargement: true })
+      .jpeg({ quality: 80 })
+      .toBuffer();
+
+  const [jpeg, floorplanJpeg] = await Promise.all([
+    toJpeg(roomPhoto),
+    floorplanPhoto ? toJpeg(floorplanPhoto) : Promise.resolve(null),
+  ]);
 
   const response = await new Anthropic().messages.create({
     model: MODEL,
@@ -145,7 +182,19 @@ async function runPlacement(roomPhoto: Buffer): Promise<PlacementResult> {
         content: [
           { type: "text", text: "Room photograph:" },
           { type: "image", source: { type: "base64", media_type: "image/jpeg", data: jpeg.toString("base64") } },
-          { type: "text", text: "Return the placement box and wallAngleDeg for every category, plus the room's estimated dimensions." },
+          ...(floorplanJpeg
+            ? ([
+                {
+                  type: "text",
+                  text: "Floor plan of this same room — authoritative for real measurements; read its figures/scale rather than estimating them from the photo:",
+                },
+                { type: "image", source: { type: "base64", media_type: "image/jpeg", data: floorplanJpeg.toString("base64") } },
+              ] as const)
+            : []),
+          {
+            type: "text",
+            text: "Return the placement box, wallAngleDeg and spanM for every category, plus the room's estimated dimensions.",
+          },
         ],
       },
     ],
@@ -170,8 +219,8 @@ async function runPlacement(roomPhoto: Buffer): Promise<PlacementResult> {
     const item = parsed[category];
     // A malformed single category shouldn't sink the other nine.
     placements[category] = isValidPlacementItem(item)
-      ? { box: clampBox(item), wallAngleDeg: item.wallAngleDeg }
-      : { box: DEFAULT_CATEGORY_BOX[category], wallAngleDeg: 0 };
+      ? { box: clampBox(item), wallAngleDeg: item.wallAngleDeg, spanM: readSpanM(item) }
+      : { box: DEFAULT_CATEGORY_BOX[category], wallAngleDeg: 0, spanM: null };
   }
 
   return {
@@ -186,17 +235,17 @@ async function runPlacement(roomPhoto: Buffer): Promise<PlacementResult> {
  * caller can show WHY (bad key, no credits, overloaded) instead of "try
  * again". Use suggestPlacements for the graceful-degradation paths.
  */
-export async function suggestPlacementsStrict(roomPhoto: Buffer): Promise<PlacementResult> {
+export async function suggestPlacementsStrict(roomPhoto: Buffer, floorplanPhoto?: Buffer | null): Promise<PlacementResult> {
   if (!aiEnabled()) throw new Error("ANTHROPIC_API_KEY not configured on the server.");
-  return runPlacement(roomPhoto);
+  return runPlacement(roomPhoto, floorplanPhoto);
 }
 
-export async function suggestPlacements(roomPhoto: Buffer): Promise<PlacementResult | null> {
+export async function suggestPlacements(roomPhoto: Buffer, floorplanPhoto?: Buffer | null): Promise<PlacementResult | null> {
   if (!aiEnabled()) return null;
   try {
-    return await runPlacement(roomPhoto);
+    return await runPlacement(roomPhoto, floorplanPhoto);
   } catch (err) {
-    console.error("[maison] Claude placement analysis failed, falling back to defaults:", err);
+    console.error("[vistroom] placement analysis failed, falling back to defaults:", err);
     return null;
   }
 }
