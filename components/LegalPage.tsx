@@ -25,9 +25,11 @@ export default function LegalPage({
         <p className="mt-2 text-xs text-cream-faint">Last updated: {lastUpdated}</p>
 
         <div className="mt-6 rounded-xl border border-amber-400/30 bg-amber-400/5 p-4 text-sm text-amber-200">
-          <strong>Draft — not yet reviewed by a lawyer.</strong> This text is a structural starting point, not
-          vetted legal advice. Have it reviewed by a Swiss/EU consumer-law professional before this site
-          processes real payments or ships real orders.
+          <strong>Not yet reviewed by a lawyer.</strong> This text was drafted against Swiss law (Code of
+          Obligations, revised FADP, UWG) and is substantive rather than placeholder, but it is not legal
+          advice. Have a Swiss consumer-law professional review it before this site takes real payments —
+          in particular the cross-border transfer of room photographs to US AI providers under Art. 16–17
+          FADP, and the EU consumer rights that attach to shipping into the EU.
         </div>
 
         <div className="mt-8 space-y-4 text-sm leading-relaxed text-cream-dim [&_h2]:mt-8 [&_h2]:mb-2 [&_h2]:font-display [&_h2]:text-xl [&_h2]:text-cream [&_ul]:list-disc [&_ul]:space-y-1.5 [&_ul]:pl-5">
