@@ -15,12 +15,22 @@ import type { DetectionBox, ProductCategory } from "../types";
  *
  *   1. Grounded-SAM segmentation (lib/ai/vision/segmentation.ts) + FLUX Fill
  *      erase — pixel-precise, only when REPLICATE_API_TOKEN is configured.
- *      Falls through to tier 2 when segmentation itself doesn't find the
- *      object (a model miss, not a config problem).
  *   2. A box — either already known (caller has one) or Claude-vision
- *      -located — erased via FLUX Fill when Replicate is configured, or the
- *      OpenAI path otherwise. This is the ENTIRE removal pipeline when
- *      REPLICATE_API_TOKEN isn't set.
+ *      -located — erased via FLUX Fill, still on Replicate.
+ *   3. The same box erased via OpenAI. This is the ENTIRE pipeline when
+ *      REPLICATE_API_TOKEN isn't set, AND the safety net when Replicate is
+ *      set but unusable.
+ *
+ * That last point was a real, confirmed outage: with a Replicate balance
+ * under $5, prediction creation is throttled to a BURST OF ONE. Tier 1
+ * needs two calls back to back (segment, then fill), so the second was
+ * rejected with a 429 every single time and removal returned a 500 —
+ * despite OpenAI being configured and perfectly able to do the job. The
+ * provider chain was written as "use Replicate if present" rather than
+ * "prefer Replicate, fall back", so any Replicate problem (throttling, an
+ * outage, an expired token, an empty balance) took the whole feature down
+ * instead of degrading to a slightly less precise mask. Every Replicate
+ * call is now wrapped so a failure costs precision, not the render.
  */
 
 export function removalEnabled(): boolean {
@@ -35,6 +45,15 @@ export interface RemovalOutcome {
   removalCheck: IdentityCheckResult | null;
 }
 
+/** Replicate reports a throttled account with an explicit 429 — worth naming in logs, since the fix is topping up a balance rather than debugging the app. */
+function describeProviderFailure(err: unknown): string {
+  const message = err instanceof Error ? err.message : String(err);
+  if (message.includes("429")) {
+    return `${message} — Replicate is rate-limiting this account (its burst limit drops to 1 request/minute below $5 credit).`;
+  }
+  return message;
+}
+
 export async function performRemoval(
   roomBuffer: Buffer,
   category: ProductCategory,
@@ -42,33 +61,64 @@ export async function performRemoval(
   knownBox: DetectionBox | null,
 ): Promise<RemovalOutcome> {
   const useFlux = fluxFillEnabled();
-  if (!useFlux && !compositingEnabled()) {
+  const openAiAvailable = compositingEnabled();
+  if (!useFlux && !openAiAvailable) {
     throw new Error("Removal isn't configured on this server yet (needs REPLICATE_API_TOKEN or OPENAI_API_KEY).");
   }
 
-  if (useFlux) {
-    const seg = await segmentExistingFurniture(roomBuffer, category, description);
-    if (seg) {
-      const result = await removeExistingObjectFluxWithMask(roomBuffer, seg, category);
-      const resultBuffer = Buffer.from(result.imageBase64, "base64");
-      const removalCheck = await checkRemovalSuccess(roomBuffer, resultBuffer, category, description);
-      return { imageBase64: result.imageBase64, removedBox: seg.box, maskSource: "segmentation", removalCheck };
-    }
-    // Segmentation didn't find the object (a model miss, not a config
-    // problem) — fall through to the box tier below, still on FLUX.
-  }
+  const withCheck = async (
+    imageBase64: string,
+    removedBox: DetectionBox,
+    maskSource: RemovalOutcome["maskSource"],
+  ): Promise<RemovalOutcome> => ({
+    imageBase64,
+    removedBox,
+    maskSource,
+    removalCheck: await checkRemovalSuccess(roomBuffer, Buffer.from(imageBase64, "base64"), category, description),
+  });
 
-  let box = knownBox && isValidBox(knownBox) ? clampBox(knownBox) : null;
-  if (!box) {
+  // Resolves the fallback box WITHOUT touching Replicate — locateExistingObject
+  // is a Claude call, so it stays available even when Replicate is down.
+  const resolveBox = async (): Promise<DetectionBox> => {
+    if (knownBox && isValidBox(knownBox)) return clampBox(knownBox);
     const located = await locateExistingObject(roomBuffer, category);
     if (!located) throw new Error(`No existing ${category} was found in this photo to remove.`);
-    box = located.box;
+    return located.box;
+  };
+
+  if (useFlux) {
+    try {
+      // Tier 1 — pixel-precise. segmentExistingFurniture returns null on a
+      // genuine model miss (the object isn't findable), which is different
+      // from it throwing, and falls through to the box tiers either way.
+      const seg = await segmentExistingFurniture(roomBuffer, category, description);
+      if (seg) {
+        const result = await removeExistingObjectFluxWithMask(roomBuffer, seg, category);
+        return await withCheck(result.imageBase64, seg.box, "segmentation");
+      }
+      // Tier 2 — box-based, still on FLUX.
+      const box = await resolveBox();
+      const result = await removeExistingObjectFlux(roomBuffer, box, category);
+      return await withCheck(result.imageBase64, box, "box");
+    } catch (err) {
+      // A "nothing to remove" verdict is a real answer about the photo, not
+      // a provider fault — retrying it on OpenAI would just burn a paid call
+      // to reach the same conclusion.
+      const message = err instanceof Error ? err.message : String(err);
+      if (message.startsWith("No existing ")) throw err;
+
+      if (!openAiAvailable) {
+        throw new Error(
+          `Removal failed and there's no fallback provider configured (set OPENAI_API_KEY). ${describeProviderFailure(err)}`,
+        );
+      }
+      console.warn(`[vistroom] Replicate removal failed, falling back to OpenAI: ${describeProviderFailure(err)}`);
+    }
   }
 
-  const result = useFlux
-    ? await removeExistingObjectFlux(roomBuffer, box, category)
-    : await removeExistingObject(roomBuffer, box, category);
-  const resultBuffer = Buffer.from(result.imageBase64, "base64");
-  const removalCheck = await checkRemovalSuccess(roomBuffer, resultBuffer, category, description);
-  return { imageBase64: result.imageBase64, removedBox: box, maskSource: "box", removalCheck };
+  // Tier 3 — OpenAI. Reached when Replicate isn't configured at all, or when
+  // it was and failed above.
+  const box = await resolveBox();
+  const result = await removeExistingObject(roomBuffer, box, category, description);
+  return await withCheck(result.imageBase64, box, "box");
 }
