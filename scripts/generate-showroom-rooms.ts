@@ -205,7 +205,8 @@ function pickBest(catalog: Product[], item: ConceptItem): Product | null {
   return best ?? null;
 }
 
-async function buildConcept(concept: Concept, catalog: Product[], roomPath: string | null, quality: "low" | "medium" | "high") {
+/** Returns whether a room was actually saved — several early returns below skip a room without throwing, so callers must check this rather than just "did it throw." */
+async function buildConcept(concept: Concept, catalog: Product[], roomPath: string | null, quality: "low" | "medium" | "high"): Promise<boolean> {
   console.log(`\n=== ${concept.title} (room photo: ${roomPath ?? `AI-generated, ${concept.primaryStyleId} style`}) ===`);
 
   const matched: Product[] = [];
@@ -220,7 +221,7 @@ async function buildConcept(concept: Concept, catalog: Product[], roomPath: stri
   }
   if (matched.length === 0) {
     console.error(`  no products matched at all for "${concept.title}" — skipping this room entirely.`);
-    return;
+    return false;
   }
 
   if (cjEnabled()) {
@@ -265,7 +266,7 @@ async function buildConcept(concept: Concept, catalog: Product[], roomPath: stri
   const placement = await suggestPlacements(roomPhoto);
   if (!placement) {
     console.error("  room placement analysis failed — skipping this room.");
-    return;
+    return false;
   }
 
   console.log(`  Fetching ${matched.length} product photo(s)...`);
@@ -288,7 +289,7 @@ async function buildConcept(concept: Concept, catalog: Product[], roomPath: stri
   }
   if (items.length === 0) {
     console.error("  no product photos could be fetched — skipping this room.");
-    return;
+    return false;
   }
 
   console.log(`  Compositing the whole scene in one call (${quality} quality, ${items.length} item(s))...`);
@@ -340,6 +341,7 @@ async function buildConcept(concept: Concept, catalog: Product[], roomPath: stri
   });
 
   console.log(`  ✓ Saved — CHF ${totalPrice} across ${items.length} item(s). View at /looks/${id}.`);
+  return true;
 }
 
 async function main() {
@@ -382,8 +384,13 @@ async function main() {
     // any concept beyond the count supplied.
     const roomPath = argPaths.length === 0 ? null : (argPaths[i] ?? argPaths[argPaths.length - 1]);
     try {
-      await buildConcept(concept, catalog, roomPath, quality);
-      succeeded++;
+      // buildConcept returns false (not a throw) for its own internal
+      // skip cases (no products matched, placement failed, no photos
+      // fetched) — a real, confirmed bug had this loop count ANY
+      // non-throwing call as success, so a run where every room hit an
+      // internal skip still printed "N/N generated" with zero rooms
+      // actually saved. Only a true return value counts now.
+      if (await buildConcept(concept, catalog, roomPath, quality)) succeeded++;
     } catch (err) {
       console.error(`  Failed: ${err instanceof Error ? err.message : err}`);
     }

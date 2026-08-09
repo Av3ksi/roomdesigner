@@ -34,11 +34,19 @@ const CATEGORIES: ProductCategory[] = [
   "sofa", "chair", "table", "lighting", "rug", "art", "plant", "storage", "decor", "textile",
 ];
 
+// A single reused item schema inside an array, not 10 literal duplicate
+// object schemas (one per category name) — the previous shape. Confirmed
+// real failure: Anthropic's structured-output compiler rejected that
+// version outright ("The compiled grammar is too large... reduce the
+// number of strict tools") on every single call in a real session, since
+// each of the 10 required category properties was its own full copy of
+// the same object schema rather than one schema reused per array element.
 const placementItemSchema = {
   type: "object",
   additionalProperties: false,
-  required: ["x", "y", "w", "h", "wallAngleDeg", "spanM"],
+  required: ["category", "x", "y", "w", "h", "wallAngleDeg", "spanM"],
   properties: {
+    category: { type: "string", enum: CATEGORIES },
     x: { type: "number" },
     y: { type: "number" },
     w: { type: "number" },
@@ -62,16 +70,21 @@ const roomDimensionsSchema = {
 const PLACEMENT_SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: [...CATEGORIES, "roomDimensions"],
+  required: ["items", "roomDimensions"],
   properties: {
-    ...Object.fromEntries(CATEGORIES.map((c) => [c, placementItemSchema])),
+    items: {
+      type: "array",
+      items: placementItemSchema,
+      minItems: CATEGORIES.length,
+      maxItems: CATEGORIES.length,
+    },
     roomDimensions: roomDimensionsSchema,
   },
 } as const;
 
 const PLACEMENT_SYSTEM = `You are the placement engine of Vistroom, an AI interior design platform. Given one photograph of a real room, you decide where each kind of furniture would genuinely be placed by an interior designer working with THIS room's actual geometry.
 
-For every category, return a bounding box (x, y, w, h — relative to the image, 0–1, origin top-left) marking where that item should sit if added to the room, AND a wallAngleDeg estimate for the surface it rests against:
+Return one item per category (${CATEGORIES.join(", ")} — all ${CATEGORIES.length}, each exactly once) in the "items" array. For every category, return a bounding box (x, y, w, h — relative to the image, 0–1, origin top-left) marking where that item should sit if added to the room, AND a wallAngleDeg estimate for the surface it rests against:
 
 - Read the room's real structure first: where the floor meets the walls, where windows/doors/radiators/outlets are, what furniture already exists, and how perspective scales objects with depth.
 - sofa/storage/chair: flush against a visible wall base or in a corner — never floating in open floor. The box's bottom edge sits on the floor at that wall's depth, and the box height shrinks with distance (perspective).
@@ -121,7 +134,7 @@ export interface PlacementResult {
   roomDimensions: RoomDimensionsEstimate | null;
 }
 
-function isValidPlacementItem(value: unknown): value is DetectionBox & { wallAngleDeg: number } {
+function isValidPlacementItem(value: unknown): value is DetectionBox & { wallAngleDeg: number; category: unknown } {
   return isValidBox(value) && typeof (value as { wallAngleDeg?: unknown }).wallAngleDeg === "number";
 }
 
@@ -193,7 +206,7 @@ async function runPlacement(roomPhoto: Buffer, floorplanPhoto?: Buffer | null): 
             : []),
           {
             type: "text",
-            text: "Return the placement box, wallAngleDeg and spanM for every category, plus the room's estimated dimensions.",
+            text: "Return the placement box, wallAngleDeg and spanM for every category (one item each), plus the room's estimated dimensions.",
           },
         ],
       },
@@ -214,10 +227,18 @@ async function runPlacement(roomPhoto: Buffer, floorplanPhoto?: Buffer | null): 
   if (!text) throw new Error("Placement analysis returned no result.");
 
   const parsed = JSON.parse(text) as Record<string, unknown>;
+  const itemsByCategory = new Map<string, unknown>();
+  if (Array.isArray(parsed.items)) {
+    for (const item of parsed.items) {
+      const category = (item as { category?: unknown } | null)?.category;
+      if (typeof category === "string") itemsByCategory.set(category, item);
+    }
+  }
+
   const placements = {} as PlacementMap;
   for (const category of CATEGORIES) {
-    const item = parsed[category];
-    // A malformed single category shouldn't sink the other nine.
+    const item = itemsByCategory.get(category);
+    // A malformed or missing single category shouldn't sink the other nine.
     placements[category] = isValidPlacementItem(item)
       ? { box: clampBox(item), wallAngleDeg: item.wallAngleDeg, spanM: readSpanM(item) }
       : { box: DEFAULT_CATEGORY_BOX[category], wallAngleDeg: 0, spanM: null };
