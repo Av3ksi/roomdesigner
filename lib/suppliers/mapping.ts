@@ -71,18 +71,28 @@ export function hasKnownCategory(raw: RawSupplierProduct): boolean {
   return findCategory(text) !== null;
 }
 
-/** Same keyword-scoring shape as lib/mood.ts, applied to product copy instead of a room mood. */
+/**
+ * Same keyword-scoring shape as lib/mood.ts, applied to product copy instead
+ * of a room mood. Bilingual on purpose, same as COLOR_KEYWORDS above — the
+ * English-only version of this list was a confirmed real bug: VidaXL's feed
+ * is German (CH-DE), so almost nothing ever matched anything but the
+ * fallback ["scandinavian", "organicmodern"] pair. Checked against the real
+ * 804-item bundled sample: before the German terms below, darkluxury/
+ * modernluxury/classic each matched 0-2 products and scandinavian/
+ * organicmodern absorbed ~630 each by default. Every style should get a
+ * real shot at real inventory it actually deserves.
+ */
 const STYLE_KEYWORDS: Record<string, string[]> = {
-  scandinavian: ["scandinavian", "nordic", "light oak", "birch", "pale", "airy", "minimal"],
-  japandi: ["japandi", "low profile", "walnut", "paper shade", "wabi", "zen"],
-  modernluxury: ["marble", "brass", "velvet", "polished", "glam", "statement"],
-  minimalist: ["minimalist", "clean lines", "monochrome", "sleek", "understated"],
-  industrial: ["industrial", "metal frame", "raw steel", "concrete", "exposed", "loft"],
-  organicmodern: ["rattan", "organic", "natural fiber", "curved", "earthy", "boucle", "bouclé"],
-  mediterranean: ["terracotta", "linen", "coastal", "woven", "rattan", "sun-bleached"],
-  darkluxury: ["dark", "emerald", "black", "moody", "velvet", "brass"],
-  cozy: ["cozy", "wool", "warm", "soft", "plush", "knit"],
-  classic: ["classic", "traditional", "turned leg", "carved", "heritage"],
+  scandinavian: ["scandinavian", "nordic", "light oak", "birch", "pale", "airy", "minimal", "eiche", "birke", "wolle", "hell", "skandinavisch"],
+  japandi: ["japandi", "low profile", "walnut", "paper shade", "wabi", "zen", "esche", "niedrig", "papier", "rattan"],
+  modernluxury: ["marble", "brass", "velvet", "polished", "glam", "statement", "marmor", "messing", "samt", "hochglanz", "gold"],
+  minimalist: ["minimalist", "clean lines", "monochrome", "sleek", "understated", "minimalistisch", "schlicht", "klar", "monochrom"],
+  industrial: ["industrial", "metal frame", "raw steel", "concrete", "exposed", "loft", "industrie", "metall", "beton", "stahl"],
+  organicmodern: ["rattan", "organic", "natural fiber", "curved", "earthy", "boucle", "bouclé", "organisch", "natur", "geschwungen"],
+  mediterranean: ["terracotta", "linen", "coastal", "woven", "rattan", "sun-bleached", "terrakotta", "leinen", "korb"],
+  darkluxury: ["dark", "emerald", "black", "moody", "velvet", "brass", "dunkel", "smaragd", "schwarz", "samt", "messing"],
+  cozy: ["cozy", "wool", "warm", "soft", "plush", "knit", "gemütlich", "wolle", "weich", "kuschelig", "plaid"],
+  classic: ["classic", "traditional", "turned leg", "carved", "heritage", "klassisch", "traditionell", "geschnitzt"],
 };
 
 export function inferStyles(raw: RawSupplierProduct): string[] {
