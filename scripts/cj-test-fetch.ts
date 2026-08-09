@@ -25,11 +25,16 @@ try {
 }
 
 const AUTH_URL = "https://developers.cjdropshipping.com/api2.0/v1/authentication/getAccessToken";
-// Best guess at the product-list endpoint from public docs — unverified,
-// since this app's outbound network can't reach CJ's docs site directly to
-// confirm. If this 404s, the printed error body should say why; paste that
-// back and I'll correct the path.
+// Confirmed working — a real run returned a real product (see git history
+// of this file's commit message / chat for the sample response).
 const PRODUCT_LIST_URL = "https://developers.cjdropshipping.com/api2.0/v1/product/list";
+// Unverified guess, same basis as the list endpoint was before it got
+// confirmed. This is the one that matters most: the list endpoint's
+// response has no dimension fields (only productWeight, as a range), so
+// this probe fetches full detail for the first listed product to check
+// whether length/width/height show up there instead. If this 404s, paste
+// the error body back and I'll correct the path.
+const PRODUCT_DETAIL_URL = "https://developers.cjdropshipping.com/api2.0/v1/product/query";
 
 async function main() {
   const apiKey = process.env.CJ_API_KEY;
@@ -64,7 +69,9 @@ async function main() {
   const productRes = await fetch(`${PRODUCT_LIST_URL}?pageNum=1&pageSize=1`, {
     headers: { "CJ-Access-Token": accessToken },
   });
-  const productBody = await productRes.json().catch(() => null);
+  const productBody = (await productRes.json().catch(() => null)) as
+    | { data?: { list?: { pid?: string }[] } }
+    | null;
 
   if (!productRes.ok) {
     console.error(`Product list failed: HTTP ${productRes.status}`);
@@ -75,6 +82,25 @@ async function main() {
 
   console.log("\n--- Paste everything below this line back into chat ---\n");
   console.log(JSON.stringify(productBody, null, 2));
+
+  const pid = productBody?.data?.list?.[0]?.pid;
+  if (!pid) return;
+
+  console.log(`\nFetching full detail for product ${pid} (checking for real dimensions)...`);
+  const detailRes = await fetch(`${PRODUCT_DETAIL_URL}?pid=${encodeURIComponent(pid)}`, {
+    headers: { "CJ-Access-Token": accessToken },
+  });
+  const detailBody = await detailRes.json().catch(() => null);
+
+  if (!detailRes.ok) {
+    console.error(`Product detail failed: HTTP ${detailRes.status}`);
+    console.error(JSON.stringify(detailBody, null, 2));
+    console.error("\nThe detail endpoint path is an unverified guess — paste this error back and I'll fix it.");
+    return;
+  }
+
+  console.log("\n--- And paste everything below this line too ---\n");
+  console.log(JSON.stringify(detailBody, null, 2));
 }
 
 main().catch((err) => {
