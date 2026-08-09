@@ -307,15 +307,28 @@ async function main() {
   const catalog = await loadProductCatalog();
   console.log(`${catalog.length} product(s) in the catalog.`);
 
+  // Each concept gets its own try/catch — a transient failure partway
+  // through (OpenAI's own API returning a 5xx, a Cloudflare edge hiccup,
+  // etc.) shouldn't throw away the concepts before AND after it in the
+  // same run. Real, confirmed failure mode: api.openai.com briefly
+  // returning a Cloudflare 520 mid-run took down the entire batch before
+  // this fix, on the very first concept, wasting nothing yet but risking
+  // a lot on a longer run.
+  let succeeded = 0;
   for (const [i, concept] of CONCEPTS.entries()) {
     // No paths given at all -> every concept generates its own AI base
     // room. Paths given -> use them in order, reusing the last one for
     // any concept beyond the count supplied.
     const roomPath = argPaths.length === 0 ? null : (argPaths[i] ?? argPaths[argPaths.length - 1]);
-    await buildConcept(concept, catalog, roomPath, quality);
+    try {
+      await buildConcept(concept, catalog, roomPath, quality);
+      succeeded++;
+    } catch (err) {
+      console.error(`  Failed: ${err instanceof Error ? err.message : err}`);
+    }
   }
 
-  console.log("\nDone.");
+  console.log(`\nDone. ${succeeded}/${CONCEPTS.length} room(s) generated and published.`);
 }
 
 main().catch((err) => {
