@@ -74,40 +74,40 @@ async function main() {
     console.log(JSON.stringify(posterCatalog.body, null, 2));
   }
 
-  // Unverified guess at the request body shape — confirmed endpoint/method
-  // (POST .../products:search) but not the exact filter fields. An empty
-  // body is the safest guess for "just give me something back."
-  console.log("\nSearching for one real poster product...");
-  const searchRes = await fetch(`${BASE}/catalogs/posters/products:search`, {
-    method: "POST",
-    headers: { "X-API-KEY": apiKey, "Content-Type": "application/json" },
-    body: JSON.stringify({ limit: 1 }),
-  });
-  const searchBody = (await searchRes.json().catch(() => null)) as
-    | { products?: { productUid?: string }[] }
-    | null;
-
-  if (!searchRes.ok) {
-    console.error(`Product search failed: HTTP ${searchRes.status}`);
-    console.error(JSON.stringify(searchBody, null, 2));
-    console.error("\nThe request body shape above is an unverified guess — paste this error back and I'll fix it.");
-    return;
-  }
-  console.log("\n--- And this ---\n");
-  console.log(JSON.stringify(searchBody, null, 2));
-
-  const productUid = searchBody?.products?.[0]?.productUid;
-  if (!productUid) return;
-
-  console.log(`\nFetching full detail for product ${productUid}...`);
-  const detail = await getJson(`${BASE}/products/${encodeURIComponent(productUid)}`, apiKey);
+  // The products:search endpoint (first version of this script) turned out
+  // unreliable: a POST to .../catalogs/posters/products:search with a
+  // {"limit":1} body returned a real product, but it was a GREETING CARD
+  // (140x180mm, 6.3g) — not scoped to "posters" the way the URL path
+  // implied, and {"limit":1} likely isn't a real recognized filter field
+  // either. Rather than guess the search body schema blind a second time,
+  // this constructs a real poster productUid directly, from confirmed real
+  // attribute value UIDs (this script's own earlier catalog fetch) and the
+  // naming pattern visible on that mis-returned card
+  // ("cards_pf_140x180-mm_pt_100-lb-cover-coated-silk_cl_4-0_hor" ->
+  // {catalog}_pf_{PaperFormat}_pt_{PaperType}_cl_{ColorType}_{orientation}).
+  // Still an unverified guess — just a more targeted one, checkable by
+  // whether the GET below 404s or returns matching attributes.
+  const guessedProductUid = "posters_pf_A3_pt_170-gsm-uncoated_cl_4-0_ver";
+  console.log(`\nTrying a constructed poster productUid: ${guessedProductUid}...`);
+  const detail = await getJson(`${BASE}/products/${encodeURIComponent(guessedProductUid)}`, apiKey);
   if (!detail.ok) {
     console.error(`Get product failed: HTTP ${detail.status}`);
     console.error(JSON.stringify(detail.body, null, 2));
+    console.error("\nThe productUid naming pattern above is an unverified guess — paste this error back and I'll adjust it.");
+    return;
+  }
+  console.log("\n--- And this ---\n");
+  console.log(JSON.stringify(detail.body, null, 2));
+
+  console.log(`\nFetching real pricing for ${guessedProductUid}...`);
+  const prices = await getJson(`${BASE}/products/${encodeURIComponent(guessedProductUid)}/prices`, apiKey);
+  if (!prices.ok) {
+    console.error(`Get prices failed: HTTP ${prices.status}`);
+    console.error(JSON.stringify(prices.body, null, 2));
     return;
   }
   console.log("\n--- And finally this ---\n");
-  console.log(JSON.stringify(detail.body, null, 2));
+  console.log(JSON.stringify(prices.body, null, 2));
 }
 
 main().catch((err) => {
