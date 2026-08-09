@@ -12,8 +12,19 @@
  * or the access token it exchanges for. Safe to paste that JSON output
  * back into chat.
  *
+ * A first unfiltered run returned a random dress (CJ's catalog is
+ * general dropshipping, not furniture-specific) whose variants DID carry
+ * variantLength/variantWidth/variantHeight in mm — but those numbers
+ * (300x200x30mm) match a folded garment in a shipping bag, i.e. package
+ * dimensions, not the item's real-world size. That distinction matters a
+ * lot for furniture (a flat-packed table ships nothing like its
+ * assembled footprint), so this now takes an optional keyword to search
+ * an actual furniture category and check whether the same fields hold
+ * real assembled dimensions there, or still just packaging.
+ *
  * Usage:
- *   npx tsx scripts/cj-test-fetch.ts
+ *   npx tsx scripts/cj-test-fetch.ts [keyword]
+ *   npx tsx scripts/cj-test-fetch.ts sofa
  *
  * Reads CJ_API_KEY from .env.
  */
@@ -65,10 +76,18 @@ async function main() {
   console.log("Auth succeeded.");
 
   const accessToken = authBody.data.accessToken;
-  console.log("Fetching one page of products...");
-  const productRes = await fetch(`${PRODUCT_LIST_URL}?pageNum=1&pageSize=1`, {
-    headers: { "CJ-Access-Token": accessToken },
-  });
+  // Defaults to "sofa" — the first unfiltered probe returned an unrelated
+  // fashion item, so a keyword search is needed to actually reach
+  // furniture and check whether its dimensions are real item size or
+  // just packaging. productNameEn as a search param is an unverified
+  // guess like the endpoint paths above; if it's silently ignored you'll
+  // just see another unrelated product again.
+  const keyword = process.argv[2] || "sofa";
+  console.log(`Searching products for "${keyword}"...`);
+  const productRes = await fetch(
+    `${PRODUCT_LIST_URL}?pageNum=1&pageSize=1&productNameEn=${encodeURIComponent(keyword)}`,
+    { headers: { "CJ-Access-Token": accessToken } },
+  );
   const productBody = (await productRes.json().catch(() => null)) as
     | { data?: { list?: { pid?: string }[] } }
     | null;
