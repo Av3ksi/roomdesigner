@@ -29,6 +29,13 @@
  * Reads CJ_API_KEY from .env.
  */
 
+// No other imports in this file — this export-only statement is what makes
+// TypeScript treat it as its own module instead of a global script. Without
+// it, top-level declarations here (like `main`) collide with any other
+// standalone script in this folder that also declares one (confirmed: this
+// broke once scripts/gelato-test-fetch.ts was added).
+export {};
+
 try {
   process.loadEnvFile?.();
 } catch {
