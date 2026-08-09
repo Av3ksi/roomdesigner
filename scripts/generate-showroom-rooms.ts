@@ -17,10 +17,14 @@
  * AI-generated print (lib/ai/posterArt.ts), sized to a real Gelato paper
  * format and persisted as a real product (lib/productSearchDb.ts's
  * upsertProduct) so it's clickable/priced like every other item, not just
- * a scene decoration. CJ Dropshipping products aren't in the mix yet —
- * no adapter has been built (scripts/cj-test-fetch.ts is still a probe
- * only), and whether CJ's dimension fields mean real item size or just
- * packaging size is still unconfirmed for furniture specifically.
+ * a scene decoration.
+ *
+ * Each concept also gets ONE small accent item searched live from CJ
+ * Dropshipping (lib/suppliers/cjdropshipping.ts), when CJ_API_KEY is set —
+ * always a small decor/textile piece, never furniture. CJ's dimension
+ * fields are confirmed (against two real products) to be packaging size,
+ * not real item size, so anything whose on-image scale matters a lot
+ * stays sourced from VidaXL, which has real confirmed dimensions.
  *
  * A category with no real photographed match in your catalog is skipped
  * for that room rather than aborting the whole thing — a 5-item room still
@@ -54,6 +58,7 @@ import { suggestPlacements } from "../lib/ai/placement";
 import { detectSceneItems } from "../lib/ai/locate";
 import { generateBaseRoomPhoto } from "../lib/ai/generateRoom";
 import { generatePosterArtwork, buildPosterProduct } from "../lib/ai/posterArt";
+import { cjEnabled, searchCjProducts } from "../lib/suppliers/cjdropshipping";
 import { createFinishedRoom } from "../lib/finishedRooms";
 import { dbEnabled } from "../lib/db";
 import { loadProductCatalog, upsertProduct } from "../lib/productSearchDb";
@@ -80,6 +85,17 @@ interface Concept {
   /** Which lib/styles.ts style id to generate the empty base room photo in, when no real photo is supplied. */
   primaryStyleId: string;
   items: ConceptItem[];
+  /**
+   * One small accent item sourced live from CJ Dropshipping, English
+   * keyword (material + object, e.g. "rattan basket" — CJ has no concept
+   * of style names). Deliberately a small decor/textile piece, never
+   * furniture: CJ's dimension fields are confirmed to be packaging size,
+   * not real item size (lib/suppliers/cjdropshipping.ts's module doc),
+   * so anything whose on-image scale matters a lot (a sofa, a table)
+   * stays sourced from VidaXL, which has real confirmed dimensions.
+   * Skipped silently if CJ_API_KEY isn't set or nothing matches.
+   */
+  cjAccent: { category: ProductCategory; keyword: string };
 }
 
 const CONCEPTS: Concept[] = [
@@ -87,6 +103,7 @@ const CONCEPTS: Concept[] = [
     title: "Scandinavian Living Room",
     description: "Light oak tones, undyed wool, and soft daylight — a calm, airy Scandinavian living room.",
     primaryStyleId: "scandinavian",
+    cjAccent: { category: "decor", keyword: "ceramic vase" },
     items: [
       { category: "sofa", keywords: ["eiche", "boucle", "leinen", "beige", "linen", "3-sitzer", "sitzer sofa"], styleIds: ["scandinavian"] },
       { category: "chair", keywords: ["eiche", "sessel", "boucle", "leinen"], styleIds: ["scandinavian"] },
@@ -102,6 +119,7 @@ const CONCEPTS: Concept[] = [
     title: "Dark Luxury Living Room",
     description: "Emerald velvet, marble, and brass — a moody, statement living room.",
     primaryStyleId: "darkluxury",
+    cjAccent: { category: "decor", keyword: "brass candle holder" },
     items: [
       { category: "sofa", keywords: ["samt", "velvet", "grun", "smaragd", "blau", "navy"], styleIds: ["darkluxury"] },
       { category: "chair", keywords: ["samt", "velvet", "sessel", "cocktailsessel"], styleIds: ["darkluxury", "modernluxury"] },
@@ -116,6 +134,7 @@ const CONCEPTS: Concept[] = [
     title: "Japandi Living Room",
     description: "Low furniture, natural linen and ash, and quiet negative space — a warm Japandi / organic-modern living room.",
     primaryStyleId: "japandi",
+    cjAccent: { category: "textile", keyword: "linen cushion cover" },
     items: [
       { category: "sofa", keywords: ["leinen", "linen", "niedrig", "eiche", "esche", "ash"], styleIds: ["japandi", "organicmodern"] },
       { category: "chair", keywords: ["rattan", "eiche", "sessel", "esche"], styleIds: ["japandi", "organicmodern"] },
@@ -132,6 +151,7 @@ const CONCEPTS: Concept[] = [
     title: "Modern Luxury Living Room",
     description: "Cream boucle, marble, and brushed brass — a bright, editorial modern-luxury living room.",
     primaryStyleId: "modernluxury",
+    cjAccent: { category: "decor", keyword: "marble tray" },
     items: [
       { category: "sofa", keywords: ["boucle", "creme", "beige", "samt", "sitzer"], styleIds: ["modernluxury"] },
       { category: "chair", keywords: ["sessel", "boucle", "samt", "creme", "cocktailsessel"], styleIds: ["modernluxury"] },
@@ -147,6 +167,7 @@ const CONCEPTS: Concept[] = [
     title: "Mediterranean Living Room",
     description: "Warm terracotta, rattan, and sun-washed linen — a relaxed Mediterranean-coastal living room.",
     primaryStyleId: "mediterranean",
+    cjAccent: { category: "decor", keyword: "rattan basket" },
     items: [
       { category: "sofa", keywords: ["leinen", "linen", "terrakotta", "beige", "sitzer"], styleIds: ["mediterranean", "cozy"] },
       { category: "chair", keywords: ["rattan", "korbsessel", "sessel"], styleIds: ["mediterranean"] },
@@ -200,6 +221,21 @@ async function buildConcept(concept: Concept, catalog: Product[], roomPath: stri
   if (matched.length === 0) {
     console.error(`  no products matched at all for "${concept.title}" — skipping this room entirely.`);
     return;
+  }
+
+  if (cjEnabled()) {
+    console.log(`  Searching CJ Dropshipping for "${concept.cjAccent.keyword}"...`);
+    try {
+      const [cjMatch] = await searchCjProducts(concept.cjAccent.keyword, 3);
+      if (cjMatch) {
+        console.log(`  ${concept.cjAccent.category} (CJ): ${cjMatch.name} (${cjMatch.id}, CHF ${cjMatch.price})`);
+        matched.push({ ...cjMatch, category: concept.cjAccent.category });
+      } else {
+        console.warn(`  no CJ match for "${concept.cjAccent.keyword}" — skipping that accent.`);
+      }
+    } catch (err) {
+      console.warn(`  CJ search failed (${err instanceof Error ? err.message : err}) — skipping that accent.`);
+    }
   }
 
   const style = STYLE_MAP[concept.primaryStyleId];
