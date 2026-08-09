@@ -1,6 +1,6 @@
 /**
- * Generates the 3 curated showroom "finished rooms" end-to-end from one
- * command instead of clicking through Looks Studio 3 times: for each
+ * Generates the 5 curated showroom "finished rooms" end-to-end from one
+ * command instead of clicking through Looks Studio 5 times: for each
  * concept below, auto-picks the best real catalog product per category
  * (lib/productSearch.ts's searchProducts — German-keyword matching against
  * the real VidaXL feed text, the same technique the Designer Agent's own
@@ -19,18 +19,22 @@
  * got picked and swap scripts/compose-finished-room.ts in for a specific
  * category if a pick looks off.
  *
- * Usage — zero-argument mode (the easy one):
- *   Drop your room photo at "room.jpg" in the project root (already
- *   gitignored — same file every other test-composite/test-generate
- *   script in this folder already uses) and just run:
- *     npx tsx scripts/generate-showroom-rooms.ts
- *   That one photo is reused for all 3 concepts, which is normal for a
- *   showroom demo.
+ * Usage — zero-argument mode (the easy one, and now the default):
+ *   npx tsx scripts/generate-showroom-rooms.ts
+ *   No room photo needed — each concept generates its own empty base room
+ *   via lib/ai/generateRoom.ts (same AI-generated-base-room technique
+ *   scripts/generate-looks.ts uses), matched to that concept's own style,
+ *   then furnishes it with the curated real product picks below. This is
+ *   the more deliberate, hand-tuned sibling of generate-looks.ts's random
+ *   per-style picking — use this one when you want control over exactly
+ *   which materials/keywords define "Scandinavian" vs. "Dark Luxury", not
+ *   just "any 3-6 products tagged with that style."
  *
- * Usage — explicit paths, one photo per concept:
- *   npx tsx scripts/generate-showroom-rooms.ts <room1.jpg> [room2.jpg] [room3.jpg]
- *   In order: Scandinavian, Dark Luxury, Japandi/Organic Modern. Fewer
- *   than 3 paths given reuses the last one for the rest.
+ * Usage — explicit paths, one REAL photo per concept (optional):
+ *   npx tsx scripts/generate-showroom-rooms.ts <room1.jpg> [room2.jpg] ...
+ *   In order, matching CONCEPTS below. Fewer paths than concepts reuses
+ *   the last one for the rest. Only useful if you specifically want a
+ *   real (not AI-generated) base room for some or all of these.
  *
  * Reads ANTHROPIC_API_KEY, OPENAI_API_KEY, DATABASE_URL from .env.
  */
@@ -39,10 +43,12 @@ import { checkRenderedProductIdentity } from "../lib/ai/identityCheck";
 import { compositingEnabled, composeSceneWithProducts, reshapeBoxForProduct, type SceneItem } from "../lib/ai/composite";
 import { suggestPlacements } from "../lib/ai/placement";
 import { detectSceneItems } from "../lib/ai/locate";
+import { generateBaseRoomPhoto } from "../lib/ai/generateRoom";
 import { createFinishedRoom } from "../lib/finishedRooms";
 import { dbEnabled } from "../lib/db";
 import { loadProductCatalog } from "../lib/productSearchDb";
 import { searchProducts } from "../lib/productSearch";
+import { STYLE_MAP } from "../lib/styles";
 import type { DetectionBox, Product, ProductCategory } from "../lib/types";
 
 try {
@@ -61,6 +67,8 @@ interface ConceptItem {
 interface Concept {
   title: string;
   description: string;
+  /** Which lib/styles.ts style id to generate the empty base room photo in, when no real photo is supplied. */
+  primaryStyleId: string;
   items: ConceptItem[];
 }
 
@@ -68,6 +76,7 @@ const CONCEPTS: Concept[] = [
   {
     title: "Scandinavian Living Room",
     description: "Light oak tones, undyed wool, and soft daylight — a calm, airy Scandinavian living room.",
+    primaryStyleId: "scandinavian",
     items: [
       { category: "sofa", keywords: ["eiche", "boucle", "leinen", "beige", "linen", "3-sitzer", "sitzer sofa"], styleIds: ["scandinavian"] },
       { category: "chair", keywords: ["eiche", "sessel", "boucle", "leinen"], styleIds: ["scandinavian"] },
@@ -83,6 +92,7 @@ const CONCEPTS: Concept[] = [
   {
     title: "Dark Luxury Living Room",
     description: "Emerald velvet, marble, and brass — a moody, statement living room.",
+    primaryStyleId: "darkluxury",
     items: [
       { category: "sofa", keywords: ["samt", "velvet", "grun", "smaragd", "blau", "navy"], styleIds: ["darkluxury"] },
       { category: "chair", keywords: ["samt", "velvet", "sessel", "cocktailsessel"], styleIds: ["darkluxury", "modernluxury"] },
@@ -97,6 +107,7 @@ const CONCEPTS: Concept[] = [
   {
     title: "Japandi Living Room",
     description: "Low furniture, natural linen and ash, and quiet negative space — a warm Japandi / organic-modern living room.",
+    primaryStyleId: "japandi",
     items: [
       { category: "sofa", keywords: ["leinen", "linen", "niedrig", "eiche", "esche", "ash"], styleIds: ["japandi", "organicmodern"] },
       { category: "chair", keywords: ["rattan", "eiche", "sessel", "esche"], styleIds: ["japandi", "organicmodern"] },
@@ -107,6 +118,37 @@ const CONCEPTS: Concept[] = [
       { category: "plant", keywords: ["bonsai", "ficus", "pflanze", "plant"], styleIds: ["japandi"] },
       { category: "storage", keywords: ["sideboard", "kommode", "eiche", "esche"], styleIds: ["japandi"] },
       { category: "textile", keywords: ["kissen", "leinen", "cushion"], styleIds: ["japandi", "organicmodern"] },
+    ],
+  },
+  {
+    title: "Modern Luxury Living Room",
+    description: "Cream boucle, marble, and brushed brass — a bright, editorial modern-luxury living room.",
+    primaryStyleId: "modernluxury",
+    items: [
+      { category: "sofa", keywords: ["boucle", "creme", "beige", "samt", "sitzer"], styleIds: ["modernluxury"] },
+      { category: "chair", keywords: ["sessel", "boucle", "samt", "creme", "cocktailsessel"], styleIds: ["modernluxury"] },
+      { category: "table", keywords: ["marmor", "marble", "couchtisch", "messing", "brass"], styleIds: ["modernluxury", "darkluxury"] },
+      { category: "rug", keywords: ["teppich", "creme", "beige", "wolle"], styleIds: ["modernluxury"] },
+      { category: "lighting", keywords: ["stehlampe", "messing", "brass", "gold"], styleIds: ["modernluxury", "darkluxury"] },
+      { category: "art", keywords: ["wandbild", "abstrakt", "gerahmt", "gold"], styleIds: ["modernluxury"] },
+      { category: "decor", keywords: ["vase", "skulptur", "dekoobjekt"], styleIds: ["modernluxury", "minimalist"] },
+      { category: "storage", keywords: ["sideboard", "kommode", "hochglanz", "marmor"], styleIds: ["modernluxury"] },
+      { category: "textile", keywords: ["kissen", "samt", "velvet", "seide"], styleIds: ["modernluxury"] },
+    ],
+  },
+  {
+    title: "Mediterranean Living Room",
+    description: "Warm terracotta, rattan, and sun-washed linen — a relaxed Mediterranean-coastal living room.",
+    primaryStyleId: "mediterranean",
+    items: [
+      { category: "sofa", keywords: ["leinen", "linen", "terrakotta", "beige", "sitzer"], styleIds: ["mediterranean", "cozy"] },
+      { category: "chair", keywords: ["rattan", "korbsessel", "sessel"], styleIds: ["mediterranean"] },
+      { category: "table", keywords: ["rattan", "holz", "couchtisch", "terrakotta"], styleIds: ["mediterranean"] },
+      { category: "rug", keywords: ["teppich", "jute", "natur", "terrakotta"], styleIds: ["mediterranean", "cozy"] },
+      { category: "lighting", keywords: ["stehlampe", "rattan", "korb", "laterne"], styleIds: ["mediterranean"] },
+      { category: "plant", keywords: ["olivenbaum", "palme", "kunstpflanze", "plant"], styleIds: ["mediterranean"] },
+      { category: "decor", keywords: ["vase", "keramik", "terrakotta"], styleIds: ["mediterranean", "cozy"] },
+      { category: "textile", keywords: ["kissen", "leinen", "plaid", "decke"], styleIds: ["mediterranean", "cozy"] },
     ],
   },
 ];
@@ -135,8 +177,8 @@ function pickBest(catalog: Product[], item: ConceptItem): Product | null {
   return best ?? null;
 }
 
-async function buildConcept(concept: Concept, catalog: Product[], roomPath: string, quality: "low" | "medium" | "high") {
-  console.log(`\n=== ${concept.title} (room photo: ${roomPath}) ===`);
+async function buildConcept(concept: Concept, catalog: Product[], roomPath: string | null, quality: "low" | "medium" | "high") {
+  console.log(`\n=== ${concept.title} (room photo: ${roomPath ?? `AI-generated, ${concept.primaryStyleId} style`}) ===`);
 
   const matched: Product[] = [];
   for (const item of concept.items) {
@@ -153,8 +195,15 @@ async function buildConcept(concept: Concept, catalog: Product[], roomPath: stri
     return;
   }
 
+  let roomPhoto: Buffer;
+  if (roomPath) {
+    roomPhoto = readFileSync(roomPath);
+  } else {
+    console.log(`  Generating an empty ${concept.primaryStyleId} base room photo (${quality} quality)...`);
+    roomPhoto = await generateBaseRoomPhoto(STYLE_MAP[concept.primaryStyleId], quality);
+  }
+
   console.log("  Analyzing room placement...");
-  const roomPhoto = readFileSync(roomPath);
   const placement = await suggestPlacements(roomPhoto);
   if (!placement) {
     console.error("  room placement analysis failed — skipping this room.");
@@ -232,21 +281,13 @@ async function buildConcept(concept: Concept, catalog: Product[], roomPath: stri
   console.log(`  ✓ Saved — CHF ${totalPrice} across ${items.length} item(s). View at /looks/${id}.`);
 }
 
-const DEFAULT_ROOM_PATH = "room.jpg";
-
 async function main() {
   const argPaths = process.argv.slice(2);
-  const roomPaths = argPaths.length > 0 ? argPaths : [DEFAULT_ROOM_PATH];
-
-  if (!existsSync(roomPaths[0])) {
-    console.error(
-      argPaths.length > 0
-        ? `Room photo not found: ${roomPaths[0]}`
-        : `No room photo given and "${DEFAULT_ROOM_PATH}" doesn't exist in the project root. Drop your photo there ` +
-          `(it's gitignored already) and re-run with no arguments, or pass a path directly: ` +
-          "npx tsx scripts/generate-showroom-rooms.ts <room1.jpg> [room2.jpg] [room3.jpg]",
-    );
-    process.exit(1);
+  for (const p of argPaths) {
+    if (!existsSync(p)) {
+      console.error(`Room photo not found: ${p}`);
+      process.exit(1);
+    }
   }
   if (!compositingEnabled()) {
     console.error("OPENAI_API_KEY is not set. Add it to .env first.");
@@ -267,7 +308,10 @@ async function main() {
   console.log(`${catalog.length} product(s) in the catalog.`);
 
   for (const [i, concept] of CONCEPTS.entries()) {
-    const roomPath = roomPaths[i] ?? roomPaths[roomPaths.length - 1];
+    // No paths given at all -> every concept generates its own AI base
+    // room. Paths given -> use them in order, reusing the last one for
+    // any concept beyond the count supplied.
+    const roomPath = argPaths.length === 0 ? null : (argPaths[i] ?? argPaths[argPaths.length - 1]);
     await buildConcept(concept, catalog, roomPath, quality);
   }
 
