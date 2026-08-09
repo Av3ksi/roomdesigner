@@ -133,11 +133,22 @@ export function inferColor(raw: RawSupplierProduct): string {
   return "#B9A176";
 }
 
-/** Dropshipping requires setting your own retail price on top of the supplier's cost. */
+/**
+ * Dropshipping requires setting your own retail price on top of the
+ * supplier's cost. MIN_RETAIL_PRICE_CHF exists because a real run
+ * produced real CHF 0 products: CJ's catalog includes items priced
+ * under $0.30, and Math.round(0.30 * 1.65) rounds down to 0 — an
+ * unsellable "free" product, and confusing alongside a real price
+ * anywhere else in the UI. VidaXL's real feed has never hit this (its
+ * cheapest items are still several francs), but the floor applies to
+ * any supplier, not just CJ.
+ */
+const MIN_RETAIL_PRICE_CHF = 5;
+
 export function computeRetailPrice(raw: RawSupplierProduct): number {
-  if (raw.recommendedRetailPrice) return Math.round(raw.recommendedRetailPrice);
+  if (raw.recommendedRetailPrice) return Math.max(MIN_RETAIL_PRICE_CHF, Math.round(raw.recommendedRetailPrice));
   const MARKUP = 1.65;
-  return Math.round(raw.costPrice * MARKUP);
+  return Math.max(MIN_RETAIL_PRICE_CHF, Math.round(raw.costPrice * MARKUP));
 }
 
 /**
