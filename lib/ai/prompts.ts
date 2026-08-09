@@ -107,6 +107,26 @@ export const LIGHTING_MATCH_DIRECTION =
   "the floor or wall, and let nearby surfaces pick up a faint colour bounce from it, as they would in reality.";
 
 /**
+ * The "cool effect, looks like it could be my room" bar — LIGHTING_MATCH_
+ * DIRECTION above only enforces consistency (the product's light matches
+ * the room's), not atmosphere. This adds the two things that actually make
+ * a render feel like a real, desirable photograph a shopper would stop and
+ * look at, rather than a technically-correct but flat product placement:
+ * a switched-on light source actually reading as lit, and an explicit
+ * push against the generic "AI interior" look (waxy skin-smooth surfaces,
+ * over-even illumination, no real depth).
+ */
+export const ATMOSPHERE_DIRECTION =
+  " If any of the products being placed is a lamp, pendant, sconce or other light fixture, render it switched " +
+  "ON: a warm visible glow at its bulb or shade, a soft pool of light it casts on the nearest surface, and a " +
+  "gentle warm rim it adds to whatever sits near it — even in a daylit scene, a lit lamp reads as an inhabited, " +
+  "considered room rather than a showroom. This must be an actual real product photograph, not a rendering " +
+  "that reads as AI-generated: avoid the tells of that look — perfectly even illumination with no real falloff, " +
+  "waxy or over-smoothed surfaces, colours that are slightly too saturated or too clean, a total absence of " +
+  "dust, imperfection or the small asymmetries of a real lived-in space. The final image should be one a " +
+  "stranger would look at and think 'that could be my living room,' not 'that's clearly a render.'";
+
+/**
  * Material fidelity — the failure this addresses is a model "improving" a
  * product: smoothing a coarse weave, adding sheen to matte oak, turning
  * brushed brass polished. That silently misrepresents the item the

@@ -3,6 +3,7 @@ import sharp from "sharp";
 import { MODEL as CLAUDE_MODEL, aiEnabled } from "./claude";
 import { blendEditedRegion, buildMaskPng } from "./imageMasking";
 import {
+  ATMOSPHERE_DIRECTION,
   CAMERA_MATCH_DIRECTION,
   CATALOG_ONLY_SCENE_CONSTRAINT,
   LIGHTING_MATCH_DIRECTION,
@@ -468,6 +469,7 @@ export async function composeSceneWithProducts(
         "image, never substituting a different piece and never omitting one. " +
         itemLines.join(" ") +
         LIGHTING_MATCH_DIRECTION +
+        ATMOSPHERE_DIRECTION +
         CAMERA_MATCH_DIRECTION +
         MATERIAL_FIDELITY_DIRECTION +
         NO_PEOPLE,
@@ -498,6 +500,7 @@ export async function composeSceneWithProducts(
         "different piece for any of them, and never omit one. " +
         itemLines.join(" ") +
         LIGHTING_MATCH_DIRECTION +
+        ATMOSPHERE_DIRECTION +
         CAMERA_MATCH_DIRECTION +
         MATERIAL_FIDELITY_DIRECTION +
         MASK_DISCIPLINE +
