@@ -1,7 +1,7 @@
 import Hero from "@/components/landing/Hero";
 import HowItWorks from "@/components/landing/HowItWorks";
 import Intelligence from "@/components/landing/Intelligence";
-import ImmersiveTeaser from "@/components/landing/ImmersiveTeaser";
+import ConversationTeaser from "@/components/landing/ConversationTeaser";
 import BeyondTheRender from "@/components/landing/BeyondTheRender";
 import StyleShowcase from "@/components/landing/StyleShowcase";
 import Principles from "@/components/landing/Principles";
@@ -14,7 +14,7 @@ export default function HomePage() {
       <Hero />
       <HowItWorks />
       <Intelligence />
-      <ImmersiveTeaser />
+      <ConversationTeaser />
       <StyleShowcase />
       <BeyondTheRender />
       <Principles />

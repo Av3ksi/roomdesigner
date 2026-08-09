@@ -1,57 +1,70 @@
 import Link from "next/link";
 import {
-  Glasses,
-  Layers,
-  LayoutGrid,
+  Bookmark,
+  Camera,
+  Eraser,
   History,
-  Sprout,
-  Users2,
-  Wand2,
+  LayoutGrid,
+  Move,
+  Search,
 } from "lucide-react";
 import Reveal from "@/components/landing/Reveal";
 
+/**
+ * Replaces the previous FEATURES list, which advertised mood-based
+ * generation, a dedicated room-intelligence score, shopping bundles and VR/
+ * AR — all of which live only in components/studio/Studio.tsx, a component
+ * nothing in app/ imports anymore. /studio has redirected straight to
+ * /designer since the procedural preview was folded in, so every one of
+ * those cards sent a visitor to a page that doesn't have what the card
+ * described. "Design with your family" pointed at /designs, which now
+ * redirects to /my-rooms — a private collection, not collaboration.
+ *
+ * Every entry below is a capability actually present in Designer.tsx or
+ * its API routes today, checked against the code, not the old copy.
+ */
 const FEATURES = [
   {
-    icon: Wand2,
-    title: "Mood-based generation",
-    body: "Describe a feeling — “moody dinner-party energy” — and get a matched style instantly.",
-    href: "/studio",
+    icon: Eraser,
+    title: "Remove what's already there",
+    body: "Mark existing furniture for removal — the AI erases it and fills in the space to match your room's own floor, wall and light.",
+    href: "/designer",
+  },
+  {
+    icon: Move,
+    title: "Move anything you've placed",
+    body: "Reposition a confirmed item without starting the room over. One render, same credit.",
+    href: "/designer",
   },
   {
     icon: History,
     title: "Full version history",
-    body: "Every edit becomes a scrubbable timeline. Restore any past version in one click.",
-    href: "/studio",
+    body: "Every confirmed edit becomes a version in a scrubbable strip. Jump back to any earlier state in one click.",
+    href: "/designer",
   },
   {
-    icon: Sprout,
-    title: "Room intelligence",
-    body: "A sustainability score, energy tips and furniture-compatibility checks for every design.",
-    href: "/studio",
+    icon: Bookmark,
+    title: "Save to your collection",
+    body: "Bookmark a render privately and come back to it from any device once you're signed in.",
+    href: "/my-rooms",
   },
   {
     icon: LayoutGrid,
-    title: "Inspiration boards",
-    body: "Collect products across rooms and styles into named moodboards.",
-    href: "/boards",
+    title: "Complete Rooms, ready to shop",
+    body: "Browse fully styled rooms with every visible piece priced and added to cart in one click.",
+    href: "/looks",
   },
   {
-    icon: Glasses,
-    title: "VR & AR walkthroughs",
-    body: "Step into your room with a headset, or preview it in AR on your phone.",
-    href: "/studio",
+    icon: Camera,
+    title: "Extra angles & floor plans",
+    body: "Upload more than one photo, or a floor plan, for sharper placement and true-to-scale sizing.",
+    href: "/designer",
   },
   {
-    icon: Users2,
-    title: "Design with your family",
-    body: "Share a link and everyone sees — and can keep customizing — the exact same room.",
-    href: "/designs",
-  },
-  {
-    icon: Layers,
-    title: "Shopping bundles",
-    body: "AI-curated bundles like “Reading Corner”, priced with a built-in discount.",
-    href: "/studio",
+    icon: Search,
+    title: "Sourced beyond the catalog",
+    body: "Ask for something specific we don't stock — the assistant searches the open web and shows a real, buyable match elsewhere.",
+    href: "/designer",
   },
 ];
 

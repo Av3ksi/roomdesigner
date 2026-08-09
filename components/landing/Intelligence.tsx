@@ -15,7 +15,7 @@ import RoomScene from "@/components/room/RoomScene";
 import { SAMPLE_ROOMS } from "@/lib/rooms";
 
 const READS = [
-  { icon: Ruler, label: "Room dimensions", detail: "±8cm from visual cues" },
+  { icon: Ruler, label: "Room dimensions", detail: "Estimated from visual cues" },
   { icon: Layers, label: "Walls & architecture", detail: "Condition, finish, features" },
   { icon: AppWindow, label: "Windows & light paths", detail: "Orientation & exposure" },
   { icon: DoorOpen, label: "Doors & circulation", detail: "Traffic flow mapping" },
