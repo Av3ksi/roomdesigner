@@ -113,6 +113,54 @@ export async function getProductsByIds(ids: string[]): Promise<Product[]> {
   return dedupeById(catalog.products.filter((p) => idSet.has(p.id)));
 }
 
+/**
+ * Inserts or updates a single product row directly — used by
+ * scripts/generate-showroom-rooms.ts to persist an on-the-fly generated
+ * poster (lib/ai/posterArt.ts) as a real catalog product, so it resolves
+ * normally through loadProductCatalog()/getProductsByIds() (clickable
+ * hotspot, real price in the total) instead of being a scene-only image
+ * with no catalog identity. Same INSERT ... ON CONFLICT shape
+ * scripts/seed-products.ts already uses for bulk seeding, factored out
+ * here for this single-row case. Clears the in-process catalog cache so
+ * a room built in the same run sees the product immediately rather than
+ * waiting out CATALOG_CACHE_TTL_MS.
+ */
+export async function upsertProduct(p: Product): Promise<void> {
+  await ensureSchema();
+  const db = sql();
+  await db`
+    INSERT INTO products (
+      id, supplier_id, supplier_label, sku, name, brand, category, price, rating, reviews,
+      styles, color, blurb, image_url, image_urls, product_url, cost_price, dimensions_cm, updated_at
+    ) VALUES (
+      ${p.id}, ${p.supplier?.id ?? ""}, ${p.supplier?.label ?? ""}, ${p.supplier?.sku ?? ""},
+      ${p.name}, ${p.brand}, ${p.category}, ${p.price}, ${p.rating}, ${p.reviews},
+      ${p.styles}, ${p.color}, ${p.blurb}, ${p.imageUrl ?? null}, ${p.imageUrls ?? null}, ${p.productUrl ?? null},
+      ${p.supplier?.costPrice ?? null}, ${p.dimensionsCm ? JSON.stringify(p.dimensionsCm) : null}, now()
+    )
+    ON CONFLICT (id) DO UPDATE SET
+      supplier_id = EXCLUDED.supplier_id,
+      supplier_label = EXCLUDED.supplier_label,
+      sku = EXCLUDED.sku,
+      name = EXCLUDED.name,
+      brand = EXCLUDED.brand,
+      category = EXCLUDED.category,
+      price = EXCLUDED.price,
+      rating = EXCLUDED.rating,
+      reviews = EXCLUDED.reviews,
+      styles = EXCLUDED.styles,
+      color = EXCLUDED.color,
+      blurb = EXCLUDED.blurb,
+      image_url = EXCLUDED.image_url,
+      image_urls = EXCLUDED.image_urls,
+      product_url = EXCLUDED.product_url,
+      cost_price = EXCLUDED.cost_price,
+      dimensions_cm = EXCLUDED.dimensions_cm,
+      updated_at = now()
+  `;
+  catalogCache = null;
+}
+
 export interface MarketplacePage {
   products: Product[];
   totalCount: number;

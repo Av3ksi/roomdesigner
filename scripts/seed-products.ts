@@ -17,7 +17,8 @@
  */
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
-import { ensureSchema, sql } from "../lib/db";
+import { ensureSchema } from "../lib/db";
+import { upsertProduct } from "../lib/productSearchDb";
 import { fetchVidaxlCatalog, mapVidaxlSampleFeed } from "../lib/suppliers";
 import type { Product } from "../lib/types";
 
@@ -55,39 +56,9 @@ async function main() {
   console.log(`Seeding ${products.length} products. Ensuring schema...`);
   await ensureSchema();
 
-  const db = sql();
   let upserted = 0;
   for (const p of products) {
-    await db`
-      INSERT INTO products (
-        id, supplier_id, supplier_label, sku, name, brand, category, price, rating, reviews,
-        styles, color, blurb, image_url, image_urls, product_url, cost_price, dimensions_cm, updated_at
-      ) VALUES (
-        ${p.id}, ${p.supplier?.id ?? ""}, ${p.supplier?.label ?? ""}, ${p.supplier?.sku ?? ""},
-        ${p.name}, ${p.brand}, ${p.category}, ${p.price}, ${p.rating}, ${p.reviews},
-        ${p.styles}, ${p.color}, ${p.blurb}, ${p.imageUrl ?? null}, ${p.imageUrls ?? null}, ${p.productUrl ?? null},
-        ${p.supplier?.costPrice ?? null}, ${p.dimensionsCm ? JSON.stringify(p.dimensionsCm) : null}, now()
-      )
-      ON CONFLICT (id) DO UPDATE SET
-        supplier_id = EXCLUDED.supplier_id,
-        supplier_label = EXCLUDED.supplier_label,
-        sku = EXCLUDED.sku,
-        name = EXCLUDED.name,
-        brand = EXCLUDED.brand,
-        category = EXCLUDED.category,
-        price = EXCLUDED.price,
-        rating = EXCLUDED.rating,
-        reviews = EXCLUDED.reviews,
-        styles = EXCLUDED.styles,
-        color = EXCLUDED.color,
-        blurb = EXCLUDED.blurb,
-        image_url = EXCLUDED.image_url,
-        image_urls = EXCLUDED.image_urls,
-        product_url = EXCLUDED.product_url,
-        cost_price = EXCLUDED.cost_price,
-        dimensions_cm = EXCLUDED.dimensions_cm,
-        updated_at = now()
-    `;
+    await upsertProduct(p);
     upserted++;
     if (upserted % 25 === 0) console.log(`  ${upserted}/${products.length}...`);
   }

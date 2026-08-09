@@ -13,6 +13,15 @@
  * scripts/compose-finished-room.ts and the Looks Studio route — this just
  * automates the product-picking step too instead of manual dropdowns.
  *
+ * The "art" slot is never picked from the catalog — it's always a custom
+ * AI-generated print (lib/ai/posterArt.ts), sized to a real Gelato paper
+ * format and persisted as a real product (lib/productSearchDb.ts's
+ * upsertProduct) so it's clickable/priced like every other item, not just
+ * a scene decoration. CJ Dropshipping products aren't in the mix yet —
+ * no adapter has been built (scripts/cj-test-fetch.ts is still a probe
+ * only), and whether CJ's dimension fields mean real item size or just
+ * packaging size is still unconfirmed for furniture specifically.
+ *
  * A category with no real photographed match in your catalog is skipped
  * for that room rather than aborting the whole thing — a 5-item room still
  * beats no room. Check the console output per room to see what actually
@@ -44,9 +53,10 @@ import { compositingEnabled, composeSceneWithProducts, reshapeBoxForProduct, typ
 import { suggestPlacements } from "../lib/ai/placement";
 import { detectSceneItems } from "../lib/ai/locate";
 import { generateBaseRoomPhoto } from "../lib/ai/generateRoom";
+import { generatePosterArtwork, buildPosterProduct } from "../lib/ai/posterArt";
 import { createFinishedRoom } from "../lib/finishedRooms";
 import { dbEnabled } from "../lib/db";
-import { loadProductCatalog } from "../lib/productSearchDb";
+import { loadProductCatalog, upsertProduct } from "../lib/productSearchDb";
 import { searchProducts } from "../lib/productSearch";
 import { STYLE_MAP } from "../lib/styles";
 import type { DetectionBox, Product, ProductCategory } from "../lib/types";
@@ -83,7 +93,6 @@ const CONCEPTS: Concept[] = [
       { category: "table", keywords: ["eiche", "couchtisch", "rund", "oval", "oak"], styleIds: ["scandinavian"] },
       { category: "rug", keywords: ["teppich", "wolle", "beige", "creme", "wool"], styleIds: ["scandinavian"] },
       { category: "lighting", keywords: ["stehlampe", "papier", "floor lamp"], styleIds: ["scandinavian"] },
-      { category: "art", keywords: ["wandbild", "poster", "print", "leinwand"], styleIds: ["scandinavian", "minimalist"] },
       { category: "plant", keywords: ["olivenbaum", "kunstpflanze", "pflanze", "plant"], styleIds: ["scandinavian", "mediterranean"] },
       { category: "storage", keywords: ["sideboard", "kommode", "eiche", "oak"], styleIds: ["scandinavian"] },
       { category: "textile", keywords: ["decke", "plaid", "kissen", "throw"], styleIds: ["scandinavian", "cozy"] },
@@ -99,7 +108,6 @@ const CONCEPTS: Concept[] = [
       { category: "table", keywords: ["marmor", "marble", "couchtisch", "schwarz"], styleIds: ["darkluxury", "modernluxury"] },
       { category: "rug", keywords: ["teppich", "dunkel", "muster", "orient"], styleIds: ["darkluxury"] },
       { category: "lighting", keywords: ["stehlampe", "messing", "brass", "gold"], styleIds: ["darkluxury", "modernluxury"] },
-      { category: "art", keywords: ["wandbild", "gold", "gerahmt", "gerahmtes"], styleIds: ["darkluxury", "modernluxury"] },
       { category: "storage", keywords: ["sideboard", "kommode", "schwarz", "walnuss", "walnut"], styleIds: ["darkluxury", "modernluxury"] },
       { category: "textile", keywords: ["kissen", "samt", "velvet", "cushion"], styleIds: ["darkluxury"] },
     ],
@@ -130,7 +138,6 @@ const CONCEPTS: Concept[] = [
       { category: "table", keywords: ["marmor", "marble", "couchtisch", "messing", "brass"], styleIds: ["modernluxury", "darkluxury"] },
       { category: "rug", keywords: ["teppich", "creme", "beige", "wolle"], styleIds: ["modernluxury"] },
       { category: "lighting", keywords: ["stehlampe", "messing", "brass", "gold"], styleIds: ["modernluxury", "darkluxury"] },
-      { category: "art", keywords: ["wandbild", "abstrakt", "gerahmt", "gold"], styleIds: ["modernluxury"] },
       { category: "decor", keywords: ["vase", "skulptur", "dekoobjekt"], styleIds: ["modernluxury", "minimalist"] },
       { category: "storage", keywords: ["sideboard", "kommode", "hochglanz", "marmor"], styleIds: ["modernluxury"] },
       { category: "textile", keywords: ["kissen", "samt", "velvet", "seide"], styleIds: ["modernluxury"] },
@@ -195,12 +202,27 @@ async function buildConcept(concept: Concept, catalog: Product[], roomPath: stri
     return;
   }
 
+  const style = STYLE_MAP[concept.primaryStyleId];
+
+  console.log(`  Generating custom poster art (${quality} quality)...`);
+  const posterBuffer = await generatePosterArtwork(style, concept.title, quality);
+  const posterProduct: Product = {
+    ...buildPosterProduct(style, concept.title),
+    imageUrl: `data:image/png;base64,${posterBuffer.toString("base64")}`,
+  };
+  await upsertProduct(posterProduct);
+  console.log(`  art: ${posterProduct.name} (${posterProduct.id}, CHF ${posterProduct.price}, provisional Gelato pricing)`);
+  // Pre-loaded so the fetch loop below doesn't re-fetch this one over
+  // HTTP — we already have its bytes from generation.
+  const preloadedBuffers = new Map<string, Buffer>([[posterProduct.id, posterBuffer]]);
+  matched.push(posterProduct);
+
   let roomPhoto: Buffer;
   if (roomPath) {
     roomPhoto = readFileSync(roomPath);
   } else {
     console.log(`  Generating an empty ${concept.primaryStyleId} base room photo (${quality} quality)...`);
-    roomPhoto = await generateBaseRoomPhoto(STYLE_MAP[concept.primaryStyleId], quality);
+    roomPhoto = await generateBaseRoomPhoto(style, quality);
   }
 
   console.log("  Analyzing room placement...");
@@ -214,12 +236,15 @@ async function buildConcept(concept: Concept, catalog: Product[], roomPath: stri
   const items: SceneItem[] = [];
   const renderedProducts: Product[] = [];
   for (const product of matched) {
-    const productRes = await fetch(product.imageUrl!);
-    if (!productRes.ok) {
-      console.warn(`  failed to fetch photo for "${product.name}" (${productRes.status}) — skipping it.`);
-      continue;
+    let productBuffer = preloadedBuffers.get(product.id);
+    if (!productBuffer) {
+      const productRes = await fetch(product.imageUrl!);
+      if (!productRes.ok) {
+        console.warn(`  failed to fetch photo for "${product.name}" (${productRes.status}) — skipping it.`);
+        continue;
+      }
+      productBuffer = Buffer.from(await productRes.arrayBuffer());
     }
-    const productBuffer = Buffer.from(await productRes.arrayBuffer());
     const suggestion = placement.placements[product.category];
     const box = await reshapeBoxForProduct(suggestion.box, productBuffer);
     items.push({ productPhoto: productBuffer, category: product.category, box, wallAngleDeg: suggestion.wallAngleDeg });
