@@ -10,8 +10,17 @@ import { MODEL, compositingEnabled } from "./composite";
  * generated showroom content, never presented as a real customer's room —
  * the base is fictional, but the products composited into it afterward via
  * composeSceneWithProducts are the same real catalog items either way.
+ *
+ * quality defaults to "high" — this is permanent public showroom content
+ * (/looks), not a one-off customer preview, and the base room's own
+ * lighting sets the ceiling for how good the final composite can look:
+ * compositeSceneWithProducts matches ITS lighting to whatever this step
+ * produces, so a flat or muddy base room caps every render built on it.
  */
-export async function generateBaseRoomPhoto(style: DesignStyle): Promise<Buffer> {
+export async function generateBaseRoomPhoto(
+  style: DesignStyle,
+  quality: "low" | "medium" | "high" = "high",
+): Promise<Buffer> {
   if (!compositingEnabled()) throw new Error("OPENAI_API_KEY not configured");
 
   const res = await fetch("https://api.openai.com/v1/images/generations", {
@@ -23,13 +32,19 @@ export async function generateBaseRoomPhoto(style: DesignStyle): Promise<Buffer>
     body: JSON.stringify({
       model: MODEL,
       prompt:
-        `A wide-angle, photorealistic interior photograph of an EMPTY, unfurnished living room shot in true ` +
-        `${style.name} style (${style.tagline}): ${style.description} Dominant colors: ${style.palette.join(", ")}. ` +
-        "Real architecture — walls, windows, flooring, ceiling, natural daylight — shot like real estate or interior " +
-        "photography on a wide lens with plenty of open floor space. The room must be completely EMPTY: no " +
-        "furniture, no rugs, no wall art, no plants, no decor, no people — just the bare architectural shell, ready " +
-        "to be furnished.",
-      quality: "medium",
+        "You are shooting for a design magazine's cover feature. Photograph an EMPTY, unfurnished living room " +
+        `in true ${style.name} style (${style.tagline}): ${style.description} Dominant colours: ` +
+        `${style.palette.join(", ")}. ` +
+        "Real architecture only — walls, windows, flooring, ceiling — on a wide lens with generous depth of " +
+        "field, shot like the finest real-estate or architectural-digest photography. Light the room as a " +
+        "professional would light this shoot: soft, directional natural daylight pouring through the windows as " +
+        "the key light, warm ambient bounce off the walls and ceiling as fill, gentle golden-hour warmth in the " +
+        "highlights, soft realistic shadows with no harsh flatness and no blown-out windows. Crisp architectural " +
+        "detail, true material texture on every visible surface, natural film-like colour grading — not a CGI " +
+        "render, not an oversaturated HDR image. The room must be completely EMPTY: no furniture, no rugs, no " +
+        "wall art, no plants, no decor, no people — just the bare architectural shell with beautiful light, " +
+        "ready to be furnished.",
+      quality,
       size: "1536x1024",
       n: 1,
     }),

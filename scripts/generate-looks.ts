@@ -71,27 +71,27 @@ function pickProductsForStyle(catalog: Product[], style: DesignStyle): Product[]
   return selected;
 }
 
-async function generateOne(style: DesignStyle, catalog: Product[]): Promise<boolean> {
+async function generateOne(style: DesignStyle, catalog: Product[], quality: "low" | "medium" | "high"): Promise<boolean> {
   const products = pickProductsForStyle(catalog, style);
   if (products.length < MIN_ITEMS) {
     console.warn(`  Skipped: only ${products.length} ${style.name} product(s) with a photo in stock (need ${MIN_ITEMS}+).`);
     return false;
   }
 
-  console.log(`  Generating a base ${style.name} room photo...`);
-  const roomPhoto = await generateBaseRoomPhoto(style);
+  console.log(`  Generating a base ${style.name} room photo (${quality} quality)...`);
+  const roomPhoto = await generateBaseRoomPhoto(style, quality);
 
   const heroName = products[0].name.split(" — ")[0];
   const title = `${style.name} Living Room — ${heroName}`;
   const description = `${style.tagline}. Featuring ${products.map((p) => p.name.split(" — ")[0]).join(", ")}.`;
 
-  console.log(`  Compositing ${products.length} product(s)...`);
+  console.log(`  Compositing ${products.length} product(s) (${quality} quality)...`);
   const result = await composeAndSaveFinishedRoom({
     roomPhoto,
     title,
     description,
     products,
-    quality: "medium",
+    quality,
     source: "agent",
   });
 
@@ -101,12 +101,19 @@ async function generateOne(style: DesignStyle, catalog: Product[]): Promise<bool
 }
 
 async function main() {
-  const [countArg, styleIdArg] = process.argv.slice(2);
+  const [countArg, styleIdArg, qualityArg] = process.argv.slice(2);
   const count = Math.max(1, Math.min(20, Number(countArg) || 0));
   if (!count) {
-    console.error("Usage: npx tsx scripts/generate-looks.ts <count> [styleId]");
+    console.error("Usage: npx tsx scripts/generate-looks.ts <count> [styleId] [quality]");
     process.exit(1);
   }
+  // Defaults to "high" — unlike compose-finished-room.ts's one-off curated
+  // looks (medium), this content is meant as permanent showroom material on
+  // /looks, closer to the compositing pipeline's "high" tier already used
+  // for adding a single product (see lib/ai/composite.ts's module comment:
+  // "high" measurably out-renders "medium" on product/material detail).
+  // Costs more per look — pass "medium" explicitly to trade quality for cost.
+  const quality = (qualityArg === "low" || qualityArg === "medium" ? qualityArg : "high") as "low" | "medium" | "high";
   if (styleIdArg && !STYLE_MAP[styleIdArg]) {
     console.error(`Unknown style id "${styleIdArg}". Valid ids: ${STYLES.map((s) => s.id).join(", ")}`);
     process.exit(1);
@@ -128,7 +135,7 @@ async function main() {
     const style = styleIdArg ? STYLE_MAP[styleIdArg] : pickRandom(STYLES);
     console.log(`\n[${i}/${count}] ${style.name}...`);
     try {
-      if (await generateOne(style, catalog)) succeeded++;
+      if (await generateOne(style, catalog, quality)) succeeded++;
     } catch (err) {
       console.error(`  Failed: ${err instanceof Error ? err.message : err}`);
     }
