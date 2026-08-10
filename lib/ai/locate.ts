@@ -350,7 +350,13 @@ export async function detectSceneItems(render: Buffer, picked: PickedProductRef[
         "German catalog); `webQuery` (the same in English, 2-6 words); and `pickedIndex` — the number of the placed " +
         "product this object IS (the same physical item), or 0 if it is an additional item not in the list. Assign " +
         "each placed product to at most one object; if a placed product isn't visible in the render, simply don't " +
-        "reference its number.",
+        "reference its number. " +
+        "Only claim a pickedIndex when you are confident this object IS that exact product — if several objects " +
+        "could plausibly be it, or you cannot clearly see it, use 0. A pickedIndex is what puts a clickable buy-pin " +
+        "on that spot, so a confident wrong guess sends a customer to the wrong product, which is worse than the " +
+        "product having no pin at all. Soft furnishings are the common trap: a throw, a duvet, a set of cushions " +
+        "and a folded blanket all read as 'white soft textile', so match on the specific form and placement " +
+        "described, not on the general category.",
       output_config: {
         format: { type: "json_schema", schema: SCENE_ITEM_SCHEMA as unknown as Record<string, unknown> },
       },

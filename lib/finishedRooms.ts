@@ -199,6 +199,36 @@ export async function setFinishedRoomPublished(
   return rows.length > 0;
 }
 
+/**
+ * Corrects the clickable hotspot positions on an already-saved room.
+ *
+ * Hotspots come from one vision pass over the finished render
+ * (lib/ai/locate.ts's detectSceneItems), which has to decide which visible
+ * object each placed product IS. It gets that wrong occasionally — a real
+ * case put the "Sommerdecke mit Kissen" pin on empty floor in a room where
+ * white cushions, a grey throw and a folded white blanket were all present.
+ *
+ * Without this, the only remedy for one bad pin was regenerating the whole
+ * room: a fresh set of paid image calls, and a different render that might
+ * be worse. Curated rooms are expensive and hand-checked, so editing the
+ * pins is the proportionate fix. No ownership check — this is a
+ * script-only admin path (scripts/fix-room-pin.ts), not a request handler.
+ */
+export async function updateFinishedRoomItemBoxes(
+  id: string,
+  itemBoxes: Record<string, DetectionBox>,
+): Promise<boolean> {
+  await ensureSchema();
+  const db = sql();
+  const rows = await db`
+    UPDATE finished_rooms
+    SET item_boxes = ${JSON.stringify(itemBoxes)}::jsonb
+    WHERE id = ${id}
+    RETURNING id
+  `;
+  return rows.length > 0;
+}
+
 export async function getFinishedRoom(id: string): Promise<FinishedRoom | null> {
   if (!dbEnabled()) return null;
   try {
