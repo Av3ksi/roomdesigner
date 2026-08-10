@@ -32,19 +32,27 @@
  * got picked and swap scripts/compose-finished-room.ts in for a specific
  * category if a pick looks off.
  *
- * Usage — zero-argument mode (the easy one, and now the default):
+ * Usage — zero-argument mode (the easy one, and the default):
  *   npx tsx scripts/generate-showroom-rooms.ts
- *   No room photo needed — each concept generates its own empty base room
- *   via lib/ai/generateRoom.ts (same AI-generated-base-room technique
- *   scripts/generate-looks.ts uses), matched to that concept's own style,
- *   then furnishes it with the curated real product picks below. This is
- *   the more deliberate, hand-tuned sibling of generate-looks.ts's random
- *   per-style picking — use this one when you want control over exactly
- *   which materials/keywords define "Scandinavian" vs. "Dark Luxury", not
- *   just "any 3-6 products tagged with that style."
+ *   Generates ONE room (see DEFAULT_COUNT). No room photo needed — the
+ *   concept generates its own empty base room via lib/ai/generateRoom.ts
+ *   (same AI-generated-base-room technique scripts/generate-looks.ts
+ *   uses), matched to that concept's own style, then furnishes it with the
+ *   curated real product picks below. This is the more deliberate,
+ *   hand-tuned sibling of generate-looks.ts's random per-style picking —
+ *   use this one when you want control over exactly which materials/
+ *   keywords define "Scandinavian" vs. "Dark Luxury", not just "any 3-6
+ *   products tagged with that style."
+ *
+ * Usage — more rooms, once one has come out well:
+ *   npx tsx scripts/generate-showroom-rooms.ts 5
+ *   Takes the first N concepts below. Each room costs real money (two
+ *   image generations plus a composite, all at "high" quality), which is
+ *   why one is the default rather than the whole set.
  *
  * Usage — explicit paths, one REAL photo per concept (optional):
  *   npx tsx scripts/generate-showroom-rooms.ts <room1.jpg> [room2.jpg] ...
+ *   npx tsx scripts/generate-showroom-rooms.ts 3 <room1.jpg>
  *   In order, matching CONCEPTS below. Fewer paths than concepts reuses
  *   the last one for the rest. Only useful if you specifically want a
  *   real (not AI-generated) base room for some or all of these.
@@ -241,21 +249,17 @@ async function buildConcept(concept: Concept, catalog: Product[], roomPath: stri
 
   const style = STYLE_MAP[concept.primaryStyleId];
 
-  console.log(`  Generating custom poster art (${quality} quality)...`);
-  const posterBuffer = await generatePosterArtwork(style, concept.title, quality);
-  // The catalog row stores a compressed thumbnail; posterBuffer (full
-  // resolution) is what actually gets composited, via preloadedBuffers below.
-  const posterProduct: Product = {
-    ...buildPosterProduct(style, concept.title),
-    imageUrl: await toCatalogImageUrl(posterBuffer),
-  };
-  await upsertProduct(posterProduct);
-  console.log(`  art: ${posterProduct.name} (${posterProduct.id}, CHF ${posterProduct.price}, provisional Gelato pricing)`);
-  // Pre-loaded so the fetch loop below doesn't re-fetch this one over
-  // HTTP — we already have its bytes from generation.
-  const preloadedBuffers = new Map<string, Buffer>([[posterProduct.id, posterBuffer]]);
-  matched.push(posterProduct);
-
+  // ORDER MATTERS — money. Every step below that calls an image model costs
+  // real money whether or not the room ultimately gets saved, so the cheap
+  // failure-prone step (placement, a single Claude vision call) runs as
+  // early as it possibly can: right after the base room exists, since it
+  // needs that photo, and before the poster is generated.
+  //
+  // A real, expensive failure drove this: placement was broken by a schema
+  // bug, and because the poster AND base room were both generated first,
+  // every concept burned two high-quality image generations before
+  // discovering the room could never be built — repeated for all five
+  // concepts, on every run.
   let roomPhoto: Buffer;
   if (roomPath) {
     roomPhoto = readFileSync(roomPath);
@@ -270,6 +274,21 @@ async function buildConcept(concept: Concept, catalog: Product[], roomPath: stri
     console.error("  room placement analysis failed — skipping this room.");
     return false;
   }
+
+  console.log(`  Generating custom poster art (${quality} quality)...`);
+  const posterBuffer = await generatePosterArtwork(style, concept.title, quality);
+  // The catalog row stores a compressed thumbnail; posterBuffer (full
+  // resolution) is what actually gets composited, via preloadedBuffers below.
+  const posterProduct: Product = {
+    ...buildPosterProduct(style, concept.title),
+    imageUrl: await toCatalogImageUrl(posterBuffer),
+  };
+  await upsertProduct(posterProduct);
+  console.log(`  art: ${posterProduct.name} (${posterProduct.id}, CHF ${posterProduct.price}, provisional Gelato pricing)`);
+  // Pre-loaded so the fetch loop below doesn't re-fetch this one over
+  // HTTP — we already have its bytes from generation.
+  const preloadedBuffers = new Map<string, Buffer>([[posterProduct.id, posterBuffer]]);
+  matched.push(posterProduct);
 
   console.log(`  Fetching ${matched.length} product photo(s)...`);
   const items: SceneItem[] = [];
@@ -346,8 +365,23 @@ async function buildConcept(concept: Concept, catalog: Product[], roomPath: stri
   return true;
 }
 
+/**
+ * Defaults to ONE room, not the full set. Every room costs real money
+ * (two image generations plus a composite at "high" quality), so the safe
+ * default is a single cheap proof that the pipeline works end to end;
+ * scaling up is an explicit choice you make after seeing one good result.
+ */
+const DEFAULT_COUNT = 1;
+
 async function main() {
-  const argPaths = process.argv.slice(2);
+  const args = process.argv.slice(2);
+  // First arg is the room count when it's a bare number; anything else is
+  // treated as a room-photo path, so the old photo-path usage still works.
+  const countArg = args[0] !== undefined && /^\d+$/.test(args[0]) ? Number(args[0]) : null;
+  const argPaths = countArg === null ? args : args.slice(1);
+  const count = Math.max(1, Math.min(countArg ?? DEFAULT_COUNT, CONCEPTS.length));
+  const concepts = CONCEPTS.slice(0, count);
+
   for (const p of argPaths) {
     if (!existsSync(p)) {
       console.error(`Room photo not found: ${p}`);
@@ -379,8 +413,10 @@ async function main() {
   // returning a Cloudflare 520 mid-run took down the entire batch before
   // this fix, on the very first concept, wasting nothing yet but risking
   // a lot on a longer run.
+  console.log(`Generating ${concepts.length} of ${CONCEPTS.length} concept(s) at ${quality} quality.`);
+
   let succeeded = 0;
-  for (const [i, concept] of CONCEPTS.entries()) {
+  for (const [i, concept] of concepts.entries()) {
     // No paths given at all -> every concept generates its own AI base
     // room. Paths given -> use them in order, reusing the last one for
     // any concept beyond the count supplied.
@@ -396,9 +432,29 @@ async function main() {
     } catch (err) {
       console.error(`  Failed: ${err instanceof Error ? err.message : err}`);
     }
+
+    // Stop the batch if the FIRST room produced nothing. A failure with no
+    // prior success almost always means something systematically broken
+    // (a bad schema, an expired key, an exhausted balance) that every
+    // remaining concept would hit identically — and each attempt spends
+    // real money on images before finding out. Confirmed the expensive
+    // way: a schema bug made all five concepts fail the same placement
+    // call, one wasted base-room generation each, on every run. Once one
+    // room has succeeded the pipeline is proven, so later failures are
+    // treated as transient and the batch continues.
+    if (succeeded === 0 && i === 0 && concepts.length > 1) {
+      console.error(
+        `\nStopping: the first room failed, so the remaining ${concepts.length - 1} would likely fail the same way ` +
+          "and each one costs real money. Fix the error above, then re-run.",
+      );
+      break;
+    }
   }
 
-  console.log(`\nDone. ${succeeded}/${CONCEPTS.length} room(s) generated and published.`);
+  console.log(`\nDone. ${succeeded}/${concepts.length} room(s) generated and published.`);
+  if (succeeded > 0 && concepts.length < CONCEPTS.length) {
+    console.log(`Happy with it? Generate the rest with: npx tsx scripts/generate-showroom-rooms.ts ${CONCEPTS.length}`);
+  }
 }
 
 main().catch((err) => {
