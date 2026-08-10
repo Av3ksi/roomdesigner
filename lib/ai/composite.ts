@@ -13,6 +13,8 @@ import {
   buildProductInsertionPrompt,
   buildRemovalPrompt,
 } from "./prompts";
+import { postImageEditWithRetry } from "./openaiImageGen";
+import { MODEL, compositingEnabled } from "./openaiConfig";
 import {
   COMPOSITE_MAX_EDGE,
   DEFAULT_CATEGORY_BOX,
@@ -52,11 +54,12 @@ import type { Detection, DetectionBox, ProductCategory } from "../types";
  * writeup and the planned real fix (EditPlan's `{op: replace}`).
  */
 
-export function compositingEnabled(): boolean {
-  return Boolean(process.env.OPENAI_API_KEY);
-}
-
-export const MODEL = "gpt-image-1.5";
+// Defined in ./openaiConfig and re-exported here so the app's existing
+// `from "./composite"` imports keep working — see that module for why the
+// canonical definitions had to move out. Re-exported AND imported at the
+// top of this file, since `export ... from` alone creates no local binding
+// and MODEL is used by the form builders below.
+export { compositingEnabled, MODEL };
 
 /**
  * The mask only constrains *where editing is allowed*, not how the model
@@ -273,16 +276,7 @@ export async function compositeProductIntoRoom(
   form.append("size", "auto");
   form.append("n", "1");
 
-  const res = await fetch("https://api.openai.com/v1/images/edits", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}` },
-    body: form,
-  });
-
-  if (!res.ok) {
-    const errText = await res.text();
-    throw new Error(`OpenAI image edit failed: ${res.status} ${errText}`);
-  }
+  const res = await postImageEditWithRetry(form, "product insert");
 
   const body = (await res.json()) as { data?: { b64_json?: string }[] };
   const b64 = body.data?.[0]?.b64_json;
@@ -341,16 +335,7 @@ export async function removeExistingObject(
   form.append("size", "auto");
   form.append("n", "1");
 
-  const res = await fetch("https://api.openai.com/v1/images/edits", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}` },
-    body: form,
-  });
-
-  if (!res.ok) {
-    const errText = await res.text();
-    throw new Error(`OpenAI image edit failed: ${res.status} ${errText}`);
-  }
+  const res = await postImageEditWithRetry(form, "object removal");
 
   const body = (await res.json()) as { data?: { b64_json?: string }[] };
   const b64 = body.data?.[0]?.b64_json;
@@ -520,17 +505,8 @@ export async function composeSceneWithProducts(
   // regenerated, not just a region) — timed explicitly so a slow run shows
   // exactly how much of it was this step versus the Claude calls around it.
   const renderStart = Date.now();
-  const res = await fetch("https://api.openai.com/v1/images/edits", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}` },
-    body: form,
-  });
+  const res = await postImageEditWithRetry(form, "scene composite");
   console.log(`[vistroom] timing: OpenAI image render (quality=${quality}, ${restyle ? "restyle" : "mask"}) took ${Date.now() - renderStart}ms`);
-
-  if (!res.ok) {
-    const errText = await res.text();
-    throw new Error(`OpenAI image edit failed: ${res.status} ${errText}`);
-  }
 
   const body = (await res.json()) as { data?: { b64_json?: string }[] };
   const b64 = body.data?.[0]?.b64_json;
