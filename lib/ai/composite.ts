@@ -126,6 +126,34 @@ async function toImageBlob(buffer: Buffer): Promise<{ blob: Blob; filename: stri
   return { blob: new Blob([new Uint8Array(buffer)], { type: mime }), filename: `image.${ext}` };
 }
 
+/**
+ * Long edge for a PRODUCT REFERENCE image — the photos the model copies
+ * appearance from, not the canvas being edited. The room photo keeps its
+ * full COMPOSITE_MAX_EDGE resolution (it IS the output); references only
+ * need enough detail to identify material, colour and shape, and each one
+ * ends up occupying a fraction of the final frame.
+ *
+ * This is an upload-size fix, and upload is the asymmetric direction. A
+ * scene composite posts the room plus one image per item in a single
+ * multipart body — with 10 items at supplier-native resolution that is
+ * tens of megabytes, and product feeds serve far larger files than a
+ * reference needs. On a connection with limited uplink (a phone hotspot,
+ * measured here) that upload is the step that stalls: in one real run the
+ * text-to-image calls, which upload nothing, succeeded first try while the
+ * composite needed five attempts and 139 seconds.
+ */
+const REFERENCE_MAX_EDGE = 1024;
+const REFERENCE_QUALITY = 88;
+
+async function toReferenceImageBlob(buffer: Buffer): Promise<{ blob: Blob; filename: string }> {
+  const resized = await sharp(buffer)
+    .rotate()
+    .resize(REFERENCE_MAX_EDGE, REFERENCE_MAX_EDGE, { fit: "inside", withoutEnlargement: true })
+    .jpeg({ quality: REFERENCE_QUALITY })
+    .toBuffer();
+  return { blob: new Blob([new Uint8Array(resized)], { type: "image/jpeg" }), filename: "image.jpg" };
+}
+
 export interface CompositeResult {
   /** Base64 PNG — the room photo with the product composited in. */
   imageBase64: string;
@@ -233,7 +261,7 @@ export async function compositeProductIntoRoom(
   });
 
   const roomImage = await toImageBlob(roomPhoto);
-  const productImage = await toImageBlob(productPhoto);
+  const productImage = await toReferenceImageBlob(productPhoto);
   const productDescription = await describeProductForPrompt(productPhoto);
 
   const form = new FormData();
@@ -411,7 +439,7 @@ export async function composeSceneWithProducts(
   const descriptionsStart = Date.now();
   const prepared = await Promise.all(
     items.map(async (item) => ({
-      blob: await toImageBlob(item.productPhoto),
+      blob: await toReferenceImageBlob(item.productPhoto),
       description: await describeProductForPrompt(item.productPhoto),
     })),
   );
