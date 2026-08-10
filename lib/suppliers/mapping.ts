@@ -173,6 +173,34 @@ function pickProductImageUrl(images: string[] | undefined): string | undefined {
   return images.find((u) => u.includes("_wbg-fr_")) ?? images.find((u) => u.includes("_wbg-an-m_")) ?? images[0];
 }
 
+/**
+ * Supplier feeds prefix nearly every title with their own brand ("vidaXL
+ * Kinderbett mit LED..."), which is wholesaler catalogue convention, not a
+ * customer-facing product name. Left in, it makes the storefront read as a
+ * reseller of someone else's catalogue and puts a supplier's brand on our
+ * own product pages, our cart, and our order confirmations.
+ *
+ * Stripped at mapping time rather than in a component, so the clean name is
+ * what every surface sees — marketplace, look detail, cart, checkout — and
+ * what gets persisted by the seed script.
+ *
+ * The supplier is still recorded on `product.supplier` for fulfilment; this
+ * only changes the display name.
+ */
+function stripSupplierPrefix(title: string, ...prefixes: string[]): string {
+  for (const prefix of prefixes) {
+    const p = prefix.trim();
+    if (!p) continue;
+    if (title.toLowerCase().startsWith(`${p.toLowerCase()} `)) {
+      const stripped = title.slice(p.length).trim();
+      // Never strip down to nothing — a title that is only the brand name
+      // is better shown as-is than as an empty string.
+      if (stripped) return stripped;
+    }
+  }
+  return title;
+}
+
 export function mapSupplierProduct(raw: RawSupplierProduct, supplierId: string, supplierLabel: string): Product {
   // VidaXL's real feed has no description — fall back to a copy line built
   // from the category path so the product card never shows blank copy.
@@ -181,7 +209,7 @@ export function mapSupplierProduct(raw: RawSupplierProduct, supplierId: string, 
     : `${raw.title}. Sourced via ${supplierLabel}, category ${raw.vendorCategory.split(">").pop()?.trim() ?? raw.vendorCategory}.`;
   return {
     id: `${supplierId}-${raw.sku}`,
-    name: raw.title,
+    name: stripSupplierPrefix(raw.title, raw.brand ?? "", supplierLabel, supplierId),
     brand: raw.brand || supplierLabel,
     category: inferCategory(raw),
     price: computeRetailPrice(raw),

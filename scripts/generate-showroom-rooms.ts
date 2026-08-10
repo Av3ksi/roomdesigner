@@ -70,7 +70,7 @@ import { cjEnabled, searchCjProducts } from "../lib/suppliers/cjdropshipping";
 import { createFinishedRoom } from "../lib/finishedRooms";
 import { dbEnabled } from "../lib/db";
 import { loadProductCatalog, upsertProduct } from "../lib/productSearchDb";
-import { searchProducts } from "../lib/productSearch";
+import { searchProducts, findBestCatalogMatch } from "../lib/productSearch";
 import { STYLE_MAP } from "../lib/styles";
 import type { DetectionBox, Product, ProductCategory } from "../lib/types";
 
@@ -338,17 +338,52 @@ async function buildConcept(concept: Concept, catalog: Product[], roomPath: stri
     renderedProducts.map((p, i) => ({ index: i + 1, name: p.name, category: p.category })),
   );
   const itemBoxes: Record<string, DetectionBox> = {};
+  const usedProductIds = new Set<string>();
+  // Objects the render invented — a throw over the sofa arm, cushions, a
+  // stack of books. The image model adds these because it is trained on
+  // styled interior photography, and they are a large part of why a render
+  // reads as a real home rather than a showroom. The problem is only that
+  // they are unpurchasable: a customer buying "the look" would not receive
+  // them. Rather than fight the model, match each one against our own
+  // catalogue — the same treatment the Looks Studio route
+  // (app/api/finished-rooms/generate) already gives them, which this script
+  // was silently skipping.
+  const autoMatched: Product[] = [];
+
   for (const d of detected) {
     if (d.pickedIndex >= 1 && d.pickedIndex <= renderedProducts.length) {
-      itemBoxes[renderedProducts[d.pickedIndex - 1].id] = d.box;
+      const p = renderedProducts[d.pickedIndex - 1];
+      if (!usedProductIds.has(p.id)) {
+        itemBoxes[p.id] = d.box;
+        usedProductIds.add(p.id);
+      }
+      continue;
+    }
+    // Not something we placed. findBestCatalogMatch requires real keyword
+    // overlap and returns null rather than guessing — a wrong match would
+    // put a buy-pin on the wrong product, which is worse than no pin.
+    // d.description comes back in German to match the German supplier feed.
+    const match = findBestCatalogMatch(catalog, d.description);
+    if (match && !usedProductIds.has(match.id)) {
+      autoMatched.push(match);
+      itemBoxes[match.id] = d.box;
+      usedProductIds.add(match.id);
+      console.log(`    + auto-matched staged "${d.description}" -> ${match.name} (CHF ${match.price})`);
+    } else {
+      console.warn(`    ⚠ staged "${d.description}" has no catalogue match — it stays visible but unpurchasable.`);
     }
   }
+
   for (const product of renderedProducts) {
     if (!itemBoxes[product.id]) console.warn(`    ⚠ "${product.name}" wasn't found in the render — it won't have a clickable pin.`);
   }
 
-  const totalPrice = renderedProducts.reduce((sum, p) => sum + p.price, 0);
-  const styleTags = Array.from(new Set(renderedProducts.flatMap((p) => p.styles)));
+  // Auto-matched pieces are real catalogue products with real prices, so
+  // they belong in the room's total and its product list exactly like the
+  // ones we placed deliberately.
+  const allProducts = [...renderedProducts, ...autoMatched];
+  const totalPrice = allProducts.reduce((sum, p) => sum + p.price, 0);
+  const styleTags = Array.from(new Set(allProducts.flatMap((p) => p.styles)));
 
   console.log("  Saving finished room...");
   const id = await createFinishedRoom({
@@ -356,12 +391,14 @@ async function buildConcept(concept: Concept, catalog: Product[], roomPath: stri
     description: concept.description,
     styleTags,
     heroImageBase64: finalImage.toString("base64"),
-    productIds: renderedProducts.map((p) => p.id),
+    productIds: allProducts.map((p) => p.id),
     itemBoxes,
+    autoMatchedIds: autoMatched.map((p) => p.id),
     totalPrice,
   });
 
-  console.log(`  ✓ Saved — CHF ${totalPrice} across ${items.length} item(s). View at /looks/${id}.`);
+  const matchNote = autoMatched.length > 0 ? ` (${autoMatched.length} auto-matched from staging)` : "";
+  console.log(`  ✓ Saved — CHF ${totalPrice} across ${allProducts.length} item(s)${matchNote}. View at /looks/${id}.`);
   return true;
 }
 
