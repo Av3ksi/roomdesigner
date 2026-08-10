@@ -72,11 +72,16 @@ const PLACEMENT_SCHEMA = {
   additionalProperties: false,
   required: ["items", "roomDimensions"],
   properties: {
+    // No minItems/maxItems: Anthropic's structured outputs don't support
+    // array-length constraints, and sending an unsupported keyword risks the
+    // schema being rejected outright — which is exactly the failure this
+    // array restructure was fixing. The count is enforced in the prompt
+    // instead, and the parser below already falls back to a default box for
+    // any category the model omits, so a short array degrades rather than
+    // breaking.
     items: {
       type: "array",
       items: placementItemSchema,
-      minItems: CATEGORIES.length,
-      maxItems: CATEGORIES.length,
     },
     roomDimensions: roomDimensionsSchema,
   },

@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import sharp from "sharp";
 import type { DesignStyle, Product } from "../types";
 import { generateImageWithRetry } from "./openaiImageGen";
 
@@ -55,6 +56,31 @@ export async function generatePosterArtwork(
     "photograph of a wall or room — this is the print itself, not a mockup of it hanging somewhere.";
 
   return generateImageWithRetry(prompt, quality, "1024x1536");
+}
+
+/**
+ * Long edge of the stored catalog thumbnail. The full-resolution generated
+ * PNG stays in memory for compositing; only this smaller JPEG is persisted
+ * as the product's imageUrl.
+ *
+ * This matters more than it looks: lib/productSearchDb.ts's
+ * loadProductCatalog() does a bare `SELECT * FROM products` and caches
+ * every row in memory, so whatever goes in image_url is loaded on every
+ * catalog read. A raw 1024x1536 "high" quality PNG base64-encodes to
+ * several MB, five posters are added per run, and nothing ever prunes
+ * them — storing the full-size image would bloat the catalog load a
+ * little more with every single run of the showroom generator, forever.
+ */
+const CATALOG_THUMBNAIL_MAX_EDGE = 800;
+const CATALOG_THUMBNAIL_QUALITY = 82;
+
+/** Compresses a generated poster into a data URL small enough to live in the catalog (see CATALOG_THUMBNAIL_MAX_EDGE). */
+export async function toCatalogImageUrl(artwork: Buffer): Promise<string> {
+  const thumbnail = await sharp(artwork)
+    .resize(CATALOG_THUMBNAIL_MAX_EDGE, CATALOG_THUMBNAIL_MAX_EDGE, { fit: "inside", withoutEnlargement: true })
+    .jpeg({ quality: CATALOG_THUMBNAIL_QUALITY })
+    .toBuffer();
+  return `data:image/jpeg;base64,${thumbnail.toString("base64")}`;
 }
 
 /** Builds the catalog Product row for a generated poster — caller is responsible for persisting it (see lib/productSearchDb.ts's upsertProduct). */

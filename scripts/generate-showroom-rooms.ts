@@ -57,7 +57,7 @@ import { compositingEnabled, composeSceneWithProducts, reshapeBoxForProduct, typ
 import { suggestPlacements } from "../lib/ai/placement";
 import { detectSceneItems } from "../lib/ai/locate";
 import { generateBaseRoomPhoto } from "../lib/ai/generateRoom";
-import { generatePosterArtwork, buildPosterProduct } from "../lib/ai/posterArt";
+import { generatePosterArtwork, buildPosterProduct, toCatalogImageUrl } from "../lib/ai/posterArt";
 import { cjEnabled, searchCjProducts } from "../lib/suppliers/cjdropshipping";
 import { createFinishedRoom } from "../lib/finishedRooms";
 import { dbEnabled } from "../lib/db";
@@ -243,9 +243,11 @@ async function buildConcept(concept: Concept, catalog: Product[], roomPath: stri
 
   console.log(`  Generating custom poster art (${quality} quality)...`);
   const posterBuffer = await generatePosterArtwork(style, concept.title, quality);
+  // The catalog row stores a compressed thumbnail; posterBuffer (full
+  // resolution) is what actually gets composited, via preloadedBuffers below.
   const posterProduct: Product = {
     ...buildPosterProduct(style, concept.title),
-    imageUrl: `data:image/png;base64,${posterBuffer.toString("base64")}`,
+    imageUrl: await toCatalogImageUrl(posterBuffer),
   };
   await upsertProduct(posterProduct);
   console.log(`  art: ${posterProduct.name} (${posterProduct.id}, CHF ${posterProduct.price}, provisional Gelato pricing)`);
