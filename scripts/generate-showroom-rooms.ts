@@ -44,8 +44,16 @@
  *   keywords define "Scandinavian" vs. "Dark Luxury", not just "any 3-6
  *   products tagged with that style."
  *
+ * Usage — see what a run WOULD pick, for free:
+ *   npx tsx scripts/generate-showroom-rooms.ts 4 --dry-run
+ *   Does every catalog lookup and prints the exact product each slot would
+ *   get, then stops before the first image generation. Costs nothing. Run
+ *   this first whenever the concepts or their keywords have been edited:
+ *   an empty slot or an absurd pick is far cheaper to find here than in
+ *   the finished render.
+ *
  * Usage — more rooms, once one has come out well:
- *   npx tsx scripts/generate-showroom-rooms.ts 5
+ *   npx tsx scripts/generate-showroom-rooms.ts 4
  *   Takes the first N concepts below. Each room costs real money (two
  *   image generations plus a composite, all at "high" quality), which is
  *   why one is the default rather than the whole set.
@@ -106,21 +114,52 @@ interface Concept {
   cjAccent: { category: ProductCategory; keyword: string };
 }
 
+/**
+ * WHY THESE FOUR, AND WHY NOT THE OBVIOUS ONES.
+ *
+ * Scandinavian and Japandi are deliberately absent — the showroom already
+ * has a Scandinavian room, and the two read as near-neighbours on screen
+ * (pale wood, undyed textile, high-key light), so a visitor scrolling the
+ * looks grid would see the same room three times.
+ *
+ * The four below were picked from a coverage count over the real catalog
+ * rather than by taste, because a concept the feed cannot fill produces a
+ * thin room at full price. Two styles that were previously in this list —
+ * Modern Luxury and Mediterranean — were dropped for exactly that reason:
+ * they were the two thinnest style tags in the whole catalog. Organic
+ * Modern is the best-supported style we have after Scandinavian, and Dark
+ * Luxury the best-supported dark one, which is also why they lead.
+ *
+ * Style ids are only a SOFT relevance boost in searchProducts (weight 1,
+ * against 2 per keyword hit), so a slot is really won or lost on the
+ * German keyword list, not the tag. Keywords are therefore written against
+ * the words the VidaXL CH-DE feed actually uses in its titles.
+ *
+ * Umlauts are matched literally (`text.includes(k)` over lowercased feed
+ * text), so "grun" does NOT match "grün". Where a term has one, both
+ * spellings are listed — a keyword that hits nothing costs nothing, and
+ * feeds are inconsistent about transliterating.
+ *
+ * One further constraint that is easy to miss: a concept's `cjAccent`
+ * category must NOT also appear in its `items`. Placement returns one box
+ * per category, so two products sharing a category would be composited
+ * into the same region of the room, on top of each other.
+ */
 const CONCEPTS: Concept[] = [
   {
-    title: "Scandinavian Living Room",
-    description: "Light oak tones, undyed wool, and soft daylight — a calm, airy Scandinavian living room.",
-    primaryStyleId: "scandinavian",
+    title: "Organic Modern Living Room",
+    description: "Curved forms, oat and sage, raw timber and clay — a warm, softly modern living room.",
+    primaryStyleId: "organicmodern",
     cjAccent: { category: "decor", keyword: "ceramic vase" },
     items: [
-      { category: "sofa", keywords: ["eiche", "boucle", "leinen", "beige", "linen", "3-sitzer", "sitzer sofa"], styleIds: ["scandinavian"] },
-      { category: "chair", keywords: ["eiche", "sessel", "boucle", "leinen"], styleIds: ["scandinavian"] },
-      { category: "table", keywords: ["eiche", "couchtisch", "rund", "oval", "oak"], styleIds: ["scandinavian"] },
-      { category: "rug", keywords: ["teppich", "wolle", "beige", "creme", "wool"], styleIds: ["scandinavian"] },
-      { category: "lighting", keywords: ["stehlampe", "papier", "floor lamp"], styleIds: ["scandinavian"] },
-      { category: "plant", keywords: ["olivenbaum", "kunstpflanze", "pflanze", "plant"], styleIds: ["scandinavian", "mediterranean"] },
-      { category: "storage", keywords: ["sideboard", "kommode", "eiche", "oak"], styleIds: ["scandinavian"] },
-      { category: "textile", keywords: ["decke", "plaid", "kissen", "throw"], styleIds: ["scandinavian", "cozy"] },
+      { category: "sofa", keywords: ["boucle", "bouclé", "beige", "creme", "leinen", "geschwungen", "rund", "sitzer sofa"], styleIds: ["organicmodern"] },
+      { category: "chair", keywords: ["sessel", "boucle", "bouclé", "rattan", "beige", "geschwungen"], styleIds: ["organicmodern"] },
+      { category: "table", keywords: ["couchtisch", "massivholz", "mango", "akazie", "rund", "oval"], styleIds: ["organicmodern"] },
+      { category: "rug", keywords: ["teppich", "jute", "sisal", "natur", "beige", "creme"], styleIds: ["organicmodern"] },
+      { category: "lighting", keywords: ["stehlampe", "bogenlampe", "rattan", "leinen", "stehleuchte"], styleIds: ["organicmodern"] },
+      { category: "plant", keywords: ["kunstpflanze", "olivenbaum", "pflanze", "kunstbaum"], styleIds: ["organicmodern"] },
+      { category: "storage", keywords: ["sideboard", "kommode", "massivholz", "mango", "rattan"], styleIds: ["organicmodern"] },
+      { category: "textile", keywords: ["kissen", "plaid", "decke", "leinen", "baumwolle"], styleIds: ["organicmodern", "cozy"] },
     ],
   },
   {
@@ -129,62 +168,45 @@ const CONCEPTS: Concept[] = [
     primaryStyleId: "darkluxury",
     cjAccent: { category: "decor", keyword: "brass candle holder" },
     items: [
-      { category: "sofa", keywords: ["samt", "velvet", "grun", "smaragd", "blau", "navy"], styleIds: ["darkluxury"] },
-      { category: "chair", keywords: ["samt", "velvet", "sessel", "cocktailsessel"], styleIds: ["darkluxury", "modernluxury"] },
+      { category: "sofa", keywords: ["samt", "velvet", "grün", "gruen", "smaragd", "dunkelgrün", "blau", "navy"], styleIds: ["darkluxury"] },
+      { category: "chair", keywords: ["samt", "velvet", "sessel", "cocktailsessel", "ohrensessel"], styleIds: ["darkluxury", "modernluxury"] },
       { category: "table", keywords: ["marmor", "marble", "couchtisch", "schwarz"], styleIds: ["darkluxury", "modernluxury"] },
-      { category: "rug", keywords: ["teppich", "dunkel", "muster", "orient"], styleIds: ["darkluxury"] },
-      { category: "lighting", keywords: ["stehlampe", "messing", "brass", "gold"], styleIds: ["darkluxury", "modernluxury"] },
+      { category: "rug", keywords: ["teppich", "dunkel", "muster", "orient", "schwarz"], styleIds: ["darkluxury"] },
+      { category: "lighting", keywords: ["stehlampe", "messing", "gold", "stehleuchte"], styleIds: ["darkluxury", "modernluxury"] },
       { category: "storage", keywords: ["sideboard", "kommode", "schwarz", "walnuss", "walnut"], styleIds: ["darkluxury", "modernluxury"] },
-      { category: "textile", keywords: ["kissen", "samt", "velvet", "cushion"], styleIds: ["darkluxury"] },
+      { category: "textile", keywords: ["kissen", "samt", "velvet"], styleIds: ["darkluxury"] },
     ],
   },
   {
-    title: "Japandi Living Room",
-    description: "Low furniture, natural linen and ash, and quiet negative space — a warm Japandi / organic-modern living room.",
-    primaryStyleId: "japandi",
-    cjAccent: { category: "textile", keyword: "linen cushion cover" },
+    title: "Industrial Loft Living Room",
+    description: "Blackened steel, cognac leather and raw brick — a warm loft with a hard-edged shell.",
+    primaryStyleId: "industrial",
+    cjAccent: { category: "textile", keyword: "wool throw blanket" },
     items: [
-      { category: "sofa", keywords: ["leinen", "linen", "niedrig", "eiche", "esche", "ash"], styleIds: ["japandi", "organicmodern"] },
-      { category: "chair", keywords: ["rattan", "eiche", "sessel", "esche"], styleIds: ["japandi", "organicmodern"] },
-      { category: "table", keywords: ["niedrig", "couchtisch", "eiche", "low table"], styleIds: ["japandi"] },
-      { category: "rug", keywords: ["teppich", "jute", "natur", "natural"], styleIds: ["japandi", "organicmodern"] },
-      { category: "lighting", keywords: ["laterne", "papier", "stehlampe", "lantern"], styleIds: ["japandi"] },
-      { category: "decor", keywords: ["vase", "dekovase", "steingutvase"], styleIds: ["japandi", "minimalist"] },
-      { category: "plant", keywords: ["bonsai", "ficus", "pflanze", "plant"], styleIds: ["japandi"] },
-      { category: "storage", keywords: ["sideboard", "kommode", "eiche", "esche"], styleIds: ["japandi"] },
-      { category: "textile", keywords: ["kissen", "leinen", "cushion"], styleIds: ["japandi", "organicmodern"] },
+      { category: "sofa", keywords: ["leder", "kunstleder", "braun", "cognac", "sitzer sofa"], styleIds: ["industrial"] },
+      { category: "chair", keywords: ["sessel", "leder", "kunstleder", "braun", "metall"], styleIds: ["industrial"] },
+      { category: "table", keywords: ["couchtisch", "metall", "schwarz", "massivholz", "industrial"], styleIds: ["industrial"] },
+      { category: "rug", keywords: ["teppich", "vintage", "grau", "muster", "used-look"], styleIds: ["industrial"] },
+      { category: "lighting", keywords: ["stehlampe", "metall", "schwarz", "stehleuchte", "industrial"], styleIds: ["industrial"] },
+      { category: "storage", keywords: ["regal", "metall", "schwarz", "sideboard", "industrial"], styleIds: ["industrial"] },
+      { category: "plant", keywords: ["kunstpflanze", "pflanze", "kunstbaum", "monstera"], styleIds: ["industrial"] },
+      { category: "decor", keywords: ["metall", "schwarz", "vase", "deko"], styleIds: ["industrial"] },
     ],
   },
   {
-    title: "Modern Luxury Living Room",
-    description: "Cream boucle, marble, and brushed brass — a bright, editorial modern-luxury living room.",
-    primaryStyleId: "modernluxury",
-    cjAccent: { category: "decor", keyword: "marble tray" },
+    title: "Cozy Layered Living Room",
+    description: "Rust and oat wool, amber light and more texture than strictly necessary — a room built for evenings.",
+    primaryStyleId: "cozy",
+    cjAccent: { category: "decor", keyword: "scented candle jar" },
     items: [
-      { category: "sofa", keywords: ["boucle", "creme", "beige", "samt", "sitzer"], styleIds: ["modernluxury"] },
-      { category: "chair", keywords: ["sessel", "boucle", "samt", "creme", "cocktailsessel"], styleIds: ["modernluxury"] },
-      { category: "table", keywords: ["marmor", "marble", "couchtisch", "messing", "brass"], styleIds: ["modernluxury", "darkluxury"] },
-      { category: "rug", keywords: ["teppich", "creme", "beige", "wolle"], styleIds: ["modernluxury"] },
-      { category: "lighting", keywords: ["stehlampe", "messing", "brass", "gold"], styleIds: ["modernluxury", "darkluxury"] },
-      { category: "decor", keywords: ["vase", "skulptur", "dekoobjekt"], styleIds: ["modernluxury", "minimalist"] },
-      { category: "storage", keywords: ["sideboard", "kommode", "hochglanz", "marmor"], styleIds: ["modernluxury"] },
-      { category: "textile", keywords: ["kissen", "samt", "velvet", "seide"], styleIds: ["modernluxury"] },
-    ],
-  },
-  {
-    title: "Mediterranean Living Room",
-    description: "Warm terracotta, rattan, and sun-washed linen — a relaxed Mediterranean-coastal living room.",
-    primaryStyleId: "mediterranean",
-    cjAccent: { category: "decor", keyword: "rattan basket" },
-    items: [
-      { category: "sofa", keywords: ["leinen", "linen", "terrakotta", "beige", "sitzer"], styleIds: ["mediterranean", "cozy"] },
-      { category: "chair", keywords: ["rattan", "korbsessel", "sessel"], styleIds: ["mediterranean"] },
-      { category: "table", keywords: ["rattan", "holz", "couchtisch", "terrakotta"], styleIds: ["mediterranean"] },
-      { category: "rug", keywords: ["teppich", "jute", "natur", "terrakotta"], styleIds: ["mediterranean", "cozy"] },
-      { category: "lighting", keywords: ["stehlampe", "rattan", "korb", "laterne"], styleIds: ["mediterranean"] },
-      { category: "plant", keywords: ["olivenbaum", "palme", "kunstpflanze", "plant"], styleIds: ["mediterranean"] },
-      { category: "decor", keywords: ["vase", "keramik", "terrakotta"], styleIds: ["mediterranean", "cozy"] },
-      { category: "textile", keywords: ["kissen", "leinen", "plaid", "decke"], styleIds: ["mediterranean", "cozy"] },
+      { category: "sofa", keywords: ["stoff", "beige", "braun", "cord", "sitzer sofa", "gemütlich", "gemutlich"], styleIds: ["cozy"] },
+      { category: "chair", keywords: ["sessel", "ohrensessel", "cord", "stoff", "braun"], styleIds: ["cozy"] },
+      { category: "table", keywords: ["couchtisch", "holz", "massivholz", "rund"], styleIds: ["cozy"] },
+      { category: "rug", keywords: ["teppich", "hochflor", "shaggy", "wolle", "braun", "beige"], styleIds: ["cozy"] },
+      { category: "lighting", keywords: ["stehlampe", "tischlampe", "stehleuchte", "warm"], styleIds: ["cozy"] },
+      { category: "storage", keywords: ["sideboard", "kommode", "holz", "regal"], styleIds: ["cozy"] },
+      { category: "plant", keywords: ["kunstpflanze", "pflanze", "kunstbaum"], styleIds: ["cozy"] },
+      { category: "textile", keywords: ["decke", "plaid", "kissen", "wolle", "fell"], styleIds: ["cozy"] },
     ],
   },
 ];
@@ -213,10 +235,16 @@ function pickBest(catalog: Product[], item: ConceptItem): Product | null {
   return best ?? null;
 }
 
-/** Returns whether a room was actually saved — several early returns below skip a room without throwing, so callers must check this rather than just "did it throw." */
-async function buildConcept(concept: Concept, catalog: Product[], roomPath: string | null, quality: "low" | "medium" | "high"): Promise<boolean> {
-  console.log(`\n=== ${concept.title} (room photo: ${roomPath ?? `AI-generated, ${concept.primaryStyleId} style`}) ===`);
-
+/**
+ * Every catalog pick a concept resolves to, in placement order — the whole
+ * free part of building a room.
+ *
+ * Deliberately separate from buildConcept so --dry-run exercises the exact
+ * same code path the paid run does. A dry run that re-implemented the
+ * picking would eventually drift from it and start blessing runs that then
+ * pick something else, which is worse than having no dry run at all.
+ */
+async function pickConceptProducts(concept: Concept, catalog: Product[]): Promise<Product[]> {
   const matched: Product[] = [];
   for (const item of concept.items) {
     const match = pickBest(catalog, item);
@@ -226,10 +254,6 @@ async function buildConcept(concept: Concept, catalog: Product[], roomPath: stri
     }
     console.log(`  ${item.category}: ${match.name} (${match.id}, CHF ${match.price})`);
     matched.push(match);
-  }
-  if (matched.length === 0) {
-    console.error(`  no products matched at all for "${concept.title}" — skipping this room entirely.`);
-    return false;
   }
 
   if (cjEnabled()) {
@@ -245,6 +269,38 @@ async function buildConcept(concept: Concept, catalog: Product[], roomPath: stri
     } catch (err) {
       console.warn(`  CJ search failed (${err instanceof Error ? err.message : err}) — skipping that accent.`);
     }
+  }
+
+  return matched;
+}
+
+/**
+ * Prints what a concept would be built from without generating anything.
+ * Free: no image model is called, so nothing here is billable.
+ */
+async function dryRunConcept(concept: Concept, catalog: Product[]): Promise<void> {
+  console.log(`\n=== ${concept.title} (dry run — ${concept.primaryStyleId} style) ===`);
+  const matched = await pickConceptProducts(concept, catalog);
+  const filled = matched.length;
+  // +1 for the poster: the "art" slot is never a catalog pick, it's always
+  // generated, so it is guaranteed to be filled in a real run.
+  console.log(
+    `  -> ${filled + 1} item(s): ${filled} from the catalog + 1 generated poster. ` +
+      `Catalog subtotal CHF ${matched.reduce((sum, p) => sum + p.price, 0)}.`,
+  );
+  if (filled < 4) {
+    console.warn("  ⚠ thin room — under 4 real products. Widen this concept's keywords before spending money on it.");
+  }
+}
+
+/** Returns whether a room was actually saved — several early returns below skip a room without throwing, so callers must check this rather than just "did it throw." */
+async function buildConcept(concept: Concept, catalog: Product[], roomPath: string | null, quality: "low" | "medium" | "high"): Promise<boolean> {
+  console.log(`\n=== ${concept.title} (room photo: ${roomPath ?? `AI-generated, ${concept.primaryStyleId} style`}) ===`);
+
+  const matched = await pickConceptProducts(concept, catalog);
+  if (matched.length === 0) {
+    console.error(`  no products matched at all for "${concept.title}" — skipping this room entirely.`);
+    return false;
   }
 
   const style = STYLE_MAP[concept.primaryStyleId];
@@ -411,7 +467,9 @@ async function buildConcept(concept: Concept, catalog: Product[], roomPath: stri
 const DEFAULT_COUNT = 1;
 
 async function main() {
-  const args = process.argv.slice(2);
+  const rawArgs = process.argv.slice(2);
+  const dryRun = rawArgs.includes("--dry-run");
+  const args = rawArgs.filter((a) => a !== "--dry-run");
   // First arg is the room count when it's a bare number; anything else is
   // treated as a room-photo path, so the old photo-path usage still works.
   const countArg = args[0] !== undefined && /^\d+$/.test(args[0]) ? Number(args[0]) : null;
@@ -425,12 +483,15 @@ async function main() {
       process.exit(1);
     }
   }
-  if (!compositingEnabled()) {
+  // A dry run never reaches an image model, so it deliberately does NOT
+  // require an OpenAI key — the whole point is to be runnable before, and
+  // independently of, anything billable.
+  if (!dryRun && !compositingEnabled()) {
     console.error("OPENAI_API_KEY is not set. Add it to .env first.");
     process.exit(1);
   }
   if (!dbEnabled()) {
-    console.error("DATABASE_URL is not set — finished rooms need persistence. Add it to .env first.");
+    console.error("DATABASE_URL is not set — the product catalog lives in Postgres. Add it to .env first.");
     process.exit(1);
   }
 
@@ -442,6 +503,13 @@ async function main() {
   console.log("Loading product catalog...");
   const catalog = await loadProductCatalog();
   console.log(`${catalog.length} product(s) in the catalog.`);
+
+  if (dryRun) {
+    console.log(`\nDry run — showing what ${concepts.length} concept(s) would be built from. Nothing is generated and nothing is billed.`);
+    for (const concept of concepts) await dryRunConcept(concept, catalog);
+    console.log(`\nDry run complete. Re-run without --dry-run to actually generate ${concepts.length} room(s).`);
+    return;
+  }
 
   // Each concept gets its own try/catch — a transient failure partway
   // through (OpenAI's own API returning a 5xx, a Cloudflare edge hiccup,

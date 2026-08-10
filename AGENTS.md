@@ -53,7 +53,7 @@ comment before running one.
 
 ```bash
 npx tsx scripts/generate-showroom-rooms.ts        # ONE curated room (default)
-npx tsx scripts/generate-showroom-rooms.ts 5      # first N concepts
+npx tsx scripts/generate-showroom-rooms.ts 4      # first N concepts
 npx tsx scripts/generate-looks.ts <count> [style] [quality]
 npx tsx scripts/seed-products.ts                  # load catalogue into Postgres
 npx tsx scripts/fix-room-pin.ts <roomId>          # repair a hotspot, no regeneration
@@ -62,6 +62,7 @@ npx tsx scripts/fix-room-pin.ts <roomId>          # repair a hotspot, no regener
 Diagnostics (cheap, safe, never print secrets):
 
 ```bash
+npx tsx scripts/generate-showroom-rooms.ts 4 --dry-run   # what WOULD be picked, free
 npx tsx scripts/openai-diagnose.ts    # is image generation working at all
 npx tsx scripts/openai-matrix.ts      # is a failure parameter-driven or intermittent
 npx tsx scripts/cj-test-fetch.ts [kw] # CJ Dropshipping API probe
@@ -186,7 +187,20 @@ generated two images per concept *before* validating placement, so a
 placement bug burned five rooms' worth of image spend per run for zero
 output. It now: base room -> placement (cheap, fails often) -> poster ->
 composite, defaults to one room, and aborts the batch if the first room
-fails with none succeeded.
+fails with none succeeded. `--dry-run` resolves every catalog pick and
+prints the room contents without calling an image model at all — run it
+after editing concepts or keywords, before spending anything.
+
+### Picking a showroom concept
+Don't choose a room concept by taste. `searchProducts` treats style ids as
+a soft boost (weight 1) and keyword hits as weight 2, so a slot is won on
+the German keyword list, not the style tag — but a slot with no
+photographed product in that category is skipped outright, and enough
+skips produce a thin room at full price. Count real coverage per style
+before adding a concept. Modern Luxury and Mediterranean were removed as
+concepts for exactly this reason: they were the two thinnest style tags in
+the catalogue. Also note umlauts are matched literally, so `"grun"` does
+**not** match `"grün"` — list both spellings.
 
 ### Supplier data
 - **VidaXL's feed is German.** Search it with German keywords ("eiche",
