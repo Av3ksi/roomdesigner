@@ -21,6 +21,27 @@ export interface ProductSearchFilters {
   keywords?: string[];
   /** Hard cap on the product's real width (dimensionsCm.l) — for wall-fit constraints. */
   maxWidthCm?: number;
+  /**
+   * Hard floor on the product's real width (dimensionsCm.l).
+   *
+   * Results are tie-broken by ascending price, so without a floor the
+   * cheapest thing in a category wins — and the cheapest thing in a
+   * category is usually the smallest. Confirmed on the real feed: the
+   * "rug" slot resolved to a 90 x 90 cm anti-slip mat (a doormat) in three
+   * different rooms, and "sofa" to a 74 cm sofa bed, because those were
+   * the cheapest rows that matched.
+   */
+  minWidthCm?: number;
+  /**
+   * Hard floor on the product's LONGEST real side, whichever axis that is.
+   *
+   * For things whose defining dimension isn't width — a floor lamp is tall,
+   * not wide — and where the feed's axis order isn't dependable. Six 9 x 9 x
+   * 2.5 cm ceiling spotlights matched the "lighting" slot ahead of any
+   * actual floor lamp; a longest-side floor rejects them without needing to
+   * know which axis the feed called height.
+   */
+  minLongestSideCm?: number;
   /** Soft boost for style overlap. */
   styleIds?: string[];
   limit?: number;
@@ -49,6 +70,8 @@ export function searchProducts(products: Product[], filters: ProductSearchFilter
   const maxPrice = toFiniteNumber(filters.maxPrice);
   const minPrice = toFiniteNumber(filters.minPrice);
   const maxWidthCm = toFiniteNumber(filters.maxWidthCm);
+  const minWidthCm = toFiniteNumber(filters.minWidthCm);
+  const minLongestSideCm = toFiniteNumber(filters.minLongestSideCm);
   const limit = toFiniteNumber(filters.limit) ?? 8;
   const keywords = toStringArray(filters.keywords);
   const styleIds = toStringArray(filters.styleIds);
@@ -58,6 +81,18 @@ export function searchProducts(products: Product[], filters: ProductSearchFilter
     if (maxPrice !== undefined && p.price > maxPrice) return false;
     if (minPrice !== undefined && p.price < minPrice) return false;
     if (maxWidthCm !== undefined && p.dimensionsCm && p.dimensionsCm.l > maxWidthCm) return false;
+    // Size floors apply only when the feed actually gave dimensions, the
+    // same rule maxWidthCm follows. Dropping every dimensionless row would
+    // be the stricter reading, but the feed's Size column needs two numbers
+    // to parse at all (scripts/ingest-vidaxl-feed.py), so a genuinely good
+    // "Stehleuchte ... 193 cm" has no parsed dimensions and would be thrown
+    // out alongside the junk. Unknown size stays eligible; keyword scoring
+    // and the caller's exclusion list handle those.
+    if (minWidthCm !== undefined && p.dimensionsCm && p.dimensionsCm.l < minWidthCm) return false;
+    if (minLongestSideCm !== undefined && p.dimensionsCm) {
+      const longest = Math.max(p.dimensionsCm.l, p.dimensionsCm.w, p.dimensionsCm.h);
+      if (longest < minLongestSideCm) return false;
+    }
     return true;
   });
 
