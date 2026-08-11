@@ -208,6 +208,25 @@ the catalogue. Also note umlauts are matched literally, so `"grun"` does
   `lib/suppliers/mapping.ts` is bilingual for this reason — an English-only
   keyword list silently matched almost nothing and dumped every product into
   a default style pair.
+- **Keyword matching is a plain substring test, and German compounds
+  weaponise that.** `"wolle"` matches `Baumwolle` (cotton) and pulled a
+  guest towel into a wool-throw slot; `"grau"` pulled in window film;
+  `"samt"` pulled in blackout curtains. For automated picking, use **object
+  nouns only** — never bare colours or materials, which describe a property
+  every wrong answer also has.
+- **Umlauts are matched literally.** `"grun"` does not match `"grün"`. List
+  both spellings.
+- **The feed's categories are coarser than any slot.** `mapping.ts` matches
+  compounds on their head noun, so `Kissenbezug` files under `-bezug`, not
+  as a textile: measured, 446 of 447 products in the `textile` category are
+  bed duvets. And `decor` is the *fallback* bucket — 5,291 of 9,332
+  products, of which 0 contain "vase". This export is furniture; decorative
+  objects come from CJ.
+- **CJ's search is a marketplace text match with no home-decor sense.**
+  Phrasing decides whether it answers: "ceramic vase" returned a real vase,
+  "brass candle holder" returned nothing, "wool throw blanket" returned a
+  sweater. Try several phrasings and verify the query's head noun appears in
+  the result name before using it.
 - **CJ Dropshipping dimensions are packaging size, not item size.**
   Confirmed against real products: a "sofa" reported 45×40×23cm. Never feed
   CJ dimensions into scale grounding. `lib/suppliers/cjdropshipping.ts`

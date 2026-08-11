@@ -133,20 +133,30 @@ interface Concept {
   primaryStyleId: string;
   items: ConceptItem[];
   /**
-   * One small accent item sourced live from CJ Dropshipping, English
-   * keyword (material + object, e.g. "rattan basket" — CJ has no concept
-   * of style names). Deliberately a small decor/textile piece, never
-   * furniture: CJ's dimension fields are confirmed to be packaging size,
-   * not real item size (lib/suppliers/cjdropshipping.ts's module doc),
-   * so anything whose on-image scale matters a lot (a sofa, a table)
-   * stays sourced from VidaXL, which has real confirmed dimensions.
+   * One small accent item sourced live from CJ Dropshipping. English
+   * keywords, material + object ("rattan basket") — CJ has no concept of
+   * style names. Deliberately a small decor piece, never furniture: CJ's
+   * dimension fields are confirmed to be packaging size, not real item
+   * size (lib/suppliers/cjdropshipping.ts's module doc), so anything whose
+   * on-image scale matters a lot stays sourced from VidaXL.
+   *
+   * SEVERAL keywords, tried in order until one returns something that
+   * really is the object. CJ's search is a plain marketplace text match, so
+   * the wording decides whether it answers usefully at all — "ceramic vase"
+   * found a real vase where "brass candle holder" and "scented candle jar"
+   * found nothing. A rejected phrasing says nothing about the next one.
    *
    * `fallback` fills the same slot from our own catalog when CJ_API_KEY
-   * isn't set, when CJ finds nothing, or when what it finds isn't actually
-   * the thing asked for — which is most of the time. Its category must
-   * match `category` above, and neither may collide with a slot in `items`.
+   * isn't set or every keyword misses. Its category must match `category`
+   * above, and neither may collide with a slot in `items`.
+   *
+   * A note on why decor is CJ-first and not catalog-first: measured on the
+   * real feed, 0 of 3,245 eligible products in the decor category contain
+   * "vase", "schale", "laterne" or "kerzenhalter" in name or blurb. This
+   * VidaXL export is furniture; it has no decorative objects. The catalog
+   * fallback is kept for when that changes, but today it reports empty.
    */
-  cjAccent: { category: ProductCategory; keyword: string; fallback: ConceptItem };
+  cjAccent: { category: ProductCategory; keywords: string[]; fallback: ConceptItem };
 }
 
 /**
@@ -233,6 +243,7 @@ const NOT_A_LIVING_ROOM_TEXTILE = [
   // film would be composited into the sofa-throw position; towels and
   // chair pads simply are not the object.
   "stuhlpolster", "polster", "vorhang", "gardine", "folie", "tuch", "oxford", "sitzsack",
+  "stützkissen", "stutzkissen", "rückenstütz", "ruckenstutz",
 ];
 /** Recessed/ceiling fixtures and bulbs, which are "Leuchte" too but are not a lamp you can see in a room shot. */
 const NOT_A_FLOOR_LAMP = [
@@ -283,7 +294,7 @@ const CONCEPTS: Concept[] = [
     primaryStyleId: "organicmodern",
     cjAccent: {
       category: "decor",
-      keyword: "ceramic vase",
+      keywords: ["ceramic vase", "decorative vase", "flower vase"],
       fallback: { category: "decor", keywords: ["vase", "dekovase", "blumenvase", "schale", "dekoschale", "windlicht", "laterne", "kerzenhalter", "kerzenständer", "teelichthalter", "skulptur", "figur", "buchstütze"], styleIds: ["organicmodern"], minLongestSideCm: DECOR_MIN_SIDE_CM, excludeTerms: [...NOT_A_FLOOR_LAMP, ...NOT_A_SINGLE_PIECE] },
     },
     items: [
@@ -303,7 +314,7 @@ const CONCEPTS: Concept[] = [
     primaryStyleId: "darkluxury",
     cjAccent: {
       category: "decor",
-      keyword: "brass candle holder",
+      keywords: ["brass candle holder", "metal vase", "decorative vase", "ceramic vase"],
       fallback: { category: "decor", keywords: ["vase", "dekovase", "blumenvase", "schale", "dekoschale", "windlicht", "laterne", "kerzenhalter", "kerzenständer", "teelichthalter", "skulptur", "figur", "buchstütze"], styleIds: ["darkluxury"], minLongestSideCm: DECOR_MIN_SIDE_CM, excludeTerms: [...NOT_A_FLOOR_LAMP, ...NOT_A_SINGLE_PIECE] },
     },
     items: [
@@ -321,9 +332,9 @@ const CONCEPTS: Concept[] = [
     description: "Blackened steel, cognac leather and raw brick — a warm loft with a hard-edged shell.",
     primaryStyleId: "industrial",
     cjAccent: {
-      category: "textile",
-      keyword: "wool throw blanket",
-      fallback: { category: "textile", searchCategories: ["textile", "decor"], keywords: ["kissen", "kissenbezug", "zierkissen", "plaid", "wohndecke", "kuscheldecke", "überwurf", "fell"], minLongestSideCm: TEXTILE_MIN_SIDE_CM, styleIds: ["industrial"], excludeTerms: NOT_A_LIVING_ROOM_TEXTILE },
+      category: "decor",
+      keywords: ["metal vase", "decorative vase", "ceramic vase"],
+      fallback: { category: "decor", keywords: ["vase", "dekovase", "blumenvase", "schale", "dekoschale", "windlicht", "laterne", "kerzenhalter", "kerzenständer", "teelichthalter", "skulptur", "figur", "buchstütze"], styleIds: ["industrial"], minLongestSideCm: DECOR_MIN_SIDE_CM, excludeTerms: [...NOT_A_FLOOR_LAMP, ...NOT_A_SINGLE_PIECE] },
     },
     items: [
       { category: "sofa", keywords: ["leder", "kunstleder", "braun", "cognac", "sitzer sofa"], styleIds: ["industrial"], minWidthCm: SOFA_MIN_WIDTH_CM, excludeTerms: NOT_A_MAIN_SOFA },
@@ -333,7 +344,7 @@ const CONCEPTS: Concept[] = [
       { category: "lighting", keywords: ["stehlampe", "metall", "schwarz", "stehleuchte", "industrial"], styleIds: ["industrial"], minLongestSideCm: FLOOR_LAMP_MIN_SIDE_CM, excludeTerms: NOT_A_FLOOR_LAMP },
       { category: "storage", keywords: ["regal", "metall", "schwarz", "sideboard", "industrial"], styleIds: ["industrial"], minWidthCm: STORAGE_MIN_WIDTH_CM, excludeTerms: NOT_A_SINGLE_PIECE },
       { category: "plant", keywords: ["kunstpflanze", "pflanze", "kunstbaum", "monstera"], styleIds: ["industrial"], minLongestSideCm: PLANT_MIN_SIDE_CM },
-      { category: "decor", keywords: ["vase", "dekovase", "blumenvase", "schale", "dekoschale", "windlicht", "laterne", "kerzenhalter", "kerzenständer", "teelichthalter", "skulptur", "figur", "buchstütze"], styleIds: ["industrial"], minLongestSideCm: DECOR_MIN_SIDE_CM, excludeTerms: [...NOT_A_FLOOR_LAMP, ...NOT_A_SINGLE_PIECE] },
+      { category: "textile", searchCategories: ["textile", "decor"], keywords: ["kissen", "kissenbezug", "zierkissen", "plaid", "wohndecke", "kuscheldecke", "überwurf", "fell"], minLongestSideCm: TEXTILE_MIN_SIDE_CM, styleIds: ["industrial"], excludeTerms: NOT_A_LIVING_ROOM_TEXTILE },
     ],
   },
   {
@@ -342,7 +353,7 @@ const CONCEPTS: Concept[] = [
     primaryStyleId: "cozy",
     cjAccent: {
       category: "decor",
-      keyword: "scented candle jar",
+      keywords: ["ceramic vase", "decorative vase", "flower vase"],
       fallback: { category: "decor", keywords: ["vase", "dekovase", "blumenvase", "schale", "dekoschale", "windlicht", "laterne", "kerzenhalter", "kerzenständer", "teelichthalter", "skulptur", "figur", "buchstütze"], styleIds: ["cozy"], minLongestSideCm: DECOR_MIN_SIDE_CM, excludeTerms: [...NOT_A_FLOOR_LAMP, ...NOT_A_SINGLE_PIECE] },
     },
     items: [
@@ -549,20 +560,30 @@ async function pickConceptProducts(concept: Concept, catalog: Product[], already
   const accent = concept.cjAccent;
   let accentFilled = false;
   if (cjEnabled()) {
-    console.log(`  Searching CJ Dropshipping for "${accent.keyword}"...`);
-    try {
-      const results = await searchCjProducts(accent.keyword, 5);
-      const cjMatch = results.find((p) => isRelevantCjMatch(p, accent.keyword));
-      if (cjMatch) {
-        take({ ...cjMatch, category: accent.category }, `${accent.category} (CJ)`);
-        accentFilled = true;
-      } else if (results.length > 0) {
-        console.warn(`  CJ returned ${results.length} result(s) for "${accent.keyword}" but none are actually that thing (top hit: "${results[0].name}").`);
-      } else {
-        console.warn(`  no CJ match for "${accent.keyword}".`);
+    // Several phrasings, tried in order until one returns something that is
+    // actually the object asked for. CJ's search is a general-marketplace
+    // text match, so how a query is worded decides whether it answers at
+    // all: "ceramic vase" returned a real vase, while "brass candle holder"
+    // and "scented candle jar" returned nothing usable. One rejected
+    // phrasing is not evidence the catalogue lacks the object.
+    for (const keyword of accent.keywords) {
+      try {
+        console.log(`  Searching CJ Dropshipping for "${keyword}"...`);
+        const results = await searchCjProducts(keyword, 5);
+        const cjMatch = results.find((p) => isRelevantCjMatch(p, keyword));
+        if (cjMatch) {
+          take({ ...cjMatch, category: accent.category }, `${accent.category} (CJ)`);
+          accentFilled = true;
+          break;
+        }
+        if (results.length > 0) {
+          console.warn(`  CJ returned ${results.length} result(s) for "${keyword}" but none are actually that thing (top hit: "${results[0].name}").`);
+        } else {
+          console.warn(`  no CJ match for "${keyword}".`);
+        }
+      } catch (err) {
+        console.warn(`  CJ search failed for "${keyword}" (${err instanceof Error ? err.message : err}).`);
       }
-    } catch (err) {
-      console.warn(`  CJ search failed (${err instanceof Error ? err.message : err}).`);
     }
   }
   if (!accentFilled) {
