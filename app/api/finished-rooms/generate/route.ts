@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { stepPlanFor, TOTAL_WEIGHT, type GenerateEvent } from "@/lib/generateEvents";
 import { aiEnabled, describeAiError } from "@/lib/ai/claude";
 import { compositingEnabled, composeSceneWithProducts, reshapeBoxForProduct, type SceneItem } from "@/lib/ai/composite";
 import { suggestPlacementsStrict } from "@/lib/ai/placement";
@@ -101,18 +102,53 @@ export async function POST(req: NextRequest) {
   // dev server output for "timing:" after a slow run to see the breakdown.
   const requestStart = Date.now();
   const timings: Record<string, number> = {};
-  async function timed<T>(label: string, fn: () => Promise<T>): Promise<T> {
-    const start = Date.now();
-    try {
-      return await fn();
-    } finally {
-      const ms = Date.now() - start;
-      timings[label] = ms;
-      console.log(`[vistroom] timing: ${label} took ${ms}ms`);
-    }
-  }
 
-  try {
+  // Streamed as newline-delimited JSON rather than returned in one go. The
+  // pipeline below takes 70-140 seconds, essentially all of it inside the
+  // single OpenAI render, and a request that returns nothing for two minutes
+  // gives the UI no way to show anything but an indeterminate spinner.
+  //
+  // Validation and rate limiting above still return ordinary JSON with real
+  // status codes — only the long part is streamed, because once the first
+  // byte is sent the status code can no longer change. Failures after that
+  // point therefore arrive as an in-band {type:"error"} event.
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      let closed = false;
+      const send = (event: GenerateEvent) => {
+        if (closed) return;
+        controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));
+      };
+
+      // Progress is weighted by measured duration, not by step count. The
+      // composite is ~75% of the wall clock, so a step-count bar would jump
+      // to 1/7 and then sit still for over a minute, which reads as frozen.
+      let doneWeight = 0;
+      async function timed<T>(label: string, fn: () => Promise<T>): Promise<T> {
+        const step = stepPlanFor(label);
+        const weight = step.weight;
+        send({
+          type: "step",
+          label: step.human,
+          progress: doneWeight / TOTAL_WEIGHT,
+          // Lets the client ease the bar forward during a long step instead
+          // of stalling, without ever running past the step's real end.
+          expectedMs: step.expectedMs,
+          spanFraction: weight / TOTAL_WEIGHT,
+        });
+        const start = Date.now();
+        try {
+          return await fn();
+        } finally {
+          const ms = Date.now() - start;
+          timings[label] = ms;
+          doneWeight += weight;
+          console.log(`[vistroom] timing: ${label} took ${ms}ms`);
+        }
+      }
+
+      try {
     // Strict: this is a paid curator tool, so a failed analysis must say WHY
     // (bad key, no credits, overloaded) rather than silently fall back to
     // context-blind default boxes. It also runs BEFORE the OpenAI render, so a
@@ -283,21 +319,40 @@ export async function POST(req: NextRequest) {
 
     console.log(`[vistroom] timing: TOTAL generate request took ${Date.now() - requestStart}ms`, timings);
 
-    return NextResponse.json({
-      imageBase64: result.imageBase64,
-      totalPrice,
-      styleTags,
-      productIds: allProducts.map((p) => p.id),
-      itemBoxes: allItemBoxes,
-      checks,
-      autoMatched: autoMatched.map((a) => ({ productId: a.product.id, name: a.product.name, price: a.product.price })),
-      externals,
-      unavailable,
-    });
-  } catch (err) {
-    // describeAiError turns a raw Anthropic failure (no credits, bad key,
-    // overloaded) into one actionable sentence instead of a stack-y blob or a
-    // misleading "try again".
-    return NextResponse.json({ error: describeAiError(err) }, { status: 502 });
-  }
+        send({
+          type: "result",
+          result: {
+            imageBase64: result.imageBase64,
+            totalPrice,
+            styleTags,
+            productIds: allProducts.map((p) => p.id),
+            itemBoxes: allItemBoxes,
+            checks,
+            autoMatched: autoMatched.map((a) => ({ productId: a.product.id, name: a.product.name, price: a.product.price })),
+            externals,
+            unavailable,
+          },
+        });
+      } catch (err) {
+        // describeAiError turns a raw Anthropic failure (no credits, bad key,
+        // overloaded) into one actionable sentence instead of a stack-y blob or a
+        // misleading "try again".
+        send({ type: "error", error: describeAiError(err) });
+      } finally {
+        closed = true;
+        controller.close();
+      }
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "application/x-ndjson; charset=utf-8",
+      "Cache-Control": "no-cache, no-transform",
+      // Without this some proxies buffer the whole response and hand it over
+      // at the end, which silently turns the stream back into the two-minute
+      // wait it exists to remove.
+      "X-Accel-Buffering": "no",
+    },
+  });
 }

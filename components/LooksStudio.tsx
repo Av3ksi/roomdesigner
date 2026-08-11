@@ -4,6 +4,8 @@ import Link from "next/link";
 import { AlertTriangle, CheckCircle2, Sparkles, Upload, XCircle } from "lucide-react";
 import { useState } from "react";
 import { formatPrice } from "@/lib/products";
+import type { GenerateExternalItem, GenerateResultPayload } from "@/lib/generateEvents";
+import { readGenerateStream } from "@/lib/readGenerateStream";
 import RoomHotspots, { type HotspotItem } from "@/components/RoomHotspots";
 import { TARGET_MARKETS, type TargetMarket } from "@/lib/targetMarkets";
 import type { DetectionBox, Product, ProductCategory } from "@/lib/types";
@@ -24,26 +26,12 @@ interface CheckResult {
   note: string | null;
 }
 
-interface ExternalItem {
-  name: string;
-  url: string;
-  retailer: string;
-  priceText: string | null;
-  box: DetectionBox | null;
-}
-
-interface GenerateResult {
-  imageBase64: string;
-  totalPrice: number;
-  styleTags: string[];
-  productIds: string[];
-  itemBoxes: Record<string, DetectionBox>;
-  checks: CheckResult[];
-  autoMatched: { productId: string; name: string; price: number }[];
-  externals: ExternalItem[];
-  /** Real detected objects we deliberately didn't source — still pinned, just not shoppable. */
-  unavailable: { box: DetectionBox; description: string }[];
-}
+/**
+ * Shapes live in lib/generateEvents.ts, shared with the route that streams
+ * them, so the two cannot drift apart silently.
+ */
+type ExternalItem = GenerateExternalItem;
+type GenerateResult = GenerateResultPayload;
 
 /**
  * The in-app replacement for scripts/compose-finished-room.ts — same
@@ -64,6 +52,7 @@ export default function LooksStudio({ catalog }: { catalog: Product[] }) {
   const [quality, setQuality] = useState<"low" | "medium" | "high">("medium");
   const [targetMarket, setTargetMarket] = useState<TargetMarket>("CH");
   const [generating, setGenerating] = useState(false);
+  const [progress, setProgress] = useState<{ label: string; value: number } | null>(null);
   const [result, setResult] = useState<GenerateResult | null>(null);
   const [publishing, setPublishing] = useState(false);
   const [publishedId, setPublishedId] = useState<string | null>(null);
@@ -108,13 +97,30 @@ export default function LooksStudio({ catalog }: { catalog: Product[] }) {
       if (styleDirection.trim()) form.append("styleDirection", styleDirection.trim());
 
       const res = await fetch("/api/finished-rooms/generate", { method: "POST", body: form });
-      const body = await res.json();
-      if (!res.ok) throw new Error(body.error ?? `Request failed: ${res.status}`);
-      setResult(body);
+      // Validation and rate-limit rejections still come back as ordinary
+      // JSON with a real status; only the long pipeline streams.
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? `Request failed: ${res.status}`);
+      }
+      if (!res.body) throw new Error("No response body.");
+
+      await readGenerateStream(res.body, {
+        onStep: (step) => setProgress({ label: step.label, value: step.progress }),
+        onEase: (value) => setProgress((p) => (p ? { ...p, value } : p)),
+        onResult: (payload) => {
+          setProgress({ label: "Done", value: 1 });
+          setResult(payload);
+        },
+        onError: (message) => {
+          throw new Error(message);
+        },
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setGenerating(false);
+      setProgress(null);
     }
   }
 
@@ -301,8 +307,32 @@ export default function LooksStudio({ catalog }: { catalog: Product[] }) {
             className="btn-primary w-full justify-center disabled:opacity-40"
           >
             <Sparkles size={15} />
-            {generating ? "Compositing the scene (~30-90s)…" : "Generate scene"}
+            {generating ? "Generating…" : "Generate scene"}
           </button>
+
+          {generating && progress && (
+            <div className="space-y-2" aria-live="polite">
+              <div className="flex items-baseline justify-between gap-3 text-xs">
+                <span className="text-cream-dim">{progress.label}</span>
+                <span className="tabular-nums text-brass-bright">{Math.round(progress.value * 100)}%</span>
+              </div>
+              <div
+                className="h-1.5 w-full overflow-hidden rounded-full bg-ink-panel"
+                role="progressbar"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={Math.round(progress.value * 100)}
+              >
+                <div
+                  className="h-full rounded-full bg-brass transition-[width] duration-500 ease-out"
+                  style={{ width: `${Math.max(2, Math.min(100, progress.value * 100))}%` }}
+                />
+              </div>
+              <p className="text-[11px] leading-snug text-cream-faint">
+                The render itself is most of the wait — it runs on OpenAI and takes about 80 seconds.
+              </p>
+            </div>
+          )}
 
           {result && (
             <div className="space-y-3 border-t border-ink-line pt-4">
