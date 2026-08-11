@@ -294,7 +294,7 @@ const CONCEPTS: Concept[] = [
     primaryStyleId: "organicmodern",
     cjAccent: {
       category: "decor",
-      keywords: ["ceramic vase", "decorative vase", "flower vase"],
+      keywords: ["ceramic vase", "stoneware vase", "flower vase", "decorative bowl"],
       fallback: { category: "decor", keywords: ["vase", "dekovase", "blumenvase", "schale", "dekoschale", "windlicht", "laterne", "kerzenhalter", "kerzenständer", "teelichthalter", "skulptur", "figur", "buchstütze"], styleIds: ["organicmodern"], minLongestSideCm: DECOR_MIN_SIDE_CM, excludeTerms: [...NOT_A_FLOOR_LAMP, ...NOT_A_SINGLE_PIECE] },
     },
     items: [
@@ -305,7 +305,7 @@ const CONCEPTS: Concept[] = [
       { category: "lighting", keywords: ["stehlampe", "bogenlampe", "rattan", "leinen", "stehleuchte"], styleIds: ["organicmodern"], minLongestSideCm: FLOOR_LAMP_MIN_SIDE_CM, excludeTerms: NOT_A_FLOOR_LAMP },
       { category: "plant", keywords: ["kunstpflanze", "olivenbaum", "pflanze", "kunstbaum"], styleIds: ["organicmodern"], minLongestSideCm: PLANT_MIN_SIDE_CM },
       { category: "storage", keywords: ["sideboard", "kommode", "massivholz", "mango", "rattan"], styleIds: ["organicmodern"], minWidthCm: STORAGE_MIN_WIDTH_CM, excludeTerms: NOT_A_SINGLE_PIECE },
-      { category: "textile", searchCategories: ["textile", "decor"], keywords: ["kissen", "kissenbezug", "zierkissen", "plaid", "wohndecke", "kuscheldecke", "überwurf", "fell"], minLongestSideCm: TEXTILE_MIN_SIDE_CM, styleIds: ["organicmodern", "cozy"], excludeTerms: NOT_A_LIVING_ROOM_TEXTILE },
+      { category: "textile", searchCategories: ["textile", "decor"], keywords: ["kissen", "kissenbezug", "zierkissen", "plaid", "wohndecke", "kuscheldecke", "überwurf", "fell"], minLongestSideCm: TEXTILE_MIN_SIDE_CM, styleIds: ["organicmodern", "cozy"], excludeTerms: [...NOT_A_LIVING_ROOM_TEXTILE, "schwarz", "kariert"] },
     ],
   },
   {
@@ -314,7 +314,7 @@ const CONCEPTS: Concept[] = [
     primaryStyleId: "darkluxury",
     cjAccent: {
       category: "decor",
-      keywords: ["brass candle holder", "metal vase", "decorative vase", "ceramic vase"],
+      keywords: ["brass candle holder", "gold candle holder", "brass tray", "decorative tray"],
       fallback: { category: "decor", keywords: ["vase", "dekovase", "blumenvase", "schale", "dekoschale", "windlicht", "laterne", "kerzenhalter", "kerzenständer", "teelichthalter", "skulptur", "figur", "buchstütze"], styleIds: ["darkluxury"], minLongestSideCm: DECOR_MIN_SIDE_CM, excludeTerms: [...NOT_A_FLOOR_LAMP, ...NOT_A_SINGLE_PIECE] },
     },
     items: [
@@ -333,7 +333,7 @@ const CONCEPTS: Concept[] = [
     primaryStyleId: "industrial",
     cjAccent: {
       category: "decor",
-      keywords: ["metal vase", "decorative vase", "ceramic vase"],
+      keywords: ["metal wall clock", "industrial wall clock", "iron candle holder", "metal vase"],
       fallback: { category: "decor", keywords: ["vase", "dekovase", "blumenvase", "schale", "dekoschale", "windlicht", "laterne", "kerzenhalter", "kerzenständer", "teelichthalter", "skulptur", "figur", "buchstütze"], styleIds: ["industrial"], minLongestSideCm: DECOR_MIN_SIDE_CM, excludeTerms: [...NOT_A_FLOOR_LAMP, ...NOT_A_SINGLE_PIECE] },
     },
     items: [
@@ -353,7 +353,7 @@ const CONCEPTS: Concept[] = [
     primaryStyleId: "cozy",
     cjAccent: {
       category: "decor",
-      keywords: ["ceramic vase", "decorative vase", "flower vase"],
+      keywords: ["woven storage basket", "rattan basket", "decorative lantern", "ceramic vase"],
       fallback: { category: "decor", keywords: ["vase", "dekovase", "blumenvase", "schale", "dekoschale", "windlicht", "laterne", "kerzenhalter", "kerzenständer", "teelichthalter", "skulptur", "figur", "buchstütze"], styleIds: ["cozy"], minLongestSideCm: DECOR_MIN_SIDE_CM, excludeTerms: [...NOT_A_FLOOR_LAMP, ...NOT_A_SINGLE_PIECE] },
     },
     items: [
@@ -569,8 +569,13 @@ async function pickConceptProducts(concept: Concept, catalog: Product[], already
     for (const keyword of accent.keywords) {
       try {
         console.log(`  Searching CJ Dropshipping for "${keyword}"...`);
-        const results = await searchCjProducts(keyword, 5);
-        const cjMatch = results.find((p) => isRelevantCjMatch(p, keyword));
+        const results = await searchCjProducts(keyword, 10);
+        // `alreadyUsed` has to be honoured HERE as well as in pickBest. It
+        // wasn't, and the result was the same CJ vase composited into three
+        // of the four rooms — each concept asked CJ independently, got the
+        // same top hit, and took it. Scanning past the used ones also
+        // rescues the case where CJ's best result is one we've spent.
+        const cjMatch = results.find((p) => isRelevantCjMatch(p, keyword) && !alreadyUsed.has(p.id));
         if (cjMatch) {
           take({ ...cjMatch, category: accent.category }, `${accent.category} (CJ)`);
           accentFilled = true;
