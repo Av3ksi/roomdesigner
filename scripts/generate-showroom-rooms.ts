@@ -126,6 +126,20 @@ interface ConceptItem {
   excludeTerms?: string[];
 }
 
+/**
+ * One CJ attempt: what to ASK for, and what the answer must actually BE.
+ *
+ * They are separate because a query that gets CJ to answer at all is not
+ * the same string as the object itself. "gold candle holder" is a good
+ * query; "candle holder" is what the result has to contain — matching only
+ * the last word accepted a coin purse, via "Card Holder".
+ */
+interface CjAttempt {
+  query: string;
+  /** Matched as a whole phrase against the result's name, lowercased. */
+  object: string;
+}
+
 interface Concept {
   title: string;
   description: string;
@@ -156,7 +170,7 @@ interface Concept {
    * VidaXL export is furniture; it has no decorative objects. The catalog
    * fallback is kept for when that changes, but today it reports empty.
    */
-  cjAccent: { category: ProductCategory; keywords: string[]; fallback: ConceptItem };
+  cjAccent: { category: ProductCategory; keywords: CjAttempt[]; fallback: ConceptItem };
 }
 
 /**
@@ -191,6 +205,8 @@ const FLOOR_LAMP_MIN_SIDE_CM = 100;
 const PLANT_MIN_SIDE_CM = 60;
 /** A flag-pole holder 11.5 cm across won two decor slots. Decor has to be big enough to see. */
 const DECOR_MIN_SIDE_CM = 15;
+/** Gap between consecutive CJ searches — see the accent loop for why. */
+const CJ_SEARCH_GAP_MS = 1500;
 /** A 15 x 21 cm guest towel took a throw-cushion slot; a real cushion or throw is bigger. */
 const TEXTILE_MIN_SIDE_CM = 40;
 
@@ -294,7 +310,12 @@ const CONCEPTS: Concept[] = [
     primaryStyleId: "organicmodern",
     cjAccent: {
       category: "decor",
-      keywords: ["ceramic vase", "stoneware vase", "flower vase", "decorative bowl"],
+      keywords: [
+        { query: "ceramic vase", object: "vase" },
+        { query: "stoneware vase", object: "vase" },
+        { query: "flower vase", object: "vase" },
+        { query: "decorative bowl", object: "bowl" },
+      ],
       fallback: { category: "decor", keywords: ["vase", "dekovase", "blumenvase", "schale", "dekoschale", "windlicht", "laterne", "kerzenhalter", "kerzenständer", "teelichthalter", "skulptur", "figur", "buchstütze"], styleIds: ["organicmodern"], minLongestSideCm: DECOR_MIN_SIDE_CM, excludeTerms: [...NOT_A_FLOOR_LAMP, ...NOT_A_SINGLE_PIECE] },
     },
     items: [
@@ -314,7 +335,12 @@ const CONCEPTS: Concept[] = [
     primaryStyleId: "darkluxury",
     cjAccent: {
       category: "decor",
-      keywords: ["brass candle holder", "gold candle holder", "brass tray", "decorative tray"],
+      keywords: [
+        { query: "brass candle holder", object: "candle holder" },
+        { query: "gold candlestick holder", object: "candlestick" },
+        { query: "brass serving tray", object: "tray" },
+        { query: "decorative vase gold", object: "vase" },
+      ],
       fallback: { category: "decor", keywords: ["vase", "dekovase", "blumenvase", "schale", "dekoschale", "windlicht", "laterne", "kerzenhalter", "kerzenständer", "teelichthalter", "skulptur", "figur", "buchstütze"], styleIds: ["darkluxury"], minLongestSideCm: DECOR_MIN_SIDE_CM, excludeTerms: [...NOT_A_FLOOR_LAMP, ...NOT_A_SINGLE_PIECE] },
     },
     items: [
@@ -333,7 +359,12 @@ const CONCEPTS: Concept[] = [
     primaryStyleId: "industrial",
     cjAccent: {
       category: "decor",
-      keywords: ["metal wall clock", "industrial wall clock", "iron candle holder", "metal vase"],
+      keywords: [
+        { query: "wall clock", object: "wall clock" },
+        { query: "metal candle holder", object: "candle holder" },
+        { query: "metal vase", object: "vase" },
+        { query: "decorative vase", object: "vase" },
+      ],
       fallback: { category: "decor", keywords: ["vase", "dekovase", "blumenvase", "schale", "dekoschale", "windlicht", "laterne", "kerzenhalter", "kerzenständer", "teelichthalter", "skulptur", "figur", "buchstütze"], styleIds: ["industrial"], minLongestSideCm: DECOR_MIN_SIDE_CM, excludeTerms: [...NOT_A_FLOOR_LAMP, ...NOT_A_SINGLE_PIECE] },
     },
     items: [
@@ -353,7 +384,12 @@ const CONCEPTS: Concept[] = [
     primaryStyleId: "cozy",
     cjAccent: {
       category: "decor",
-      keywords: ["woven storage basket", "rattan basket", "decorative lantern", "ceramic vase"],
+      keywords: [
+        { query: "storage basket", object: "basket" },
+        { query: "candle lantern", object: "lantern" },
+        { query: "ceramic vase", object: "vase" },
+        { query: "decorative vase", object: "vase" },
+      ],
       fallback: { category: "decor", keywords: ["vase", "dekovase", "blumenvase", "schale", "dekoschale", "windlicht", "laterne", "kerzenhalter", "kerzenständer", "teelichthalter", "skulptur", "figur", "buchstütze"], styleIds: ["cozy"], minLongestSideCm: DECOR_MIN_SIDE_CM, excludeTerms: [...NOT_A_FLOOR_LAMP, ...NOT_A_SINGLE_PIECE] },
     },
     items: [
@@ -503,24 +539,39 @@ function formatDims(product: Product): string {
 }
 
 /**
- * True only if a CJ result is plausibly the thing that was searched for.
+ * Things CJ sells that are unmistakably not homeware, whatever they match.
+ * A cheap backstop for the accent slot, which is the one place a
+ * marketplace search reaches straight into a room render.
+ */
+const CJ_NOT_HOMEWARE = [
+  "purse", "wallet", "sweater", "coat", "shoe", "sock", "underwear", "dress",
+  "phone", "charger", "cable", "earring", "necklace", "bracelet", "keychain", "lanyard",
+];
+
+/**
+ * True only if a CJ result really is the object that was asked for.
  *
  * CJ's search is a general-marketplace text search with no notion of home
  * decor, and it answers confidently rather than empty-handed: "ceramic
  * vase" came back a ceramic coffee cup, "wool throw blanket" a wool knit
- * sweater, "linen cushion cover" an axe cover. Every one shares an
- * adjective with the query and none is the object asked for.
+ * sweater, "linen cushion cover" an axe cover.
  *
- * So the last query word — the head noun, "vase", "blanket", "holder" —
- * has to appear in the product's own name. A sweater is not a blanket, and
- * a room is better off with an empty accent slot than with a jumper
- * composited onto the sofa and priced as decor.
+ * Matching on the query's LAST WORD alone was not enough, and the failure
+ * is instructive: "gold candle holder" returned a coin purse, because
+ * "Card Holder" contains "holder". Multi-word objects have to be matched
+ * as a PHRASE, which is why the object name is declared separately from
+ * the search query — "candle holder" is what must appear, while "gold
+ * candle holder" is merely what gets CJ to answer.
  */
-function isRelevantCjMatch(product: Product, keyword: string): boolean {
-  const words = keyword.toLowerCase().split(/\s+/).filter(Boolean);
-  const headNoun = words[words.length - 1];
-  if (!headNoun) return false;
-  return product.name.toLowerCase().includes(headNoun);
+function isRelevantCjMatch(product: Product, object: string): boolean {
+  const name = product.name.toLowerCase();
+  if (CJ_NOT_HOMEWARE.some((t) => name.includes(t))) return false;
+  return name.includes(object.toLowerCase());
+}
+
+/** CJ's search answers inconsistently when called in a tight loop — the same query succeeded and failed minutes apart. A short gap between calls costs nothing here and reduces that. */
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 /**
@@ -566,28 +617,32 @@ async function pickConceptProducts(concept: Concept, catalog: Product[], already
     // all: "ceramic vase" returned a real vase, while "brass candle holder"
     // and "scented candle jar" returned nothing usable. One rejected
     // phrasing is not evidence the catalogue lacks the object.
-    for (const keyword of accent.keywords) {
+    for (const [i, attempt] of accent.keywords.entries()) {
+      // CJ answered the very same query differently minutes apart, so treat
+      // a miss as possibly the API rather than proof of absence, and give
+      // it room to breathe between calls.
+      if (i > 0) await sleep(CJ_SEARCH_GAP_MS);
       try {
-        console.log(`  Searching CJ Dropshipping for "${keyword}"...`);
-        const results = await searchCjProducts(keyword, 10);
+        console.log(`  Searching CJ Dropshipping for "${attempt.query}"...`);
+        const results = await searchCjProducts(attempt.query, 10);
         // `alreadyUsed` has to be honoured HERE as well as in pickBest. It
         // wasn't, and the result was the same CJ vase composited into three
         // of the four rooms — each concept asked CJ independently, got the
         // same top hit, and took it. Scanning past the used ones also
         // rescues the case where CJ's best result is one we've spent.
-        const cjMatch = results.find((p) => isRelevantCjMatch(p, keyword) && !alreadyUsed.has(p.id));
+        const cjMatch = results.find((p) => isRelevantCjMatch(p, attempt.object) && !alreadyUsed.has(p.id));
         if (cjMatch) {
           take({ ...cjMatch, category: accent.category }, `${accent.category} (CJ)`);
           accentFilled = true;
           break;
         }
         if (results.length > 0) {
-          console.warn(`  CJ returned ${results.length} result(s) for "${keyword}" but none are actually that thing (top hit: "${results[0].name}").`);
+          console.warn(`  CJ returned ${results.length} result(s) for "${attempt.query}" but none are a "${attempt.object}" (top hit: "${results[0].name}").`);
         } else {
-          console.warn(`  no CJ match for "${keyword}".`);
+          console.warn(`  no CJ match for "${attempt.query}".`);
         }
       } catch (err) {
-        console.warn(`  CJ search failed for "${keyword}" (${err instanceof Error ? err.message : err}).`);
+        console.warn(`  CJ search failed for "${attempt.query}" (${err instanceof Error ? err.message : err}).`);
       }
     }
   }
