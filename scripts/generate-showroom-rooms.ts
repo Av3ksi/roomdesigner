@@ -41,8 +41,8 @@
  *   curated real product picks below. This is the more deliberate,
  *   hand-tuned sibling of generate-looks.ts's random per-style picking —
  *   use this one when you want control over exactly which materials/
- *   keywords define "Organic Modern" vs. "Dark Luxury", not just "any 3-6
- *   products tagged with that style."
+ *   keywords define an "RGB Battlestation" vs. a "Console Lounge", not
+ *   just "any 3-6 products tagged with that style."
  *
  * Usage — see what a run WOULD pick, for free:
  *   npx tsx scripts/generate-showroom-rooms.ts 4 --dry-run
@@ -226,6 +226,15 @@ const NOT_A_MAIN_SOFA = ["sofa-sessel", "pallet", "palette", "hundesofa", "puppe
 /** "Massagesessel" (massage chair), office seating and footstools all won a lounge-chair slot on the word "Sessel"/"Hocker" alone. */
 const NOT_A_LOUNGE_CHAIR = ["massage", "büro", "buro", "gaming", "schreibtischstuhl", "hocker"];
 /**
+ * The gaming rooms need the OPPOSITE of NOT_A_LOUNGE_CHAIR: a gaming chair
+ * is an office chair by construction, so the very words that disqualify a
+ * lounge chair ("gaming", "büro", "schreibtischstuhl") are the ones that
+ * identify the right product here. Only genuinely wrong seating is banned.
+ */
+const NOT_A_GAMING_CHAIR = ["massage", "hocker", "sitzsack", "klappstuhl", "barhocker"];
+/** A desk, not a dining or side table. */
+const NOT_A_DESK = ["esstisch", "beistelltisch", "couchtisch", "nachttisch", "konsolentisch"];
+/**
  * Colours that fight a warm-neutral room. Only used where the palette is
  * the whole point of the concept: the Cozy room is rust and oat, and its
  * chair slot resolved to a PINK armchair, which matched on "Stoff" and
@@ -273,20 +282,26 @@ const NOT_A_FLOOR_LAMP = [
 ];
 
 /**
- * WHY THESE FOUR, AND WHY NOT THE OBVIOUS ONES.
+ * THE GAMING NICHE.
  *
- * Scandinavian and Japandi are deliberately absent — the showroom already
- * has a Scandinavian room, and the two read as near-neighbours on screen
- * (pale wood, undyed textile, high-key light), so a visitor scrolling the
- * looks grid would see the same room three times.
+ * All four concepts are gaming rooms — a deliberate narrowing from the
+ * general living-room set that came before. Two are desk-first
+ * battlestations, one is the couch-and-console half of the same audience,
+ * and one is the pale "clean setup" look rather than blackout, so the grid
+ * covers the niche instead of showing one room four times.
  *
- * The four below were picked from a coverage count over the real catalog
- * rather than by taste, because a concept the feed cannot fill produces a
- * thin room at full price. Two styles that were previously in this list —
- * Modern Luxury and Mediterranean — were dropped for exactly that reason:
- * they were the two thinnest style tags in the whole catalog. Organic
- * Modern is the best-supported style we have after Scandinavian, and Dark
- * Luxury the best-supported dark one, which is also why they lead.
+ * WHAT CHANGES IN A GAMING ROOM, mechanically:
+ *
+ *   - The chair slot inverts. A gaming chair IS an office chair by
+ *     construction, so "gaming", "büro" and "schreibtischstuhl" — the exact
+ *     words NOT_A_LOUNGE_CHAIR bans — are the ones that identify the right
+ *     product. Hence NOT_A_GAMING_CHAIR.
+ *   - The table slot is a desk, not a coffee table, so it needs a wider
+ *     floor and a ban on dining/side tables.
+ *   - The CJ accent finally plays to CJ's strengths. It is a consumer
+ *     electronics marketplace, which is why it kept failing on vases and
+ *     candle holders; LED strips, mouse pads and headphone stands are what
+ *     it actually stocks.
  *
  * Style ids are only a SOFT relevance boost in searchProducts (weight 1,
  * against 2 per keyword hit), so a slot is really won or lost on the
@@ -305,102 +320,103 @@ const NOT_A_FLOOR_LAMP = [
  */
 const CONCEPTS: Concept[] = [
   {
-    title: "Organic Modern Living Room",
-    description: "Curved forms, oat and sage, raw timber and clay — a warm, softly modern living room.",
-    primaryStyleId: "organicmodern",
+    title: "RGB Battlestation",
+    description: "Blackout walls, a wide desk and one cool RGB wash — a setup built for long sessions after dark.",
+    primaryStyleId: "gaming",
     cjAccent: {
       category: "decor",
+      // CJ is a consumer-electronics marketplace, which is a poor fit for
+      // vases and an excellent one for this. The accent slot should finally
+      // land first try here rather than after four rephrasings.
       keywords: [
-        { query: "ceramic vase", object: "vase" },
-        { query: "stoneware vase", object: "vase" },
-        { query: "flower vase", object: "vase" },
-        { query: "decorative bowl", object: "bowl" },
+        { query: "rgb led strip lights", object: "led strip" },
+        { query: "gaming mouse pad large", object: "mouse pad" },
+        { query: "rgb light bar", object: "light bar" },
+        { query: "headphone stand", object: "headphone stand" },
       ],
-      fallback: { category: "decor", keywords: ["vase", "dekovase", "blumenvase", "schale", "dekoschale", "windlicht", "laterne", "kerzenhalter", "kerzenständer", "teelichthalter", "skulptur", "figur", "buchstütze"], styleIds: ["organicmodern"], minLongestSideCm: DECOR_MIN_SIDE_CM, excludeTerms: [...NOT_A_FLOOR_LAMP, ...NOT_A_SINGLE_PIECE] },
+      fallback: { category: "decor", keywords: ["led", "rgb", "leuchtstreifen", "lichtleiste"], styleIds: ["gaming"], excludeTerms: NOT_A_SINGLE_PIECE },
     },
     items: [
-      { category: "sofa", keywords: ["boucle", "bouclé", "beige", "creme", "leinen", "geschwungen", "sitzer sofa"], styleIds: ["organicmodern"], minWidthCm: SOFA_MIN_WIDTH_CM, excludeTerms: NOT_A_MAIN_SOFA },
-      { category: "chair", keywords: ["sessel", "boucle", "bouclé", "rattan", "beige", "geschwungen"], styleIds: ["organicmodern"], minWidthCm: CHAIR_MIN_WIDTH_CM, excludeTerms: NOT_A_LOUNGE_CHAIR },
-      { category: "table", keywords: ["couchtisch", "massivholz", "mango", "akazie", "rund", "oval"], styleIds: ["organicmodern"], minWidthCm: COFFEE_TABLE_MIN_WIDTH_CM },
-      { category: "rug", keywords: ["teppich", "jute", "sisal", "natur", "beige", "creme"], styleIds: ["organicmodern"], minLongestSideCm: RUG_MIN_LONGEST_SIDE_CM, excludeTerms: NOT_A_ROOM_RUG },
-      { category: "lighting", keywords: ["stehlampe", "bogenlampe", "rattan", "leinen", "stehleuchte"], styleIds: ["organicmodern"], minLongestSideCm: FLOOR_LAMP_MIN_SIDE_CM, excludeTerms: NOT_A_FLOOR_LAMP },
-      { category: "plant", keywords: ["kunstpflanze", "olivenbaum", "pflanze", "kunstbaum"], styleIds: ["organicmodern"], minLongestSideCm: PLANT_MIN_SIDE_CM },
-      { category: "storage", keywords: ["sideboard", "kommode", "massivholz", "mango", "rattan"], styleIds: ["organicmodern"], minWidthCm: STORAGE_MIN_WIDTH_CM, excludeTerms: NOT_A_SINGLE_PIECE },
-      { category: "textile", searchCategories: ["textile", "decor"], keywords: ["kissen", "kissenbezug", "zierkissen", "plaid", "wohndecke", "kuscheldecke", "überwurf", "fell"], minLongestSideCm: TEXTILE_MIN_SIDE_CM, styleIds: ["organicmodern", "cozy"], excludeTerms: [...NOT_A_LIVING_ROOM_TEXTILE, "schwarz", "kariert"] },
+      { category: "table", keywords: ["schreibtisch", "computertisch", "gaming", "eckschreibtisch"], styleIds: ["gaming", "industrial"], minWidthCm: 100, excludeTerms: NOT_A_DESK },
+      { category: "chair", keywords: ["gaming", "gamingstuhl", "racing", "bürostuhl", "chefsessel", "drehstuhl"], styleIds: ["gaming", "industrial"], minWidthCm: CHAIR_MIN_WIDTH_CM, excludeTerms: NOT_A_GAMING_CHAIR },
+      { category: "storage", keywords: ["regal", "schwarz", "lowboard", "sideboard", "metall"], styleIds: ["gaming", "industrial"], minWidthCm: STORAGE_MIN_WIDTH_CM, excludeTerms: NOT_A_SINGLE_PIECE },
+      { category: "lighting", keywords: ["stehlampe", "stehleuchte", "schwarz", "metall"], styleIds: ["gaming", "industrial"], minLongestSideCm: FLOOR_LAMP_MIN_SIDE_CM, excludeTerms: NOT_A_FLOOR_LAMP },
+      { category: "rug", keywords: ["teppich", "schwarz", "dunkelgrau", "grau"], styleIds: ["gaming", "industrial"], minLongestSideCm: RUG_MIN_LONGEST_SIDE_CM, excludeTerms: NOT_A_ROOM_RUG },
+      { category: "plant", keywords: ["kunstpflanze", "pflanze", "kunstbaum", "monstera"], styleIds: ["gaming", "industrial"], minLongestSideCm: PLANT_MIN_SIDE_CM },
+      { category: "textile", searchCategories: ["textile", "decor"], keywords: ["kissen", "kissenbezug", "zierkissen", "plaid", "wohndecke", "kuscheldecke", "überwurf", "fell"], minLongestSideCm: TEXTILE_MIN_SIDE_CM, styleIds: ["gaming", "industrial"], excludeTerms: NOT_A_LIVING_ROOM_TEXTILE },
     ],
   },
   {
-    title: "Dark Luxury Living Room",
-    description: "Emerald velvet, marble, and brass — a moody, statement living room.",
-    primaryStyleId: "darkluxury",
+    title: "Console Lounge",
+    description: "A sofa, a big screen and low ambient light — the couch-first half of gaming, not the desk half.",
+    primaryStyleId: "gaming",
     cjAccent: {
       category: "decor",
       keywords: [
-        { query: "brass candle holder", object: "candle holder" },
-        { query: "gold candlestick holder", object: "candlestick" },
-        { query: "brass serving tray", object: "tray" },
-        { query: "decorative vase gold", object: "vase" },
+        { query: "rgb light bar tv", object: "light bar" },
+        { query: "controller stand", object: "controller stand" },
+        { query: "rgb led strip lights", object: "led strip" },
+        { query: "game controller holder", object: "holder" },
       ],
-      fallback: { category: "decor", keywords: ["vase", "dekovase", "blumenvase", "schale", "dekoschale", "windlicht", "laterne", "kerzenhalter", "kerzenständer", "teelichthalter", "skulptur", "figur", "buchstütze"], styleIds: ["darkluxury"], minLongestSideCm: DECOR_MIN_SIDE_CM, excludeTerms: [...NOT_A_FLOOR_LAMP, ...NOT_A_SINGLE_PIECE] },
+      fallback: { category: "decor", keywords: ["led", "rgb", "lichtleiste", "leuchtstreifen"], styleIds: ["gaming"], excludeTerms: NOT_A_SINGLE_PIECE },
     },
     items: [
-      { category: "sofa", keywords: ["samt", "velvet", "grün", "gruen", "smaragd", "dunkelgrün", "blau", "navy"], styleIds: ["darkluxury"], minWidthCm: SOFA_MIN_WIDTH_CM, excludeTerms: NOT_A_MAIN_SOFA },
-      { category: "chair", keywords: ["samt", "velvet", "sessel", "cocktailsessel", "ohrensessel", "dunkel", "schwarz", "grün"], styleIds: ["darkluxury", "modernluxury"], minWidthCm: CHAIR_MIN_WIDTH_CM, excludeTerms: NOT_A_LOUNGE_CHAIR },
-      { category: "table", keywords: ["marmor", "marble", "couchtisch", "schwarz", "gold"], styleIds: ["darkluxury", "modernluxury"], minWidthCm: COFFEE_TABLE_MIN_WIDTH_CM },
-      { category: "rug", keywords: ["teppich", "dunkel", "muster", "orient", "schwarz"], styleIds: ["darkluxury"], minLongestSideCm: RUG_MIN_LONGEST_SIDE_CM, excludeTerms: NOT_A_ROOM_RUG },
-      { category: "lighting", keywords: ["stehlampe", "messing", "gold", "stehleuchte"], styleIds: ["darkluxury", "modernluxury"], minLongestSideCm: FLOOR_LAMP_MIN_SIDE_CM, excludeTerms: NOT_A_FLOOR_LAMP },
-      { category: "storage", keywords: ["sideboard", "kommode", "schwarz", "walnuss", "walnut"], styleIds: ["darkluxury", "modernluxury"], minWidthCm: STORAGE_MIN_WIDTH_CM, excludeTerms: NOT_A_SINGLE_PIECE },
-      { category: "textile", searchCategories: ["textile", "decor"], keywords: ["kissen", "kissenbezug", "zierkissen", "plaid", "wohndecke", "kuscheldecke", "überwurf", "fell"], minLongestSideCm: TEXTILE_MIN_SIDE_CM, styleIds: ["darkluxury"], excludeTerms: NOT_A_LIVING_ROOM_TEXTILE },
+      { category: "sofa", keywords: ["sofa", "stoff", "grau", "schwarz", "sitzer sofa", "ecksofa"], styleIds: ["gaming", "industrial"], minWidthCm: SOFA_MIN_WIDTH_CM, excludeTerms: NOT_A_MAIN_SOFA },
+      { category: "storage", keywords: ["tv-schrank", "lowboard", "sideboard", "schwarz", "hochglanz"], styleIds: ["gaming", "industrial"], minWidthCm: STORAGE_MIN_WIDTH_CM, excludeTerms: NOT_A_SINGLE_PIECE },
+      { category: "table", keywords: ["couchtisch", "schwarz", "metall", "glas"], styleIds: ["gaming", "industrial"], minWidthCm: COFFEE_TABLE_MIN_WIDTH_CM },
+      { category: "chair", keywords: ["gaming", "gamingstuhl", "racing", "sessel", "drehstuhl"], styleIds: ["gaming", "industrial"], minWidthCm: CHAIR_MIN_WIDTH_CM, excludeTerms: NOT_A_GAMING_CHAIR },
+      { category: "rug", keywords: ["teppich", "dunkelgrau", "schwarz", "hochflor"], styleIds: ["gaming", "industrial"], minLongestSideCm: RUG_MIN_LONGEST_SIDE_CM, excludeTerms: NOT_A_ROOM_RUG },
+      { category: "lighting", keywords: ["stehlampe", "stehleuchte", "schwarz"], styleIds: ["gaming", "industrial"], minLongestSideCm: FLOOR_LAMP_MIN_SIDE_CM, excludeTerms: NOT_A_FLOOR_LAMP },
+      { category: "textile", searchCategories: ["textile", "decor"], keywords: ["kissen", "kissenbezug", "zierkissen", "plaid", "wohndecke", "kuscheldecke", "überwurf", "fell"], minLongestSideCm: TEXTILE_MIN_SIDE_CM, styleIds: ["gaming", "cozy"], excludeTerms: NOT_A_LIVING_ROOM_TEXTILE },
+      { category: "plant", keywords: ["kunstpflanze", "pflanze", "kunstbaum"], styleIds: ["gaming", "industrial"], minLongestSideCm: PLANT_MIN_SIDE_CM },
     ],
   },
   {
-    title: "Industrial Loft Living Room",
-    description: "Blackened steel, cognac leather and raw brick — a warm loft with a hard-edged shell.",
+    title: "Streamer Loft",
+    description: "Brick, black steel and a camera-facing desk — a setup that has to look good on stream, not just to sit at.",
     primaryStyleId: "industrial",
     cjAccent: {
       category: "decor",
       keywords: [
-        { query: "wall clock", object: "wall clock" },
-        { query: "metal candle holder", object: "candle holder" },
-        { query: "metal vase", object: "vase" },
-        { query: "decorative vase", object: "vase" },
+        { query: "microphone arm stand", object: "microphone" },
+        { query: "ring light", object: "ring light" },
+        { query: "rgb led strip lights", object: "led strip" },
+        { query: "headphone stand", object: "headphone stand" },
       ],
-      fallback: { category: "decor", keywords: ["vase", "dekovase", "blumenvase", "schale", "dekoschale", "windlicht", "laterne", "kerzenhalter", "kerzenständer", "teelichthalter", "skulptur", "figur", "buchstütze"], styleIds: ["industrial"], minLongestSideCm: DECOR_MIN_SIDE_CM, excludeTerms: [...NOT_A_FLOOR_LAMP, ...NOT_A_SINGLE_PIECE] },
+      fallback: { category: "decor", keywords: ["led", "rgb", "lichtleiste"], styleIds: ["industrial"], excludeTerms: NOT_A_SINGLE_PIECE },
     },
     items: [
-      { category: "sofa", keywords: ["leder", "kunstleder", "braun", "cognac", "sitzer sofa"], styleIds: ["industrial"], minWidthCm: SOFA_MIN_WIDTH_CM, excludeTerms: NOT_A_MAIN_SOFA },
-      { category: "chair", keywords: ["sessel", "leder", "kunstleder", "braun", "metall"], styleIds: ["industrial"], minWidthCm: CHAIR_MIN_WIDTH_CM, excludeTerms: NOT_A_LOUNGE_CHAIR },
-      { category: "table", keywords: ["couchtisch", "metall", "schwarz", "massivholz", "industrial"], styleIds: ["industrial"], minWidthCm: COFFEE_TABLE_MIN_WIDTH_CM },
-      { category: "rug", keywords: ["teppich", "vintage", "grau", "muster", "used-look"], styleIds: ["industrial"], minLongestSideCm: RUG_MIN_LONGEST_SIDE_CM, excludeTerms: NOT_A_ROOM_RUG },
-      { category: "lighting", keywords: ["stehlampe", "metall", "schwarz", "stehleuchte", "industrial"], styleIds: ["industrial"], minLongestSideCm: FLOOR_LAMP_MIN_SIDE_CM, excludeTerms: NOT_A_FLOOR_LAMP },
-      { category: "storage", keywords: ["regal", "metall", "schwarz", "sideboard", "industrial"], styleIds: ["industrial"], minWidthCm: STORAGE_MIN_WIDTH_CM, excludeTerms: NOT_A_SINGLE_PIECE },
+      { category: "table", keywords: ["schreibtisch", "computertisch", "metall", "eckschreibtisch"], styleIds: ["industrial", "gaming"], minWidthCm: 100, excludeTerms: NOT_A_DESK },
+      { category: "chair", keywords: ["gaming", "bürostuhl", "drehstuhl", "chefsessel", "racing"], styleIds: ["industrial", "gaming"], minWidthCm: CHAIR_MIN_WIDTH_CM, excludeTerms: NOT_A_GAMING_CHAIR },
+      { category: "storage", keywords: ["regal", "metall", "schwarz", "industrial", "sideboard"], styleIds: ["industrial"], minWidthCm: STORAGE_MIN_WIDTH_CM, excludeTerms: NOT_A_SINGLE_PIECE },
+      { category: "lighting", keywords: ["stehlampe", "stehleuchte", "metall", "schwarz"], styleIds: ["industrial"], minLongestSideCm: FLOOR_LAMP_MIN_SIDE_CM, excludeTerms: NOT_A_FLOOR_LAMP },
+      { category: "rug", keywords: ["teppich", "grau", "vintage", "muster"], styleIds: ["industrial"], minLongestSideCm: RUG_MIN_LONGEST_SIDE_CM, excludeTerms: NOT_A_ROOM_RUG },
       { category: "plant", keywords: ["kunstpflanze", "pflanze", "kunstbaum", "monstera"], styleIds: ["industrial"], minLongestSideCm: PLANT_MIN_SIDE_CM },
       { category: "textile", searchCategories: ["textile", "decor"], keywords: ["kissen", "kissenbezug", "zierkissen", "plaid", "wohndecke", "kuscheldecke", "überwurf", "fell"], minLongestSideCm: TEXTILE_MIN_SIDE_CM, styleIds: ["industrial"], excludeTerms: NOT_A_LIVING_ROOM_TEXTILE },
     ],
   },
   {
-    title: "Cozy Layered Living Room",
-    description: "Rust and oat wool, amber light and more texture than strictly necessary — a room built for evenings.",
-    primaryStyleId: "cozy",
+    title: "White Minimal Setup",
+    description: "The other half of the niche: an all-white desk, pale wood and one accent colour. Clean-setup rather than blackout.",
+    primaryStyleId: "minimalist",
     cjAccent: {
       category: "decor",
       keywords: [
-        { query: "storage basket", object: "basket" },
-        { query: "candle lantern", object: "lantern" },
-        { query: "ceramic vase", object: "vase" },
-        { query: "decorative vase", object: "vase" },
+        { query: "white desk mat", object: "desk mat" },
+        { query: "monitor stand riser", object: "monitor stand" },
+        { query: "gaming mouse pad large", object: "mouse pad" },
+        { query: "headphone stand", object: "headphone stand" },
       ],
-      fallback: { category: "decor", keywords: ["vase", "dekovase", "blumenvase", "schale", "dekoschale", "windlicht", "laterne", "kerzenhalter", "kerzenständer", "teelichthalter", "skulptur", "figur", "buchstütze"], styleIds: ["cozy"], minLongestSideCm: DECOR_MIN_SIDE_CM, excludeTerms: [...NOT_A_FLOOR_LAMP, ...NOT_A_SINGLE_PIECE] },
+      fallback: { category: "decor", keywords: ["led", "rgb", "lichtleiste"], styleIds: ["minimalist"], excludeTerms: NOT_A_SINGLE_PIECE },
     },
     items: [
-      { category: "sofa", keywords: ["stoff", "beige", "braun", "cord", "sitzer sofa", "gemütlich", "gemutlich"], styleIds: ["cozy"], minWidthCm: SOFA_MIN_WIDTH_CM, excludeTerms: [...NOT_A_MAIN_SOFA, ...NOT_A_WARM_NEUTRAL] },
-      { category: "chair", keywords: ["sessel", "ohrensessel", "cord", "stoff", "braun", "beige", "creme"], styleIds: ["cozy"], minWidthCm: CHAIR_MIN_WIDTH_CM, excludeTerms: [...NOT_A_LOUNGE_CHAIR, ...NOT_A_WARM_NEUTRAL] },
-      { category: "table", keywords: ["couchtisch", "holz", "massivholz", "rund"], styleIds: ["cozy"], minWidthCm: COFFEE_TABLE_MIN_WIDTH_CM },
-      { category: "rug", keywords: ["teppich", "hochflor", "shaggy", "wolle", "braun", "beige"], styleIds: ["cozy"], minLongestSideCm: RUG_MIN_LONGEST_SIDE_CM, excludeTerms: NOT_A_ROOM_RUG },
-      { category: "lighting", keywords: ["stehlampe", "tischlampe", "stehleuchte", "warm"], styleIds: ["cozy"], minLongestSideCm: FLOOR_LAMP_MIN_SIDE_CM, excludeTerms: NOT_A_FLOOR_LAMP },
-      { category: "storage", keywords: ["sideboard", "kommode", "holz", "regal"], styleIds: ["cozy"], minWidthCm: STORAGE_MIN_WIDTH_CM, excludeTerms: NOT_A_SINGLE_PIECE },
-      { category: "plant", keywords: ["kunstpflanze", "pflanze", "kunstbaum"], styleIds: ["cozy"], minLongestSideCm: PLANT_MIN_SIDE_CM },
-      { category: "textile", searchCategories: ["textile", "decor"], keywords: ["kissen", "kissenbezug", "zierkissen", "plaid", "wohndecke", "kuscheldecke", "überwurf", "fell"], minLongestSideCm: TEXTILE_MIN_SIDE_CM, styleIds: ["cozy"], excludeTerms: NOT_A_LIVING_ROOM_TEXTILE },
+      { category: "table", keywords: ["schreibtisch", "computertisch", "weiß", "weiss"], styleIds: ["minimalist", "scandinavian"], minWidthCm: 100, excludeTerms: NOT_A_DESK },
+      { category: "chair", keywords: ["bürostuhl", "drehstuhl", "gaming", "weiß", "weiss"], styleIds: ["minimalist", "scandinavian"], minWidthCm: CHAIR_MIN_WIDTH_CM, excludeTerms: NOT_A_GAMING_CHAIR },
+      { category: "storage", keywords: ["regal", "sideboard", "weiß", "weiss", "kommode"], styleIds: ["minimalist", "scandinavian"], minWidthCm: STORAGE_MIN_WIDTH_CM, excludeTerms: NOT_A_SINGLE_PIECE },
+      { category: "lighting", keywords: ["stehlampe", "stehleuchte", "weiß", "weiss"], styleIds: ["minimalist", "scandinavian"], minLongestSideCm: FLOOR_LAMP_MIN_SIDE_CM, excludeTerms: NOT_A_FLOOR_LAMP },
+      { category: "rug", keywords: ["teppich", "creme", "beige", "hellgrau"], styleIds: ["minimalist", "scandinavian"], minLongestSideCm: RUG_MIN_LONGEST_SIDE_CM, excludeTerms: NOT_A_ROOM_RUG },
+      { category: "plant", keywords: ["kunstpflanze", "pflanze", "kunstbaum", "monstera"], styleIds: ["minimalist", "scandinavian"], minLongestSideCm: PLANT_MIN_SIDE_CM },
+      { category: "textile", searchCategories: ["textile", "decor"], keywords: ["kissen", "kissenbezug", "zierkissen", "plaid", "wohndecke", "kuscheldecke", "überwurf", "fell"], minLongestSideCm: TEXTILE_MIN_SIDE_CM, styleIds: ["minimalist", "scandinavian"], excludeTerms: [...NOT_A_LIVING_ROOM_TEXTILE, "schwarz"] },
     ],
   },
 ];

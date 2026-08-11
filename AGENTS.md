@@ -65,6 +65,7 @@ Diagnostics (cheap, safe, never print secrets):
 
 ```bash
 npx tsx scripts/generate-showroom-rooms.ts 4 --dry-run   # what WOULD be picked, free
+npx tsx scripts/bench-image-providers.ts 3   # COSTS MONEY: provider latency stats
 npx tsx scripts/openai-diagnose.ts    # is image generation working at all
 npx tsx scripts/openai-matrix.ts      # is a failure parameter-driven or intermittent
 npx tsx scripts/cj-test-fetch.ts [kw] # CJ Dropshipping API probe
@@ -192,6 +193,19 @@ composite, defaults to one room, and aborts the batch if the first room
 fails with none succeeded. `--dry-run` resolves every catalog pick and
 prints the room contents without calling an image model at all — run it
 after editing concepts or keywords, before spending anything.
+
+### Image providers
+`lib/ai/imageProviders.ts` wraps OpenAI, Gemini (Nano Banana) and xAI behind
+one interface, and `scripts/bench-image-providers.ts` times them. Before
+reading any result: **only OpenAI accepts an edit mask.** The expensive call
+in this app is a *masked* edit — the mask is what stops the model repainting
+the whole room. Gemini and xAI edit by prompt alone, so a faster edit number
+from them is not a drop-in win; it is a different operation. The benchmark
+labels this rather than leaving it to be inferred.
+
+Timings are reported as **ttfb and total separately**. If total greatly
+exceeds ttfb across every provider, the bottleneck is the connection and
+switching provider will not help — smaller payloads will.
 
 ### Picking a showroom concept
 Don't choose a room concept by taste. `searchProducts` treats style ids as
