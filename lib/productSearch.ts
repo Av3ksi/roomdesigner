@@ -45,15 +45,19 @@ export interface ProductSearchFilters {
   /** Soft boost for style overlap. */
   styleIds?: string[];
   /**
-   * Drop the best-effort tail: return nothing rather than products that
-   * matched no keyword and no style.
+   * Require a real KEYWORD hit, not merely a style-tag hit, and drop the
+   * best-effort tail entirely.
    *
    * The default (false) is right for the Designer Agent, which should get
    * close-but-imperfect options back instead of an empty result. It is
    * wrong for automated curation, where nobody reviews the pick before it
-   * is composited: a decor slot whose keywords all missed silently
-   * returned the cheapest row in the category, and that row was a guest
-   * towel.
+   * is composited.
+   *
+   * Style tags alone are far too weak to justify a pick: they are
+   * themselves inferred by fuzzy keyword scoring in
+   * lib/suppliers/mapping.ts, so nearly everything carries one. A guest
+   * towel tagged "cozy" scored as relevant to a candle-and-vase decor
+   * slot on that tag alone, and won it twice.
    */
   requireRelevance?: boolean;
   limit?: number;
@@ -114,12 +118,17 @@ export function searchProducts(products: Product[], filters: ProductSearchFilter
     const text = `${p.name} ${p.blurb}`.toLowerCase();
     const keywordHits = lowerKeywords.reduce((n, k) => (text.includes(k) ? n + 1 : n), 0);
     const styleHits = styleIds.reduce((n, s) => (p.styles.includes(s) ? n + 1 : n), 0);
-    return { p, score: keywordHits * 2 + styleHits };
+    return { p, score: keywordHits * 2 + styleHits, keywordHits };
   });
 
   // When the caller gave relevance signals, require at least one hit rather
   // than returning arbitrary products that merely passed the hard filters.
-  const relevant = lowerKeywords.length > 0 || styleIds.length > 0 ? scored.filter((s) => s.score > 0) : scored;
+  const relevant =
+    filters.requireRelevance === true && lowerKeywords.length > 0
+      ? scored.filter((s) => s.keywordHits > 0)
+      : lowerKeywords.length > 0 || styleIds.length > 0
+        ? scored.filter((s) => s.score > 0)
+        : scored;
   // Fall back to the hard-filtered pool if relevance came up empty — an empty
   // result with a "did you mean" is worse than close-but-imperfect options.
   // Callers doing unattended curation opt out via requireRelevance.

@@ -89,7 +89,20 @@ try {
 }
 
 interface ConceptItem {
+  /** Where the pick is PLACED — placement returns one box per category, and this selects it. */
   category: ProductCategory;
+  /**
+   * Which categories the pick is SEARCHED in. Defaults to `category` alone.
+   *
+   * Needed because the feed's own categorisation is coarser than the slots
+   * are. `lib/suppliers/mapping.ts` matches German compounds on their head
+   * noun (the last word), which is right for German but means "Kissenbezug"
+   * (cushion cover) files under its head "-bezug" rather than as a textile.
+   * The measured result: 446 of 447 products in the textile category are bed
+   * duvets, and the living-room cushions are all somewhere else. Widening
+   * the search is the cheap fix; recategorising the feed is the real one.
+   */
+  searchCategories?: ProductCategory[];
   /** German-first — the real VidaXL feed's titles/blurbs are German (CH-DE); English terms are a harmless secondary net. */
   keywords: string[];
   styleIds: string[];
@@ -166,6 +179,8 @@ const RUG_MIN_LONGEST_SIDE_CM = 170;
 const FLOOR_LAMP_MIN_SIDE_CM = 100;
 /** Same reasoning — a 20 cm desk succulent reads as nothing in a wide room shot. */
 const PLANT_MIN_SIDE_CM = 60;
+/** A flag-pole holder 11.5 cm across won two decor slots. Decor has to be big enough to see. */
+const DECOR_MIN_SIDE_CM = 20;
 
 /**
  * Slot-specific exclusions. Each of these is a real wrong pick the dry run
@@ -263,7 +278,7 @@ const CONCEPTS: Concept[] = [
     cjAccent: {
       category: "decor",
       keyword: "ceramic vase",
-      fallback: { category: "decor", keywords: ["vase", "keramik", "steingut", "schale", "dekoschale"], styleIds: ["organicmodern"], excludeTerms: [...NOT_A_FLOOR_LAMP, ...NOT_A_SINGLE_PIECE] },
+      fallback: { category: "decor", keywords: ["vase", "dekovase", "dekoschale", "windlicht", "laterne", "skulptur"], styleIds: ["organicmodern"], minLongestSideCm: DECOR_MIN_SIDE_CM, excludeTerms: [...NOT_A_FLOOR_LAMP, ...NOT_A_SINGLE_PIECE] },
     },
     items: [
       { category: "sofa", keywords: ["boucle", "bouclé", "beige", "creme", "leinen", "geschwungen", "sitzer sofa"], styleIds: ["organicmodern"], minWidthCm: SOFA_MIN_WIDTH_CM, excludeTerms: NOT_A_MAIN_SOFA },
@@ -273,7 +288,7 @@ const CONCEPTS: Concept[] = [
       { category: "lighting", keywords: ["stehlampe", "bogenlampe", "rattan", "leinen", "stehleuchte"], styleIds: ["organicmodern"], minLongestSideCm: FLOOR_LAMP_MIN_SIDE_CM, excludeTerms: NOT_A_FLOOR_LAMP },
       { category: "plant", keywords: ["kunstpflanze", "olivenbaum", "pflanze", "kunstbaum"], styleIds: ["organicmodern"], minLongestSideCm: PLANT_MIN_SIDE_CM },
       { category: "storage", keywords: ["sideboard", "kommode", "massivholz", "mango", "rattan"], styleIds: ["organicmodern"], minWidthCm: STORAGE_MIN_WIDTH_CM, excludeTerms: NOT_A_SINGLE_PIECE },
-      { category: "textile", keywords: ["kissen", "plaid", "wohndecke", "kuscheldecke", "leinen"], styleIds: ["organicmodern", "cozy"], excludeTerms: NOT_A_LIVING_ROOM_TEXTILE },
+      { category: "textile", searchCategories: ["textile", "decor"], keywords: ["kissen", "plaid", "wohndecke", "kuscheldecke", "leinen"], styleIds: ["organicmodern", "cozy"], excludeTerms: NOT_A_LIVING_ROOM_TEXTILE },
     ],
   },
   {
@@ -283,7 +298,7 @@ const CONCEPTS: Concept[] = [
     cjAccent: {
       category: "decor",
       keyword: "brass candle holder",
-      fallback: { category: "decor", keywords: ["kerzenhalter", "kerzenständer", "messing", "gold", "vase", "schwarz"], styleIds: ["darkluxury"], excludeTerms: [...NOT_A_FLOOR_LAMP, ...NOT_A_SINGLE_PIECE] },
+      fallback: { category: "decor", keywords: ["kerzenhalter", "kerzenständer", "windlicht", "laterne", "vase", "dekovase", "skulptur"], styleIds: ["darkluxury"], minLongestSideCm: DECOR_MIN_SIDE_CM, excludeTerms: [...NOT_A_FLOOR_LAMP, ...NOT_A_SINGLE_PIECE] },
     },
     items: [
       { category: "sofa", keywords: ["samt", "velvet", "grün", "gruen", "smaragd", "dunkelgrün", "blau", "navy"], styleIds: ["darkluxury"], minWidthCm: SOFA_MIN_WIDTH_CM, excludeTerms: NOT_A_MAIN_SOFA },
@@ -292,7 +307,7 @@ const CONCEPTS: Concept[] = [
       { category: "rug", keywords: ["teppich", "dunkel", "muster", "orient", "schwarz"], styleIds: ["darkluxury"], minLongestSideCm: RUG_MIN_LONGEST_SIDE_CM, excludeTerms: NOT_A_ROOM_RUG },
       { category: "lighting", keywords: ["stehlampe", "messing", "gold", "stehleuchte"], styleIds: ["darkluxury", "modernluxury"], minLongestSideCm: FLOOR_LAMP_MIN_SIDE_CM, excludeTerms: NOT_A_FLOOR_LAMP },
       { category: "storage", keywords: ["sideboard", "kommode", "schwarz", "walnuss", "walnut"], styleIds: ["darkluxury", "modernluxury"], minWidthCm: STORAGE_MIN_WIDTH_CM, excludeTerms: NOT_A_SINGLE_PIECE },
-      { category: "textile", keywords: ["kissen", "samt", "velvet"], styleIds: ["darkluxury"], excludeTerms: NOT_A_LIVING_ROOM_TEXTILE },
+      { category: "textile", searchCategories: ["textile", "decor"], keywords: ["kissen", "samt", "velvet"], styleIds: ["darkluxury"], excludeTerms: NOT_A_LIVING_ROOM_TEXTILE },
     ],
   },
   {
@@ -302,7 +317,7 @@ const CONCEPTS: Concept[] = [
     cjAccent: {
       category: "textile",
       keyword: "wool throw blanket",
-      fallback: { category: "textile", keywords: ["kissen", "plaid", "wohndecke", "kuscheldecke", "wolle", "grau"], styleIds: ["industrial"], excludeTerms: NOT_A_LIVING_ROOM_TEXTILE },
+      fallback: { category: "textile", searchCategories: ["textile", "decor"], keywords: ["kissen", "plaid", "wohndecke", "kuscheldecke", "wolle", "grau"], styleIds: ["industrial"], excludeTerms: NOT_A_LIVING_ROOM_TEXTILE },
     },
     items: [
       { category: "sofa", keywords: ["leder", "kunstleder", "braun", "cognac", "sitzer sofa"], styleIds: ["industrial"], minWidthCm: SOFA_MIN_WIDTH_CM, excludeTerms: NOT_A_MAIN_SOFA },
@@ -312,7 +327,7 @@ const CONCEPTS: Concept[] = [
       { category: "lighting", keywords: ["stehlampe", "metall", "schwarz", "stehleuchte", "industrial"], styleIds: ["industrial"], minLongestSideCm: FLOOR_LAMP_MIN_SIDE_CM, excludeTerms: NOT_A_FLOOR_LAMP },
       { category: "storage", keywords: ["regal", "metall", "schwarz", "sideboard", "industrial"], styleIds: ["industrial"], minWidthCm: STORAGE_MIN_WIDTH_CM, excludeTerms: NOT_A_SINGLE_PIECE },
       { category: "plant", keywords: ["kunstpflanze", "pflanze", "kunstbaum", "monstera"], styleIds: ["industrial"], minLongestSideCm: PLANT_MIN_SIDE_CM },
-      { category: "decor", keywords: ["vase", "schale", "deko", "metall"], styleIds: ["industrial"], excludeTerms: NOT_A_FLOOR_LAMP },
+      { category: "decor", keywords: ["vase", "dekovase", "dekoschale", "windlicht", "laterne", "skulptur"], styleIds: ["industrial"], minLongestSideCm: DECOR_MIN_SIDE_CM, excludeTerms: [...NOT_A_FLOOR_LAMP, ...NOT_A_SINGLE_PIECE] },
     ],
   },
   {
@@ -322,7 +337,7 @@ const CONCEPTS: Concept[] = [
     cjAccent: {
       category: "decor",
       keyword: "scented candle jar",
-      fallback: { category: "decor", keywords: ["kerze", "kerzenhalter", "laterne", "windlicht", "vase"], styleIds: ["cozy"], excludeTerms: [...NOT_A_FLOOR_LAMP, ...NOT_A_SINGLE_PIECE] },
+      fallback: { category: "decor", keywords: ["kerzenhalter", "kerzenständer", "laterne", "windlicht", "vase", "dekovase"], styleIds: ["cozy"], minLongestSideCm: DECOR_MIN_SIDE_CM, excludeTerms: [...NOT_A_FLOOR_LAMP, ...NOT_A_SINGLE_PIECE] },
     },
     items: [
       { category: "sofa", keywords: ["stoff", "beige", "braun", "cord", "sitzer sofa", "gemütlich", "gemutlich"], styleIds: ["cozy"], minWidthCm: SOFA_MIN_WIDTH_CM, excludeTerms: [...NOT_A_MAIN_SOFA, ...NOT_A_WARM_NEUTRAL] },
@@ -332,7 +347,7 @@ const CONCEPTS: Concept[] = [
       { category: "lighting", keywords: ["stehlampe", "tischlampe", "stehleuchte", "warm"], styleIds: ["cozy"], minLongestSideCm: FLOOR_LAMP_MIN_SIDE_CM, excludeTerms: NOT_A_FLOOR_LAMP },
       { category: "storage", keywords: ["sideboard", "kommode", "holz", "regal"], styleIds: ["cozy"], minWidthCm: STORAGE_MIN_WIDTH_CM, excludeTerms: NOT_A_SINGLE_PIECE },
       { category: "plant", keywords: ["kunstpflanze", "pflanze", "kunstbaum"], styleIds: ["cozy"], minLongestSideCm: PLANT_MIN_SIDE_CM },
-      { category: "textile", keywords: ["plaid", "wohndecke", "kuscheldecke", "kissen", "wolle", "fell"], styleIds: ["cozy"], excludeTerms: NOT_A_LIVING_ROOM_TEXTILE },
+      { category: "textile", searchCategories: ["textile", "decor"], keywords: ["plaid", "wohndecke", "kuscheldecke", "kissen", "wolle", "fell"], styleIds: ["cozy"], excludeTerms: NOT_A_LIVING_ROOM_TEXTILE },
     ],
   },
 ];
@@ -391,12 +406,14 @@ interface SlotOutcome {
  * cheapest plant that matches anything.
  */
 function pickBest(catalog: Product[], item: ConceptItem, alreadyUsed: Set<string>): SlotOutcome {
-  const inCategory = catalog.filter((p) => p.category === item.category);
+  const searchIn = item.searchCategories ?? [item.category];
+  const inCategory = catalog.filter((p) => searchIn.includes(p.category));
   const photographed = inCategory.filter((p) => p.imageUrl);
   const unused = photographed.filter((p) => !alreadyUsed.has(p.id));
   const allowed = unused.filter((p) => !isExcluded(p, item.excludeTerms));
 
-  const funnel = `${inCategory.length} in category -> ${photographed.length} photographed -> ${unused.length} not already used -> ${allowed.length} past exclusions`;
+  const scope = searchIn.length > 1 ? `${searchIn.join("+")}` : "category";
+  const funnel = `${inCategory.length} in ${scope} -> ${photographed.length} photographed -> ${unused.length} not already used -> ${allowed.length} past exclusions`;
   if (allowed.length === 0) {
     // Naming the guilty term matters more than the count. "0 past
     // exclusions" told us the exclusions were at fault but not which one,
@@ -413,7 +430,8 @@ function pickBest(catalog: Product[], item: ConceptItem, alreadyUsed: Set<string
   }
 
   const [best] = searchProducts(allowed, {
-    category: item.category,
+    // No `category` filter here: the pool above is already scoped to
+    // searchIn, and passing item.category would undo a widened search.
     keywords: item.keywords,
     styleIds: item.styleIds,
     minWidthCm: item.minWidthCm,
@@ -433,7 +451,12 @@ function pickBest(catalog: Product[], item: ConceptItem, alreadyUsed: Set<string
     ].filter(Boolean).join(", ");
     return { product: null, reason: `${funnel} -> 0 met the size floor (${floors || "none set"})` };
   }
-  return { product: best };
+  // Re-tag to the SLOT's category when the search was widened. Placement
+  // returns one box per category and buildConcept looks it up by the
+  // product's own category, so a cushion filed under "decor" would
+  // otherwise be composited into the decor box — on top of whatever the
+  // decor accent put there.
+  return { product: best.category === item.category ? best : { ...best, category: item.category } };
 }
 
 function formatDims(product: Product): string {
