@@ -1,6 +1,6 @@
 /**
- * Generates the 5 curated showroom "finished rooms" end-to-end from one
- * command instead of clicking through Looks Studio 5 times: for each
+ * Generates the curated showroom "finished rooms" end-to-end from one
+ * command instead of clicking through Looks Studio once per room: for each
  * concept below, auto-picks the best real catalog product per category
  * (lib/productSearch.ts's searchProducts — German-keyword matching against
  * the real VidaXL feed text, the same technique the Designer Agent's own
@@ -41,7 +41,7 @@
  *   curated real product picks below. This is the more deliberate,
  *   hand-tuned sibling of generate-looks.ts's random per-style picking —
  *   use this one when you want control over exactly which materials/
- *   keywords define "Scandinavian" vs. "Dark Luxury", not just "any 3-6
+ *   keywords define "Organic Modern" vs. "Dark Luxury", not just "any 3-6
  *   products tagged with that style."
  *
  * Usage — see what a run WOULD pick, for free:
@@ -127,9 +127,13 @@ interface Concept {
    * not real item size (lib/suppliers/cjdropshipping.ts's module doc),
    * so anything whose on-image scale matters a lot (a sofa, a table)
    * stays sourced from VidaXL, which has real confirmed dimensions.
-   * Skipped silently if CJ_API_KEY isn't set or nothing matches.
+   *
+   * `fallback` fills the same slot from our own catalog when CJ_API_KEY
+   * isn't set, when CJ finds nothing, or when what it finds isn't actually
+   * the thing asked for — which is most of the time. Its category must
+   * match `category` above, and neither may collide with a slot in `items`.
    */
-  cjAccent: { category: ProductCategory; keyword: string };
+  cjAccent: { category: ProductCategory; keyword: string; fallback: ConceptItem };
 }
 
 /**
@@ -149,8 +153,15 @@ interface Concept {
 const SOFA_MIN_WIDTH_CM = 150;
 const CHAIR_MIN_WIDTH_CM = 55;
 const COFFEE_TABLE_MIN_WIDTH_CM = 70;
-const RUG_MIN_WIDTH_CM = 150;
 const STORAGE_MIN_WIDTH_CM = 80;
+/**
+ * Rugs are floored on their LONGEST side, not width, because the feed's
+ * Size column lists them short-side-first as often as not ("80 x 150 cm"),
+ * so a width floor rejected genuine area rugs along with the doormats and
+ * emptied the slot in all four rooms. 170 still rejects a 90 x 90 mat and
+ * an 80 x 150 runner while admitting a small-but-real 120 x 170.
+ */
+const RUG_MIN_LONGEST_SIDE_CM = 170;
 /** Longest side, not width: a floor lamp is defined by being tall. */
 const FLOOR_LAMP_MIN_SIDE_CM = 100;
 /** Same reasoning — a 20 cm desk succulent reads as nothing in a wide room shot. */
@@ -160,10 +171,17 @@ const PLANT_MIN_SIDE_CM = 60;
  * Slot-specific exclusions. Each of these is a real wrong pick the dry run
  * caught, not a hypothetical.
  */
+/**
+ * Multi-piece sets. A set's product photo shows two sofas or two
+ * sideboards, and that photo is the reference the compositor is told to
+ * reproduce inside one placement box — so the room gets a duplicated
+ * object, or the identity check fails, or both.
+ */
+const NOT_A_SINGLE_PIECE = ["set", "2 stk", "3 stk", "4 stk", "2 pcs", "3 pcs", "4 pcs"];
 /** Sofa-shaped things that are not a living room's main sofa. */
-const NOT_A_MAIN_SOFA = ["sofa-sessel", "pallet", "palette", "hundesofa", "puppensofa", "aufblasbar"];
-/** "Massagesessel" (massage chair) and office seating won a lounge-chair slot on the word "Sessel" alone. */
-const NOT_A_LOUNGE_CHAIR = ["massage", "büro", "buro", "gaming", "schreibtischstuhl"];
+const NOT_A_MAIN_SOFA = ["sofa-sessel", "pallet", "palette", "hundesofa", "puppensofa", ...NOT_A_SINGLE_PIECE];
+/** "Massagesessel" (massage chair), office seating and footstools all won a lounge-chair slot on the word "Sessel"/"Hocker" alone. */
+const NOT_A_LOUNGE_CHAIR = ["massage", "büro", "buro", "gaming", "schreibtischstuhl", "hocker"];
 /** Anti-slip mats, bath mats and doormats are all "Teppich" in this feed. */
 const NOT_A_ROOM_RUG = ["anti-rutsch", "antirutsch", "fußmatte", "fussmatte", "badematte", "türmatte", "turmatte", "läufer", "laufer"];
 /**
@@ -171,7 +189,14 @@ const NOT_A_ROOM_RUG = ["anti-rutsch", "antirutsch", "fußmatte", "fussmatte", "
  * for a throw gets bed duvets — the confirmed cause of the "Sommerdecke"
  * that landed in an earlier room and had to be un-pinned by hand.
  */
-const NOT_A_LIVING_ROOM_TEXTILE = ["bettdecke", "sommerdecke", "winterbettdecke", "winterdecke", "steppdecke", "bettwäsche", "bettwasche", "bettbezug", "spannbettlaken", "matratze", "kopfkissen", "bank"];
+const NOT_A_LIVING_ROOM_TEXTILE = [
+  "bettdecke", "sommerdecke", "winterbettdecke", "winterdecke", "steppdecke",
+  "bettwäsche", "bettwasche", "bettbezug", "spannbettlaken", "matratze", "kopfkissen", "bank",
+  // Garden/pool soft goods, which are "Kissen" too. Inflatable pool
+  // cushions won the textile slot in two rooms; high-back garden chair
+  // pads won it in a third.
+  "poolkissen", "hochlehner", "stuhlkissen", "gartenstuhl", "auflage", "palettenkissen",
+];
 /** Recessed/ceiling fixtures and bulbs, which are "Leuchte" too but are not a lamp you can see in a room shot. */
 const NOT_A_FLOOR_LAMP = ["strahler", "spotlight", "einbau", "leuchtmittel", "glühbirne", "gluhbirne", "lichtleiste", "led-streifen", "lichterkette"];
 
@@ -211,15 +236,19 @@ const CONCEPTS: Concept[] = [
     title: "Organic Modern Living Room",
     description: "Curved forms, oat and sage, raw timber and clay — a warm, softly modern living room.",
     primaryStyleId: "organicmodern",
-    cjAccent: { category: "decor", keyword: "ceramic vase" },
+    cjAccent: {
+      category: "decor",
+      keyword: "ceramic vase",
+      fallback: { category: "decor", keywords: ["vase", "keramik", "steingut", "schale", "dekoschale"], styleIds: ["organicmodern"], excludeTerms: NOT_A_FLOOR_LAMP },
+    },
     items: [
       { category: "sofa", keywords: ["boucle", "bouclé", "beige", "creme", "leinen", "geschwungen", "sitzer sofa"], styleIds: ["organicmodern"], minWidthCm: SOFA_MIN_WIDTH_CM, excludeTerms: NOT_A_MAIN_SOFA },
       { category: "chair", keywords: ["sessel", "boucle", "bouclé", "rattan", "beige", "geschwungen"], styleIds: ["organicmodern"], minWidthCm: CHAIR_MIN_WIDTH_CM, excludeTerms: NOT_A_LOUNGE_CHAIR },
       { category: "table", keywords: ["couchtisch", "massivholz", "mango", "akazie", "rund", "oval"], styleIds: ["organicmodern"], minWidthCm: COFFEE_TABLE_MIN_WIDTH_CM },
-      { category: "rug", keywords: ["teppich", "jute", "sisal", "natur", "beige", "creme"], styleIds: ["organicmodern"], minWidthCm: RUG_MIN_WIDTH_CM, excludeTerms: NOT_A_ROOM_RUG },
+      { category: "rug", keywords: ["teppich", "jute", "sisal", "natur", "beige", "creme"], styleIds: ["organicmodern"], minLongestSideCm: RUG_MIN_LONGEST_SIDE_CM, excludeTerms: NOT_A_ROOM_RUG },
       { category: "lighting", keywords: ["stehlampe", "bogenlampe", "rattan", "leinen", "stehleuchte"], styleIds: ["organicmodern"], minLongestSideCm: FLOOR_LAMP_MIN_SIDE_CM, excludeTerms: NOT_A_FLOOR_LAMP },
       { category: "plant", keywords: ["kunstpflanze", "olivenbaum", "pflanze", "kunstbaum"], styleIds: ["organicmodern"], minLongestSideCm: PLANT_MIN_SIDE_CM },
-      { category: "storage", keywords: ["sideboard", "kommode", "massivholz", "mango", "rattan"], styleIds: ["organicmodern"], minWidthCm: STORAGE_MIN_WIDTH_CM },
+      { category: "storage", keywords: ["sideboard", "kommode", "massivholz", "mango", "rattan"], styleIds: ["organicmodern"], minWidthCm: STORAGE_MIN_WIDTH_CM, excludeTerms: NOT_A_SINGLE_PIECE },
       { category: "textile", keywords: ["kissen", "plaid", "wohndecke", "kuscheldecke", "leinen"], styleIds: ["organicmodern", "cozy"], excludeTerms: NOT_A_LIVING_ROOM_TEXTILE },
     ],
   },
@@ -227,14 +256,18 @@ const CONCEPTS: Concept[] = [
     title: "Dark Luxury Living Room",
     description: "Emerald velvet, marble, and brass — a moody, statement living room.",
     primaryStyleId: "darkluxury",
-    cjAccent: { category: "decor", keyword: "brass candle holder" },
+    cjAccent: {
+      category: "decor",
+      keyword: "brass candle holder",
+      fallback: { category: "decor", keywords: ["kerzenhalter", "kerzenständer", "messing", "gold", "vase", "schwarz"], styleIds: ["darkluxury"], excludeTerms: NOT_A_FLOOR_LAMP },
+    },
     items: [
       { category: "sofa", keywords: ["samt", "velvet", "grün", "gruen", "smaragd", "dunkelgrün", "blau", "navy"], styleIds: ["darkluxury"], minWidthCm: SOFA_MIN_WIDTH_CM, excludeTerms: NOT_A_MAIN_SOFA },
       { category: "chair", keywords: ["samt", "velvet", "sessel", "cocktailsessel", "ohrensessel", "dunkel", "schwarz", "grün"], styleIds: ["darkluxury", "modernluxury"], minWidthCm: CHAIR_MIN_WIDTH_CM, excludeTerms: NOT_A_LOUNGE_CHAIR },
       { category: "table", keywords: ["marmor", "marble", "couchtisch", "schwarz", "gold"], styleIds: ["darkluxury", "modernluxury"], minWidthCm: COFFEE_TABLE_MIN_WIDTH_CM },
-      { category: "rug", keywords: ["teppich", "dunkel", "muster", "orient", "schwarz"], styleIds: ["darkluxury"], minWidthCm: RUG_MIN_WIDTH_CM, excludeTerms: NOT_A_ROOM_RUG },
+      { category: "rug", keywords: ["teppich", "dunkel", "muster", "orient", "schwarz"], styleIds: ["darkluxury"], minLongestSideCm: RUG_MIN_LONGEST_SIDE_CM, excludeTerms: NOT_A_ROOM_RUG },
       { category: "lighting", keywords: ["stehlampe", "messing", "gold", "stehleuchte"], styleIds: ["darkluxury", "modernluxury"], minLongestSideCm: FLOOR_LAMP_MIN_SIDE_CM, excludeTerms: NOT_A_FLOOR_LAMP },
-      { category: "storage", keywords: ["sideboard", "kommode", "schwarz", "walnuss", "walnut"], styleIds: ["darkluxury", "modernluxury"], minWidthCm: STORAGE_MIN_WIDTH_CM },
+      { category: "storage", keywords: ["sideboard", "kommode", "schwarz", "walnuss", "walnut"], styleIds: ["darkluxury", "modernluxury"], minWidthCm: STORAGE_MIN_WIDTH_CM, excludeTerms: NOT_A_SINGLE_PIECE },
       { category: "textile", keywords: ["kissen", "samt", "velvet"], styleIds: ["darkluxury"], excludeTerms: NOT_A_LIVING_ROOM_TEXTILE },
     ],
   },
@@ -242,14 +275,18 @@ const CONCEPTS: Concept[] = [
     title: "Industrial Loft Living Room",
     description: "Blackened steel, cognac leather and raw brick — a warm loft with a hard-edged shell.",
     primaryStyleId: "industrial",
-    cjAccent: { category: "textile", keyword: "wool throw blanket" },
+    cjAccent: {
+      category: "textile",
+      keyword: "wool throw blanket",
+      fallback: { category: "textile", keywords: ["kissen", "plaid", "wohndecke", "kuscheldecke", "wolle", "grau"], styleIds: ["industrial"], excludeTerms: NOT_A_LIVING_ROOM_TEXTILE },
+    },
     items: [
       { category: "sofa", keywords: ["leder", "kunstleder", "braun", "cognac", "sitzer sofa"], styleIds: ["industrial"], minWidthCm: SOFA_MIN_WIDTH_CM, excludeTerms: NOT_A_MAIN_SOFA },
       { category: "chair", keywords: ["sessel", "leder", "kunstleder", "braun", "metall"], styleIds: ["industrial"], minWidthCm: CHAIR_MIN_WIDTH_CM, excludeTerms: NOT_A_LOUNGE_CHAIR },
       { category: "table", keywords: ["couchtisch", "metall", "schwarz", "massivholz", "industrial"], styleIds: ["industrial"], minWidthCm: COFFEE_TABLE_MIN_WIDTH_CM },
-      { category: "rug", keywords: ["teppich", "vintage", "grau", "muster", "used-look"], styleIds: ["industrial"], minWidthCm: RUG_MIN_WIDTH_CM, excludeTerms: NOT_A_ROOM_RUG },
+      { category: "rug", keywords: ["teppich", "vintage", "grau", "muster", "used-look"], styleIds: ["industrial"], minLongestSideCm: RUG_MIN_LONGEST_SIDE_CM, excludeTerms: NOT_A_ROOM_RUG },
       { category: "lighting", keywords: ["stehlampe", "metall", "schwarz", "stehleuchte", "industrial"], styleIds: ["industrial"], minLongestSideCm: FLOOR_LAMP_MIN_SIDE_CM, excludeTerms: NOT_A_FLOOR_LAMP },
-      { category: "storage", keywords: ["regal", "metall", "schwarz", "sideboard", "industrial"], styleIds: ["industrial"], minWidthCm: STORAGE_MIN_WIDTH_CM },
+      { category: "storage", keywords: ["regal", "metall", "schwarz", "sideboard", "industrial"], styleIds: ["industrial"], minWidthCm: STORAGE_MIN_WIDTH_CM, excludeTerms: NOT_A_SINGLE_PIECE },
       { category: "plant", keywords: ["kunstpflanze", "pflanze", "kunstbaum", "monstera"], styleIds: ["industrial"], minLongestSideCm: PLANT_MIN_SIDE_CM },
       { category: "decor", keywords: ["vase", "schale", "deko", "metall"], styleIds: ["industrial"], excludeTerms: NOT_A_FLOOR_LAMP },
     ],
@@ -258,14 +295,18 @@ const CONCEPTS: Concept[] = [
     title: "Cozy Layered Living Room",
     description: "Rust and oat wool, amber light and more texture than strictly necessary — a room built for evenings.",
     primaryStyleId: "cozy",
-    cjAccent: { category: "decor", keyword: "scented candle jar" },
+    cjAccent: {
+      category: "decor",
+      keyword: "scented candle jar",
+      fallback: { category: "decor", keywords: ["kerze", "kerzenhalter", "laterne", "windlicht", "vase"], styleIds: ["cozy"], excludeTerms: NOT_A_FLOOR_LAMP },
+    },
     items: [
       { category: "sofa", keywords: ["stoff", "beige", "braun", "cord", "sitzer sofa", "gemütlich", "gemutlich"], styleIds: ["cozy"], minWidthCm: SOFA_MIN_WIDTH_CM, excludeTerms: NOT_A_MAIN_SOFA },
       { category: "chair", keywords: ["sessel", "ohrensessel", "cord", "stoff", "braun"], styleIds: ["cozy"], minWidthCm: CHAIR_MIN_WIDTH_CM, excludeTerms: NOT_A_LOUNGE_CHAIR },
       { category: "table", keywords: ["couchtisch", "holz", "massivholz", "rund"], styleIds: ["cozy"], minWidthCm: COFFEE_TABLE_MIN_WIDTH_CM },
-      { category: "rug", keywords: ["teppich", "hochflor", "shaggy", "wolle", "braun", "beige"], styleIds: ["cozy"], minWidthCm: RUG_MIN_WIDTH_CM, excludeTerms: NOT_A_ROOM_RUG },
+      { category: "rug", keywords: ["teppich", "hochflor", "shaggy", "wolle", "braun", "beige"], styleIds: ["cozy"], minLongestSideCm: RUG_MIN_LONGEST_SIDE_CM, excludeTerms: NOT_A_ROOM_RUG },
       { category: "lighting", keywords: ["stehlampe", "tischlampe", "stehleuchte", "warm"], styleIds: ["cozy"], minLongestSideCm: FLOOR_LAMP_MIN_SIDE_CM, excludeTerms: NOT_A_FLOOR_LAMP },
-      { category: "storage", keywords: ["sideboard", "kommode", "holz", "regal"], styleIds: ["cozy"], minWidthCm: STORAGE_MIN_WIDTH_CM },
+      { category: "storage", keywords: ["sideboard", "kommode", "holz", "regal"], styleIds: ["cozy"], minWidthCm: STORAGE_MIN_WIDTH_CM, excludeTerms: NOT_A_SINGLE_PIECE },
       { category: "plant", keywords: ["kunstpflanze", "pflanze", "kunstbaum"], styleIds: ["cozy"], minLongestSideCm: PLANT_MIN_SIDE_CM },
       { category: "textile", keywords: ["plaid", "wohndecke", "kuscheldecke", "kissen", "wolle", "fell"], styleIds: ["cozy"], excludeTerms: NOT_A_LIVING_ROOM_TEXTILE },
     ],
@@ -281,7 +322,15 @@ const CONCEPTS: Concept[] = [
  * on an incidental keyword collision. These terms should never belong in
  * an adult living-room showroom scene no matter what else matches.
  */
-const EXCLUDE_TERMS = ["kinder", "baby", "welpen", "hunde", "katzen", "haustier", "grill", "pizzaofen"];
+const EXCLUDE_TERMS = [
+  "kinder", "baby", "welpen", "hunde", "katzen", "haustier", "grill", "pizzaofen",
+  // Outdoor and garden. VidaXL is a general wholesaler, so its "textile"
+  // and "decor" categories are full of pool cushions, tarpaulins and
+  // ground anchors — a set of four anthracite ground anchors won a decor
+  // slot outright, on the word "Metall".
+  "pool", "aufblasbar", "garten", "camping", "bodenanker", "zelt", "sonnenschirm",
+  "trampolin", "planschbecken", "gewächshaus", "gewachshaus",
+];
 
 function isExcluded(product: Product, extraTerms: string[] = []): boolean {
   const text = product.name.toLowerCase();
@@ -289,8 +338,22 @@ function isExcluded(product: Product, extraTerms: string[] = []): boolean {
 }
 
 /**
- * Best real, photographed catalog match for one recipe slot — null if the
- * catalog has nothing usable (or nothing NOT excluded) in that category.
+ * A resolved slot, or an explanation of why it stayed empty.
+ *
+ * The reason string is a funnel — category count, then how many survived
+ * each filter — because "no rug found" on its own is unactionable. Every
+ * room silently lost its rug once, and the cause (a width floor applied to
+ * a feed that lists rugs short-side-first) was invisible until the counts
+ * were printed.
+ */
+interface SlotOutcome {
+  product: Product | null;
+  reason?: string;
+}
+
+/**
+ * Best real, photographed catalog match for one recipe slot — a null
+ * product if the catalog has nothing usable in that category.
  *
  * `alreadyUsed` holds every product id taken by an earlier slot in this
  * run, across ALL concepts, so four showroom rooms don't end up sharing one
@@ -298,12 +361,16 @@ function isExcluded(product: Product, extraTerms: string[] = []): boolean {
  * same plant won its slot in three of four rooms, because it is simply the
  * cheapest plant that matches anything.
  */
-function pickBest(catalog: Product[], item: ConceptItem, alreadyUsed: Set<string>): Product | null {
-  const eligible = catalog.filter(
-    (p) => p.category === item.category && p.imageUrl && !alreadyUsed.has(p.id) && !isExcluded(p, item.excludeTerms),
-  );
-  if (eligible.length === 0) return null;
-  const [best] = searchProducts(eligible, {
+function pickBest(catalog: Product[], item: ConceptItem, alreadyUsed: Set<string>): SlotOutcome {
+  const inCategory = catalog.filter((p) => p.category === item.category);
+  const photographed = inCategory.filter((p) => p.imageUrl);
+  const unused = photographed.filter((p) => !alreadyUsed.has(p.id));
+  const allowed = unused.filter((p) => !isExcluded(p, item.excludeTerms));
+
+  const funnel = `${inCategory.length} in category -> ${photographed.length} photographed -> ${unused.length} not already used -> ${allowed.length} past exclusions`;
+  if (allowed.length === 0) return { product: null, reason: funnel };
+
+  const [best] = searchProducts(allowed, {
     category: item.category,
     keywords: item.keywords,
     styleIds: item.styleIds,
@@ -311,7 +378,14 @@ function pickBest(catalog: Product[], item: ConceptItem, alreadyUsed: Set<string
     minLongestSideCm: item.minLongestSideCm,
     limit: 1,
   });
-  return best ?? null;
+  if (!best) {
+    const floors = [
+      item.minWidthCm !== undefined ? `min width ${item.minWidthCm}cm` : null,
+      item.minLongestSideCm !== undefined ? `min longest side ${item.minLongestSideCm}cm` : null,
+    ].filter(Boolean).join(", ");
+    return { product: null, reason: `${funnel} -> 0 met the size floor (${floors || "none set"})` };
+  }
+  return { product: best };
 }
 
 function formatDims(product: Product): string {
@@ -351,37 +425,52 @@ function isRelevantCjMatch(product: Product, keyword: string): boolean {
  */
 async function pickConceptProducts(concept: Concept, catalog: Product[], alreadyUsed: Set<string>): Promise<Product[]> {
   const matched: Product[] = [];
-  for (const item of concept.items) {
-    const match = pickBest(catalog, item, alreadyUsed);
-    if (!match) {
-      console.warn(`  no real "${item.category}" product with a photo found — skipping that slot.`);
-      continue;
-    }
+  const take = (product: Product, label: string) => {
     // Dimensions are printed because they are the fastest way to eyeball a
     // wrong pick: "90 x 90 cm" next to the word "Teppich" is instantly a
     // doormat, where the product name alone reads as a perfectly good rug.
-    console.log(`  ${item.category}: ${match.name} (${match.id}, CHF ${match.price}, ${formatDims(match)})`);
-    matched.push(match);
-    alreadyUsed.add(match.id);
+    console.log(`  ${label}: ${product.name} (${product.id}, CHF ${product.price}, ${formatDims(product)})`);
+    matched.push(product);
+    alreadyUsed.add(product.id);
+  };
+
+  for (const item of concept.items) {
+    const { product, reason } = pickBest(catalog, item, alreadyUsed);
+    if (!product) {
+      console.warn(`  no usable "${item.category}" product — skipping that slot. [${reason}]`);
+      continue;
+    }
+    take(product, item.category);
   }
 
+  // The CJ accent is best-effort by design, so when it comes up empty the
+  // slot is filled from our own catalog instead of left as a hole. CJ has
+  // now failed or returned something irrelevant on most attempts ("ceramic
+  // vase" -> a coffee cup, "scented candle jar" -> a mermaid night light),
+  // and a room missing its only decor piece is a visibly emptier room.
+  const accent = concept.cjAccent;
+  let accentFilled = false;
   if (cjEnabled()) {
-    console.log(`  Searching CJ Dropshipping for "${concept.cjAccent.keyword}"...`);
+    console.log(`  Searching CJ Dropshipping for "${accent.keyword}"...`);
     try {
-      const results = await searchCjProducts(concept.cjAccent.keyword, 5);
-      const cjMatch = results.find((p) => isRelevantCjMatch(p, concept.cjAccent.keyword));
+      const results = await searchCjProducts(accent.keyword, 5);
+      const cjMatch = results.find((p) => isRelevantCjMatch(p, accent.keyword));
       if (cjMatch) {
-        console.log(`  ${concept.cjAccent.category} (CJ): ${cjMatch.name} (${cjMatch.id}, CHF ${cjMatch.price})`);
-        matched.push({ ...cjMatch, category: concept.cjAccent.category });
-        alreadyUsed.add(cjMatch.id);
+        take({ ...cjMatch, category: accent.category }, `${accent.category} (CJ)`);
+        accentFilled = true;
       } else if (results.length > 0) {
-        console.warn(`  CJ returned ${results.length} result(s) for "${concept.cjAccent.keyword}" but none are actually that thing (top hit: "${results[0].name}") — skipping that accent.`);
+        console.warn(`  CJ returned ${results.length} result(s) for "${accent.keyword}" but none are actually that thing (top hit: "${results[0].name}").`);
       } else {
-        console.warn(`  no CJ match for "${concept.cjAccent.keyword}" — skipping that accent.`);
+        console.warn(`  no CJ match for "${accent.keyword}".`);
       }
     } catch (err) {
-      console.warn(`  CJ search failed (${err instanceof Error ? err.message : err}) — skipping that accent.`);
+      console.warn(`  CJ search failed (${err instanceof Error ? err.message : err}).`);
     }
+  }
+  if (!accentFilled) {
+    const { product, reason } = pickBest(catalog, accent.fallback, alreadyUsed);
+    if (product) take(product, `${accent.category} (catalog fallback)`);
+    else console.warn(`  no usable "${accent.category}" fallback either — skipping that accent. [${reason}]`);
   }
 
   return matched;
