@@ -151,7 +151,19 @@ export function searchProducts(products: Product[], filters: ProductSearchFilter
  * attached to a customer's cart is worse than no match at all. Requires a
  * real minimum keyword overlap; returns null rather than guessing.
  */
-export function findBestCatalogMatch(products: Product[], description: string): Product | null {
+export function findBestCatalogMatch(
+  products: Product[],
+  description: string,
+  /**
+   * Restrict matching to one category. Strongly recommended: without it,
+   * matching is pure word overlap and a description's adjectives can carry
+   * it into the wrong kind of object entirely. Confirmed on a real render —
+   * "Decke, beige, über Sofalehne drapiert" (a beige throw over the sofa
+   * arm) matched a beige Sherpa ARMCHAIR, which put a CHF 176 buy-pin for a
+   * chair on a blanket and added it to the room's total.
+   */
+  category?: ProductCategory,
+): Product | null {
   const words = description
     .toLowerCase()
     .split(/[^\p{L}\p{N}]+/u)
@@ -160,6 +172,7 @@ export function findBestCatalogMatch(products: Product[], description: string): 
 
   let best: { product: Product; score: number } | null = null;
   for (const p of products) {
+    if (category && p.category !== category) continue;
     const text = `${p.name} ${p.blurb}`.toLowerCase();
     const score = words.reduce((n, w) => (text.includes(w) ? n + 1 : n), 0);
     if (score > 0 && (!best || score > best.score)) best = { product: p, score };

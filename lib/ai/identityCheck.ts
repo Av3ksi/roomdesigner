@@ -107,7 +107,7 @@ export async function checkRenderedProductIdentity(
 
     const response = await new Anthropic().messages.create({
       model: MODEL,
-      max_tokens: 2048,
+      max_tokens: 4096,
       thinking: { type: "adaptive" },
       system: IDENTITY_SYSTEM,
       output_config: {
@@ -140,6 +140,13 @@ export async function checkRenderedProductIdentity(
     });
 
     if (response.stop_reason === "refusal") return null;
+    // A verdict cut off mid-sentence is not parseable JSON, and it threw a
+    // raw SyntaxError with a stack trace into the middle of a generation run
+    // twice. It is a skipped check, not a crash — report it in one line.
+    if (response.stop_reason === "max_tokens") {
+      console.warn("[vistroom] identity check ran out of tokens before finishing its verdict — skipping this one.");
+      return null;
+    }
     const text = response.content.find((b) => b.type === "text")?.text;
     if (!text) return null;
     const parsed = JSON.parse(text) as Record<string, unknown>;
@@ -155,7 +162,7 @@ export async function checkRenderedProductIdentity(
     }
     return { pass: parsed.pass, note: parsed.note, strayObjects };
   } catch (err) {
-    console.error("[vistroom] identity check failed, skipping:", err);
+    console.error("[vistroom] identity check failed, skipping:", err instanceof Error ? err.message : err);
     return null;
   }
 }
@@ -195,7 +202,7 @@ export async function checkRemovalSuccess(
 
     const response = await new Anthropic().messages.create({
       model: MODEL,
-      max_tokens: 2048,
+      max_tokens: 4096,
       thinking: { type: "adaptive" },
       system: REMOVAL_SYSTEM,
       output_config: {
@@ -215,6 +222,13 @@ export async function checkRemovalSuccess(
     });
 
     if (response.stop_reason === "refusal") return null;
+    // A verdict cut off mid-sentence is not parseable JSON, and it threw a
+    // raw SyntaxError with a stack trace into the middle of a generation run
+    // twice. It is a skipped check, not a crash — report it in one line.
+    if (response.stop_reason === "max_tokens") {
+      console.warn("[vistroom] identity check ran out of tokens before finishing its verdict — skipping this one.");
+      return null;
+    }
     const text = response.content.find((b) => b.type === "text")?.text;
     if (!text) return null;
     const parsed = JSON.parse(text) as Record<string, unknown>;

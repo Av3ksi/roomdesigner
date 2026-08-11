@@ -229,6 +229,44 @@ export async function updateFinishedRoomItemBoxes(
   return rows.length > 0;
 }
 
+/**
+ * Drops one product from a saved room: its id, its hotspot, its
+ * auto-matched flag, and its share of the total.
+ *
+ * Exists because a wrong auto-match ships a room that is actively
+ * misleading rather than merely incomplete — a beige throw matched to a
+ * beige armchair put a CHF 176 buy-pin for a chair on a blanket. The
+ * matching bug is fixed, but rooms rendered before the fix are already
+ * published, and regenerating one costs a full set of paid image calls to
+ * fix a data error. Removing the bad entry is the proportionate repair.
+ *
+ * No ownership check — a script-only admin path
+ * (scripts/remove-room-product.ts), not a request handler.
+ */
+export async function removeFinishedRoomProduct(
+  id: string,
+  productId: string,
+  /** What to deduct from the room's total; the caller looks up the real price. */
+  refundPrice: number,
+): Promise<boolean> {
+  await ensureSchema();
+  const db = sql();
+  // Done entirely in SQL rather than read-modify-write. getFinishedRoom
+  // resolves product ids against the catalogue and drops any that no longer
+  // match, so writing its view back would silently delete those rows from
+  // the room as a side effect of removing one unrelated product.
+  const rows = await db`
+    UPDATE finished_rooms
+    SET product_ids      = array_remove(product_ids, ${productId}),
+        auto_matched_ids = array_remove(auto_matched_ids, ${productId}),
+        item_boxes       = item_boxes - ${productId},
+        total_price      = GREATEST(0, total_price - ${refundPrice})
+    WHERE id = ${id} AND ${productId} = ANY(product_ids)
+    RETURNING id
+  `;
+  return rows.length > 0;
+}
+
 export async function getFinishedRoom(id: string): Promise<FinishedRoom | null> {
   if (!dbEnabled()) return null;
   try {

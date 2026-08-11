@@ -575,6 +575,46 @@ function sleep(ms: number): Promise<void> {
 }
 
 /**
+ * German nouns that identify what a staged object IS, so an auto-match can
+ * be confined to that kind of product.
+ *
+ * Ordered by where the word appears in the description, not by this list's
+ * order, because German puts the subject first: "Kleine Tischlampe auf dem
+ * Sideboard" is a lamp, not a sideboard, and the earliest match says so.
+ */
+const DESCRIPTION_CATEGORY_TERMS: [ProductCategory, string[]][] = [
+  ["textile", ["decke", "plaid", "kissen", "überwurf", "uberwurf", "throw"]],
+  ["plant", ["pflanze", "blume", "baum", "kaktus", "farn"]],
+  ["art", ["bild", "poster", "print", "rahmen", "kunstdruck", "spiegel", "gemälde", "gemalde"]],
+  ["lighting", ["lampe", "leuchte", "stehlampe", "tischlampe"]],
+  ["rug", ["teppich", "läufer", "laufer"]],
+  ["decor", ["vase", "kerze", "schale", "laterne", "windlicht", "skulptur", "figur", "tablett", "buch", "bücher", "bucher", "korb"]],
+  ["sofa", ["sofa", "couch"]],
+  ["chair", ["sessel", "stuhl", "hocker"]],
+  ["storage", ["sideboard", "regal", "kommode", "schrank", "vitrine"]],
+  ["table", ["couchtisch", "beistelltisch", "tisch"]],
+];
+
+/**
+ * What kind of thing a staged object is, or null when it can't be told.
+ *
+ * Null deliberately means "leave it unpurchasable" rather than "match it to
+ * anything". A wrong buy-pin is worse than a missing one: the customer is
+ * shown a price and a product that is not the object they clicked.
+ */
+function categoryFromDescription(description: string): ProductCategory | null {
+  const text = description.toLowerCase();
+  let earliest: { category: ProductCategory; at: number } | null = null;
+  for (const [category, terms] of DESCRIPTION_CATEGORY_TERMS) {
+    for (const term of terms) {
+      const at = text.indexOf(term);
+      if (at !== -1 && (!earliest || at < earliest.at)) earliest = { category, at };
+    }
+  }
+  return earliest?.category ?? null;
+}
+
+/**
  * Every catalog pick a concept resolves to, in placement order — the whole
  * free part of building a room.
  *
@@ -802,18 +842,31 @@ async function buildConcept(
       }
       continue;
     }
-    // Not something we placed. findBestCatalogMatch requires real keyword
-    // overlap and returns null rather than guessing — a wrong match would
-    // put a buy-pin on the wrong product, which is worse than no pin.
+    // Not something we placed. Word overlap alone is not enough to match
+    // safely: "Decke, beige, über Sofalehne drapiert" — a beige throw over
+    // the sofa arm — matched a beige Sherpa ARMCHAIR and put a CHF 176
+    // buy-pin for a chair on a blanket, in a room that shipped. So the
+    // kind of object is decided first, from the description's own subject
+    // noun, and the match is confined to that category.
+    //
+    // An object we can't classify stays unpurchasable on purpose. A wrong
+    // buy-pin is worse than a missing one — the customer is shown a price
+    // and a product that is not the thing they clicked.
     // d.description comes back in German to match the German supplier feed.
-    const match = findBestCatalogMatch(catalog, d.description);
+    const wantCategory = categoryFromDescription(d.description);
+    if (!wantCategory) {
+      console.warn(`    ⚠ staged "${d.description}" — can't tell what kind of object it is, leaving it unpurchasable.`);
+      continue;
+    }
+    const matchable = catalog.filter((p) => p.imageUrl && !isExcluded(p));
+    const match = findBestCatalogMatch(matchable, d.description, wantCategory);
     if (match && !usedProductIds.has(match.id)) {
       autoMatched.push(match);
       itemBoxes[match.id] = d.box;
       usedProductIds.add(match.id);
-      console.log(`    + auto-matched staged "${d.description}" -> ${match.name} (CHF ${match.price})`);
+      console.log(`    + auto-matched staged "${d.description}" [${wantCategory}] -> ${match.name} (CHF ${match.price})`);
     } else {
-      console.warn(`    ⚠ staged "${d.description}" has no catalogue match — it stays visible but unpurchasable.`);
+      console.warn(`    ⚠ staged "${d.description}" has no ${wantCategory} match — it stays visible but unpurchasable.`);
     }
   }
 
@@ -846,6 +899,24 @@ async function buildConcept(
   const matchNote = autoMatched.length > 0 ? ` (${autoMatched.length} auto-matched from staging)` : "";
   console.log(`  ✓ Saved — CHF ${totalPrice} across ${allProducts.length} item(s)${matchNote}. View at /looks/${id}.`);
   return true;
+}
+
+/**
+ * Errors that no amount of retrying or waiting will clear — the account
+ * itself is the problem. Matched on the API's own wording, which is stable
+ * enough for this and far more specific than the bare status code (429 is
+ * also plain rate limiting, which IS worth retrying).
+ */
+function isFatalApiError(message: string): boolean {
+  const m = message.toLowerCase();
+  return (
+    m.includes("insufficient_quota") ||
+    m.includes("credit_balance_exhausted") ||
+    m.includes("no credits remaining") ||
+    m.includes("invalid_api_key") ||
+    m.includes("incorrect api key") ||
+    m.includes("account_deactivated")
+  );
 }
 
 /**
@@ -930,7 +1001,22 @@ async function main() {
       // actually saved. Only a true return value counts now.
       if (await buildConcept(concept, catalog, roomPath, quality, alreadyUsed)) succeeded++;
     } catch (err) {
-      console.error(`  Failed: ${err instanceof Error ? err.message : err}`);
+      const message = err instanceof Error ? err.message : String(err);
+      console.error(`  Failed: ${message}`);
+      // An exhausted balance or a rejected key is not transient, and the
+      // per-concept try/catch would otherwise march through every
+      // remaining concept re-discovering it. Worse, each concept spends
+      // its base room and placement BEFORE the step that fails, so a
+      // mid-batch top-up failure quietly burns the cheap-but-real calls
+      // for every room left. Stop on the first one and say so plainly.
+      if (isFatalApiError(message)) {
+        console.error(
+          "\nStopping the batch: this is an account/billing error, not a transient one, " +
+            "so every remaining room would fail the same way. Top up and re-run — rooms already " +
+            "saved above are safe, and re-running regenerates only the ones that are missing.",
+        );
+        break;
+      }
     }
 
     // Stop the batch if the FIRST room produced nothing. A failure with no

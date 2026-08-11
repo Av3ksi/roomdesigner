@@ -57,6 +57,8 @@ npx tsx scripts/generate-showroom-rooms.ts 4      # first N concepts
 npx tsx scripts/generate-looks.ts <count> [style] [quality]
 npx tsx scripts/seed-products.ts                  # load catalogue into Postgres
 npx tsx scripts/fix-room-pin.ts <roomId>          # repair a hotspot, no regeneration
+npx tsx scripts/remove-room-product.ts <roomId>   # list a live room's items (free)
+npx tsx scripts/remove-room-product.ts <roomId> <productId>  # drop a wrong one
 ```
 
 Diagnostics (cheap, safe, never print secrets):
