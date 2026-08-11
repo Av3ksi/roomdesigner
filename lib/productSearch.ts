@@ -44,6 +44,18 @@ export interface ProductSearchFilters {
   minLongestSideCm?: number;
   /** Soft boost for style overlap. */
   styleIds?: string[];
+  /**
+   * Drop the best-effort tail: return nothing rather than products that
+   * matched no keyword and no style.
+   *
+   * The default (false) is right for the Designer Agent, which should get
+   * close-but-imperfect options back instead of an empty result. It is
+   * wrong for automated curation, where nobody reviews the pick before it
+   * is composited: a decor slot whose keywords all missed silently
+   * returned the cheapest row in the category, and that row was a guest
+   * towel.
+   */
+  requireRelevance?: boolean;
   limit?: number;
 }
 
@@ -110,7 +122,8 @@ export function searchProducts(products: Product[], filters: ProductSearchFilter
   const relevant = lowerKeywords.length > 0 || styleIds.length > 0 ? scored.filter((s) => s.score > 0) : scored;
   // Fall back to the hard-filtered pool if relevance came up empty — an empty
   // result with a "did you mean" is worse than close-but-imperfect options.
-  const final = relevant.length > 0 ? relevant : scored;
+  // Callers doing unattended curation opt out via requireRelevance.
+  const final = relevant.length > 0 || filters.requireRelevance === true ? relevant : scored;
 
   return final
     .sort((a, b) => b.score - a.score || a.p.price - b.p.price)

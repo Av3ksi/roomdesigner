@@ -182,8 +182,24 @@ const NOT_A_SINGLE_PIECE = ["set", "2 stk", "3 stk", "4 stk", "2 pcs", "3 pcs", 
 const NOT_A_MAIN_SOFA = ["sofa-sessel", "pallet", "palette", "hundesofa", "puppensofa", ...NOT_A_SINGLE_PIECE];
 /** "Massagesessel" (massage chair), office seating and footstools all won a lounge-chair slot on the word "Sessel"/"Hocker" alone. */
 const NOT_A_LOUNGE_CHAIR = ["massage", "büro", "buro", "gaming", "schreibtischstuhl", "hocker"];
+/**
+ * Colours that fight a warm-neutral room. Only used where the palette is
+ * the whole point of the concept: the Cozy room is rust and oat, and its
+ * chair slot resolved to a PINK armchair, which matched on "Stoff" and
+ * nothing else. Keyword scoring can prefer a colour but cannot rule one
+ * out, so the ruling-out is spelled out here.
+ */
+const NOT_A_WARM_NEUTRAL = ["rosa", "pink", "lila", "violett", "türkis", "turkis", "neon"];
 /** Anti-slip mats, bath mats and doormats are all "Teppich" in this feed. */
-const NOT_A_ROOM_RUG = ["anti-rutsch", "antirutsch", "fußmatte", "fussmatte", "badematte", "türmatte", "turmatte", "läufer", "laufer"];
+/**
+ * Deliberately does NOT ban "Anti-Rutsch". That was a real over-exclusion:
+ * it killed all 32 rugs in the catalog and emptied the slot in every room.
+ * "Anti-Rutsch" describes a rug's non-slip backing, which a 160 x 230 cm
+ * living-room rug is as likely to have as a doormat — the doormats are
+ * excluded by the size floor, which is the honest discriminator here.
+ * What stays banned is a different KIND of floor covering, whatever its size.
+ */
+const NOT_A_ROOM_RUG = ["fußmatte", "fussmatte", "badematte", "türmatte", "turmatte", "läufer", "laufer", "teppichunterlage", "stufenmatte"];
 /**
  * German "Decke" is blanket, duvet AND ceiling, so a textile slot asking
  * for a throw gets bed duvets — the confirmed cause of the "Sommerdecke"
@@ -198,7 +214,15 @@ const NOT_A_LIVING_ROOM_TEXTILE = [
   "poolkissen", "hochlehner", "stuhlkissen", "gartenstuhl", "auflage", "palettenkissen",
 ];
 /** Recessed/ceiling fixtures and bulbs, which are "Leuchte" too but are not a lamp you can see in a room shot. */
-const NOT_A_FLOOR_LAMP = ["strahler", "spotlight", "einbau", "leuchtmittel", "glühbirne", "gluhbirne", "lichtleiste", "led-streifen", "lichterkette"];
+const NOT_A_FLOOR_LAMP = [
+  "strahler", "spotlight", "einbau", "leuchtmittel", "glühbirne", "gluhbirne",
+  "lichtleiste", "led-streifen", "lichterkette",
+  // Ceiling- and wall-mounted fixtures. A pair of black-and-gold
+  // "Deckenleuchten" won the Dark Luxury decor slot, which would have
+  // composited a ceiling lamp into the room at floor level.
+  "deckenleuchte", "deckenlampe", "pendelleuchte", "hängeleuchte", "hangeleuchte",
+  "wandleuchte", "kronleuchter", "deckenventilator",
+];
 
 /**
  * WHY THESE FOUR, AND WHY NOT THE OBVIOUS ONES.
@@ -239,7 +263,7 @@ const CONCEPTS: Concept[] = [
     cjAccent: {
       category: "decor",
       keyword: "ceramic vase",
-      fallback: { category: "decor", keywords: ["vase", "keramik", "steingut", "schale", "dekoschale"], styleIds: ["organicmodern"], excludeTerms: NOT_A_FLOOR_LAMP },
+      fallback: { category: "decor", keywords: ["vase", "keramik", "steingut", "schale", "dekoschale"], styleIds: ["organicmodern"], excludeTerms: [...NOT_A_FLOOR_LAMP, ...NOT_A_SINGLE_PIECE] },
     },
     items: [
       { category: "sofa", keywords: ["boucle", "bouclé", "beige", "creme", "leinen", "geschwungen", "sitzer sofa"], styleIds: ["organicmodern"], minWidthCm: SOFA_MIN_WIDTH_CM, excludeTerms: NOT_A_MAIN_SOFA },
@@ -259,7 +283,7 @@ const CONCEPTS: Concept[] = [
     cjAccent: {
       category: "decor",
       keyword: "brass candle holder",
-      fallback: { category: "decor", keywords: ["kerzenhalter", "kerzenständer", "messing", "gold", "vase", "schwarz"], styleIds: ["darkluxury"], excludeTerms: NOT_A_FLOOR_LAMP },
+      fallback: { category: "decor", keywords: ["kerzenhalter", "kerzenständer", "messing", "gold", "vase", "schwarz"], styleIds: ["darkluxury"], excludeTerms: [...NOT_A_FLOOR_LAMP, ...NOT_A_SINGLE_PIECE] },
     },
     items: [
       { category: "sofa", keywords: ["samt", "velvet", "grün", "gruen", "smaragd", "dunkelgrün", "blau", "navy"], styleIds: ["darkluxury"], minWidthCm: SOFA_MIN_WIDTH_CM, excludeTerms: NOT_A_MAIN_SOFA },
@@ -298,11 +322,11 @@ const CONCEPTS: Concept[] = [
     cjAccent: {
       category: "decor",
       keyword: "scented candle jar",
-      fallback: { category: "decor", keywords: ["kerze", "kerzenhalter", "laterne", "windlicht", "vase"], styleIds: ["cozy"], excludeTerms: NOT_A_FLOOR_LAMP },
+      fallback: { category: "decor", keywords: ["kerze", "kerzenhalter", "laterne", "windlicht", "vase"], styleIds: ["cozy"], excludeTerms: [...NOT_A_FLOOR_LAMP, ...NOT_A_SINGLE_PIECE] },
     },
     items: [
-      { category: "sofa", keywords: ["stoff", "beige", "braun", "cord", "sitzer sofa", "gemütlich", "gemutlich"], styleIds: ["cozy"], minWidthCm: SOFA_MIN_WIDTH_CM, excludeTerms: NOT_A_MAIN_SOFA },
-      { category: "chair", keywords: ["sessel", "ohrensessel", "cord", "stoff", "braun"], styleIds: ["cozy"], minWidthCm: CHAIR_MIN_WIDTH_CM, excludeTerms: NOT_A_LOUNGE_CHAIR },
+      { category: "sofa", keywords: ["stoff", "beige", "braun", "cord", "sitzer sofa", "gemütlich", "gemutlich"], styleIds: ["cozy"], minWidthCm: SOFA_MIN_WIDTH_CM, excludeTerms: [...NOT_A_MAIN_SOFA, ...NOT_A_WARM_NEUTRAL] },
+      { category: "chair", keywords: ["sessel", "ohrensessel", "cord", "stoff", "braun", "beige", "creme"], styleIds: ["cozy"], minWidthCm: CHAIR_MIN_WIDTH_CM, excludeTerms: [...NOT_A_LOUNGE_CHAIR, ...NOT_A_WARM_NEUTRAL] },
       { category: "table", keywords: ["couchtisch", "holz", "massivholz", "rund"], styleIds: ["cozy"], minWidthCm: COFFEE_TABLE_MIN_WIDTH_CM },
       { category: "rug", keywords: ["teppich", "hochflor", "shaggy", "wolle", "braun", "beige"], styleIds: ["cozy"], minLongestSideCm: RUG_MIN_LONGEST_SIDE_CM, excludeTerms: NOT_A_ROOM_RUG },
       { category: "lighting", keywords: ["stehlampe", "tischlampe", "stehleuchte", "warm"], styleIds: ["cozy"], minLongestSideCm: FLOOR_LAMP_MIN_SIDE_CM, excludeTerms: NOT_A_FLOOR_LAMP },
@@ -330,6 +354,11 @@ const EXCLUDE_TERMS = [
   // slot outright, on the word "Metall".
   "pool", "aufblasbar", "garten", "camping", "bodenanker", "zelt", "sonnenschirm",
   "trampolin", "planschbecken", "gewächshaus", "gewachshaus",
+  // "Kissen für draußen" (outdoor cushions) took the textile slot in all
+  // four rooms at once, and a steel fire bowl took a decor slot — none of
+  // them say "Garten" anywhere in the name.
+  "draußen", "draussen", "outdoor", "lounger", "feuerschale", "feuerstelle",
+  "balkon", "terrasse", "sonnenliege", "hollywoodschaukel",
 ];
 
 function isExcluded(product: Product, extraTerms: string[] = []): boolean {
@@ -368,7 +397,20 @@ function pickBest(catalog: Product[], item: ConceptItem, alreadyUsed: Set<string
   const allowed = unused.filter((p) => !isExcluded(p, item.excludeTerms));
 
   const funnel = `${inCategory.length} in category -> ${photographed.length} photographed -> ${unused.length} not already used -> ${allowed.length} past exclusions`;
-  if (allowed.length === 0) return { product: null, reason: funnel };
+  if (allowed.length === 0) {
+    // Naming the guilty term matters more than the count. "0 past
+    // exclusions" told us the exclusions were at fault but not which one,
+    // and the answer turned out to be a term that was over-broad rather
+    // than one that was missing — a distinction worth not guessing at.
+    const blame = [...EXCLUDE_TERMS, ...(item.excludeTerms ?? [])]
+      .map((t) => ({ t, n: unused.filter((p) => p.name.toLowerCase().includes(t)).length }))
+      .filter((c) => c.n > 0)
+      .sort((a, b) => b.n - a.n)
+      .slice(0, 4)
+      .map((c) => `"${c.t}" x${c.n}`)
+      .join(", ");
+    return { product: null, reason: `${funnel}. Excluded by: ${blame || "(none matched — check the category filter)"}` };
+  }
 
   const [best] = searchProducts(allowed, {
     category: item.category,
@@ -376,6 +418,12 @@ function pickBest(catalog: Product[], item: ConceptItem, alreadyUsed: Set<string
     styleIds: item.styleIds,
     minWidthCm: item.minWidthCm,
     minLongestSideCm: item.minLongestSideCm,
+    // A curated showroom slot would rather stay empty than take an
+    // irrelevant product. Without this, a decor slot whose keywords all
+    // missed fell through to searchProducts' best-effort tail and returned
+    // the cheapest thing in the category — which is how a guest towel was
+    // about to be composited into the Cozy room as its decor accent.
+    requireRelevance: true,
     limit: 1,
   });
   if (!best) {
