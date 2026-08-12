@@ -19,12 +19,13 @@
  * upsertProduct) so it's clickable/priced like every other item, not just
  * a scene decoration.
  *
- * Each concept also gets ONE small accent item searched live from CJ
- * Dropshipping (lib/suppliers/cjdropshipping.ts), when CJ_API_KEY is set —
- * always a small decor/textile piece, never furniture. CJ's dimension
- * fields are confirmed (against two real products) to be packaging size,
- * not real item size, so anything whose on-image scale matters a lot
- * stays sourced from VidaXL, which has real confirmed dimensions.
+ * Each concept also gets ONE small accent item searched live from a
+ * general marketplace — AliExpress first, CJ Dropshipping second
+ * (MARKETPLACE_SOURCES below), whichever is configured and answers with
+ * the right object. Always a small decor piece, never furniture: both
+ * report PACKAGE dimensions rather than the object's real footprint
+ * (confirmed against two real CJ products), so anything whose on-image
+ * scale matters stays sourced from VidaXL, which has real dimensions.
  *
  * A category with no real photographed match in your catalog is skipped
  * for that room rather than aborting the whole thing — a 5-item room still
@@ -74,6 +75,7 @@ import { suggestPlacements } from "../lib/ai/placement";
 import { detectSceneItems } from "../lib/ai/locate";
 import { generateBaseRoomPhoto } from "../lib/ai/generateRoom";
 import { generatePosterArtwork, buildPosterProduct, toCatalogImageUrl } from "../lib/ai/posterArt";
+import { aliexpressEnabled, searchAliexpressProducts } from "../lib/suppliers/aliexpress";
 import { cjEnabled, searchCjProducts } from "../lib/suppliers/cjdropshipping";
 import { createFinishedRoom } from "../lib/finishedRooms";
 import { dbEnabled } from "../lib/db";
@@ -127,7 +129,8 @@ interface ConceptItem {
 }
 
 /**
- * One CJ attempt: what to ASK for, and what the answer must actually BE.
+ * One marketplace attempt: what to ASK for, and what the answer must
+ * actually BE.
  *
  * They are separate because a query that gets CJ to answer at all is not
  * the same string as the object itself. "gold candle holder" is a good
@@ -205,8 +208,19 @@ const FLOOR_LAMP_MIN_SIDE_CM = 100;
 const PLANT_MIN_SIDE_CM = 60;
 /** A flag-pole holder 11.5 cm across won two decor slots. Decor has to be big enough to see. */
 const DECOR_MIN_SIDE_CM = 15;
-/** Gap between consecutive CJ searches — see the accent loop for why. */
-const CJ_SEARCH_GAP_MS = 1500;
+/** Gap between consecutive marketplace searches — see the accent loop for why. */
+const MARKETPLACE_SEARCH_GAP_MS = 1500;
+
+/**
+ * Accent sources, in preference order. Each is a keyword search over a
+ * general marketplace, so they are interchangeable; the order reflects
+ * which one actually returns the object asked for. A source with no
+ * credentials is skipped silently rather than failing the room.
+ */
+const MARKETPLACE_SOURCES: { label: string; enabled: () => boolean; search: (keyword: string, limit: number) => Promise<Product[]> }[] = [
+  { label: "AliExpress", enabled: aliexpressEnabled, search: searchAliexpressProducts },
+  { label: "CJ Dropshipping", enabled: cjEnabled, search: searchCjProducts },
+];
 /** A 15 x 21 cm guest towel took a throw-cushion slot; a real cushion or throw is bigger. */
 const TEXTILE_MIN_SIDE_CM = 40;
 
@@ -671,39 +685,46 @@ async function pickConceptProducts(concept: Concept, catalog: Product[], already
   // and a room missing its only decor piece is a visibly emptier room.
   const accent = concept.cjAccent;
   let accentFilled = false;
-  if (cjEnabled()) {
-    // Several phrasings, tried in order until one returns something that is
-    // actually the object asked for. CJ's search is a general-marketplace
-    // text match, so how a query is worded decides whether it answers at
-    // all: "ceramic vase" returned a real vase, while "brass candle holder"
-    // and "scented candle jar" returned nothing usable. One rejected
-    // phrasing is not evidence the catalogue lacks the object.
+
+  // AliExpress first, CJ second. Both are general marketplaces searched by
+  // keyword, so they are interchangeable here — the order is by measured
+  // usefulness. CJ's search collapsed completely on gaming queries: a
+  // women's cotton shirt for "rgb led strip lights", and the identical
+  // "Light-luxury Wooden Butter Dish" returned as the top hit for ring
+  // light, headphone stand, controller stand AND monitor riser. That is a
+  // search returning a default set, not a catalogue lacking the products.
+  //
+  // Whichever answers with the right object first wins; the loser is never
+  // consulted. Both go through the same head-noun check, so a bad answer
+  // from either is a skip rather than a wrong product in the room.
+  for (const source of MARKETPLACE_SOURCES) {
+    if (accentFilled || !source.enabled()) continue;
     for (const [i, attempt] of accent.keywords.entries()) {
-      // CJ answered the very same query differently minutes apart, so treat
-      // a miss as possibly the API rather than proof of absence, and give
-      // it room to breathe between calls.
-      if (i > 0) await sleep(CJ_SEARCH_GAP_MS);
+      // The same query answered differently minutes apart on CJ, so treat a
+      // miss as possibly the API rather than proof of absence, and give it
+      // room to breathe between calls.
+      if (i > 0) await sleep(MARKETPLACE_SEARCH_GAP_MS);
       try {
-        console.log(`  Searching CJ Dropshipping for "${attempt.query}"...`);
-        const results = await searchCjProducts(attempt.query, 10);
+        console.log(`  Searching ${source.label} for "${attempt.query}"...`);
+        const results = await source.search(attempt.query, 10);
         // `alreadyUsed` has to be honoured HERE as well as in pickBest. It
         // wasn't, and the result was the same CJ vase composited into three
-        // of the four rooms — each concept asked CJ independently, got the
+        // of the four rooms — each concept asked independently, got the
         // same top hit, and took it. Scanning past the used ones also
-        // rescues the case where CJ's best result is one we've spent.
-        const cjMatch = results.find((p) => isRelevantCjMatch(p, attempt.object) && !alreadyUsed.has(p.id));
-        if (cjMatch) {
-          take({ ...cjMatch, category: accent.category }, `${accent.category} (CJ)`);
+        // rescues the case where the best result is one we've spent.
+        const match = results.find((p) => isRelevantCjMatch(p, attempt.object) && !alreadyUsed.has(p.id));
+        if (match) {
+          take({ ...match, category: accent.category }, `${accent.category} (${source.label})`);
           accentFilled = true;
           break;
         }
         if (results.length > 0) {
-          console.warn(`  CJ returned ${results.length} result(s) for "${attempt.query}" but none are a "${attempt.object}" (top hit: "${results[0].name}").`);
+          console.warn(`  ${source.label} returned ${results.length} result(s) for "${attempt.query}" but none are a "${attempt.object}" (top hit: "${results[0].name}").`);
         } else {
-          console.warn(`  no CJ match for "${attempt.query}".`);
+          console.warn(`  no ${source.label} match for "${attempt.query}".`);
         }
       } catch (err) {
-        console.warn(`  CJ search failed for "${attempt.query}" (${err instanceof Error ? err.message : err}).`);
+        console.warn(`  ${source.label} search failed for "${attempt.query}" (${err instanceof Error ? err.message : err}).`);
       }
     }
   }

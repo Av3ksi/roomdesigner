@@ -69,6 +69,7 @@ npx tsx scripts/generate-showroom-rooms.ts 4 --dry-run   # what WOULD be picked,
 npx tsx scripts/bench-image-providers.ts 3   # COSTS MONEY: provider latency stats
 npx tsx scripts/openai-diagnose.ts    # is image generation working at all
 npx tsx scripts/openai-matrix.ts      # is a failure parameter-driven or intermittent
+npx tsx scripts/aliexpress-test-fetch.ts [kw] [--raw]  # AliExpress probe
 npx tsx scripts/cj-test-fetch.ts [kw] # CJ Dropshipping API probe
 npx tsx scripts/gelato-test-fetch.ts  # Gelato print-on-demand probe
 ```
@@ -142,7 +143,8 @@ it, it is not boilerplate.
 | `REPLICATE_API_TOKEN` | Preferred furniture-removal path. |
 | `STRIPE_SECRET_KEY` / `STRIPE_WEBHOOK_SECRET` | Real payments + Premium. |
 | `RESEND_API_KEY` / `EMAIL_FROM` | Transactional email. |
-| `CJ_API_KEY` | CJ Dropshipping accent items. |
+| `CJ_API_KEY` | CJ Dropshipping accent items (fallback source). |
+| `ALIEXPRESS_APP_KEY` / `ALIEXPRESS_APP_SECRET` | AliExpress accent items (preferred source). Signed requests — a key alone is not enough. |
 | `GELATO_API_KEY` | Print-on-demand wall art (not yet wired into a supplier adapter). |
 | `SERPAPI_KEY` | Google Shopping fallback search. |
 
