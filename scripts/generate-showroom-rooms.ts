@@ -222,7 +222,7 @@ const TEXTILE_MIN_SIDE_CM = 40;
  */
 const NOT_A_SINGLE_PIECE = ["set", "2 stk", "3 stk", "4 stk", "2 pcs", "3 pcs", "4 pcs"];
 /** Sofa-shaped things that are not a living room's main sofa. */
-const NOT_A_MAIN_SOFA = ["sofa-sessel", "pallet", "palette", "hundesofa", "puppensofa", ...NOT_A_SINGLE_PIECE];
+const NOT_A_MAIN_SOFA = ["sofa-sessel", "pallet", "palette", "hundesofa", "puppensofa", "eckmodul", "mittelmodul", "armlehnmodul", ...NOT_A_SINGLE_PIECE];
 /** "Massagesessel" (massage chair), office seating and footstools all won a lounge-chair slot on the word "Sessel"/"Hocker" alone. */
 const NOT_A_LOUNGE_CHAIR = ["massage", "büro", "buro", "gaming", "schreibtischstuhl", "hocker"];
 /**
@@ -334,7 +334,7 @@ const CONCEPTS: Concept[] = [
         { query: "rgb light bar", object: "light bar" },
         { query: "headphone stand", object: "headphone stand" },
       ],
-      fallback: { category: "decor", keywords: ["led", "rgb", "leuchtstreifen", "lichtleiste"], styleIds: ["gaming"], excludeTerms: NOT_A_SINGLE_PIECE },
+      fallback: { category: "decor", keywords: ["led-streifen", "ledstreifen", "leuchtstreifen", "lichtleiste", "led-band"], styleIds: ["gaming"], excludeTerms: NOT_A_SINGLE_PIECE },
     },
     items: [
       { category: "table", keywords: ["schreibtisch", "computertisch", "gaming", "eckschreibtisch"], styleIds: ["gaming", "industrial"], minWidthCm: 100, excludeTerms: NOT_A_DESK },
@@ -356,9 +356,9 @@ const CONCEPTS: Concept[] = [
         { query: "rgb light bar tv", object: "light bar" },
         { query: "controller stand", object: "controller stand" },
         { query: "rgb led strip lights", object: "led strip" },
-        { query: "game controller holder", object: "holder" },
+        { query: "game controller holder", object: "controller" },
       ],
-      fallback: { category: "decor", keywords: ["led", "rgb", "lichtleiste", "leuchtstreifen"], styleIds: ["gaming"], excludeTerms: NOT_A_SINGLE_PIECE },
+      fallback: { category: "decor", keywords: ["led-streifen", "ledstreifen", "leuchtstreifen", "lichtleiste", "led-band"], styleIds: ["gaming"], excludeTerms: NOT_A_SINGLE_PIECE },
     },
     items: [
       { category: "sofa", keywords: ["sofa", "stoff", "grau", "schwarz", "sitzer sofa", "ecksofa"], styleIds: ["gaming", "industrial"], minWidthCm: SOFA_MIN_WIDTH_CM, excludeTerms: NOT_A_MAIN_SOFA },
@@ -383,7 +383,7 @@ const CONCEPTS: Concept[] = [
         { query: "rgb led strip lights", object: "led strip" },
         { query: "headphone stand", object: "headphone stand" },
       ],
-      fallback: { category: "decor", keywords: ["led", "rgb", "lichtleiste"], styleIds: ["industrial"], excludeTerms: NOT_A_SINGLE_PIECE },
+      fallback: { category: "decor", keywords: ["led-streifen", "ledstreifen", "leuchtstreifen", "lichtleiste", "led-band"], styleIds: ["industrial"], excludeTerms: NOT_A_SINGLE_PIECE },
     },
     items: [
       { category: "table", keywords: ["schreibtisch", "computertisch", "metall", "eckschreibtisch"], styleIds: ["industrial", "gaming"], minWidthCm: 100, excludeTerms: NOT_A_DESK },
@@ -407,7 +407,7 @@ const CONCEPTS: Concept[] = [
         { query: "gaming mouse pad large", object: "mouse pad" },
         { query: "headphone stand", object: "headphone stand" },
       ],
-      fallback: { category: "decor", keywords: ["led", "rgb", "lichtleiste"], styleIds: ["minimalist"], excludeTerms: NOT_A_SINGLE_PIECE },
+      fallback: { category: "decor", keywords: ["led-streifen", "ledstreifen", "leuchtstreifen", "lichtleiste", "led-band"], styleIds: ["minimalist"], excludeTerms: NOT_A_SINGLE_PIECE },
     },
     items: [
       { category: "table", keywords: ["schreibtisch", "computertisch", "weiß", "weiss"], styleIds: ["minimalist", "scandinavian"], minWidthCm: 100, excludeTerms: NOT_A_DESK },
@@ -438,6 +438,11 @@ const EXCLUDE_TERMS = [
   // slot outright, on the word "Metall".
   "pool", "aufblasbar", "garten", "camping", "bodenanker", "zelt", "sonnenschirm",
   "trampolin", "planschbecken", "gewächshaus", "gewachshaus",
+  // Seasonal and bathroom stock, which reach decor and storage slots on
+  // "LED" and "Regal": a Christmas tree light net won decor in two rooms
+  // and a toilet shelf won storage in a third.
+  "weihnacht", "christbaum", "lichternetz", "adventskranz", "halloween",
+  "toilette", "wc-", "badregal", "waschbecken", "duschregal",
   // "Kissen für draußen" (outdoor cushions) took the textile slot in all
   // four rooms at once, and a steel fire bowl took a decor slot — none of
   // them say "Garten" anywhere in the name.
