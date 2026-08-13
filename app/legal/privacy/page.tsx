@@ -98,7 +98,17 @@ export default function PrivacyPage() {
         We use a small number of strictly functional cookies and browser storage entries: a session identifier
         that ties your credits and rooms to your browser, a sign-in cookie once you log in, and local storage
         holding your cart, wishlist and collections. These are necessary for the service to function and carry
-        no advertising or cross-site tracking. We run no third-party advertising or analytics trackers.
+        no advertising or cross-site tracking, and they are not affected by the choice described below.
+      </p>
+      <p>
+        Separately, and only if you actively agree via the banner shown on your first visit, we load Meta
+        (Facebook/Instagram) Pixel and Google Ads conversion tracking. Their only purpose is telling us which
+        advertisement led to a purchase, so we can spend our advertising budget on what works; we do not use
+        them to build a profile of your browsing beyond this site. If you agree, completing an order sends the
+        order value and a purchase event to Meta Platforms Ireland Ltd. and Google Ireland Ltd., who may set
+        their own cookies to attribute it to the ad you clicked. If you decline, or make no choice, neither
+        loads, no such cookie is set, and no such event is ever sent. You can change your answer at any time by
+        clearing your browser&apos;s local storage for this site.
       </p>
 
       <h2>5. Who receives your data, and where</h2>

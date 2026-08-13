@@ -127,6 +127,20 @@ plausible-looking but arbitrary scale.
 | `lib/suppliers/mapping.ts` | Supplier feed -> `Product`. Category/style/colour inference, retail markup. |
 | `lib/productSearchDb.ts` | Catalogue load (cached), marketplace pagination, `upsertProduct`. |
 | `lib/store.ts` | Zustand store. Credits live here — see §5. |
+| `lib/consentStore.ts` | Ad-tracking consent (`granted`/`denied`/`null`). `null` = nothing may load. |
+| `lib/analytics.ts` | Fires Meta Pixel / Google Ads purchase events. Only call site for those globals. |
+| `components/TrackingScripts.tsx` | Loads Pixel/gtag — only after consent AND an env var is set. |
+
+### Ad conversion tracking
+Consent-gated by design, not convenience: `app/legal/privacy/page.tsx` clause 4
+explicitly discloses this, and used to promise the opposite ("we run no
+third-party advertising or analytics trackers") before it was added — that
+sentence would have become a lie the moment a pixel loaded unconditionally.
+If you ever add a new tracker, update that clause in the same change, not
+as a follow-up. `trackPurchase()` (`lib/analytics.ts`) is called from
+`components/CheckoutSuccess.tsx` only once the polled order status is
+actually `"paid"` — never off the mere presence of a `session_id`, which
+sits in the URL for a cancelled or still-pending payment too.
 
 ---
 

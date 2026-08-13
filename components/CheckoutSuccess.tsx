@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { CheckCircle2, Mail, ShoppingBag } from "lucide-react";
+import { trackPurchase } from "@/lib/analytics";
 import { formatPrice } from "@/lib/products";
 import { useVistroomStore } from "@/lib/store";
 
@@ -23,6 +24,18 @@ export default function CheckoutSuccess() {
   const clearedRef = useRef(false);
   const [order, setOrder] = useState<OrderStatus | null>(null);
   const [settled, setSettled] = useState(false);
+
+  // Fires only off the polled, server-confirmed order status — never off
+  // sessionId alone, which is present on this URL even for a cancelled or
+  // still-pending payment. trackPurchase has its own dedup, but the guard
+  // here also stops it from re-running on every poll tick after paid.
+  const reportedRef = useRef(false);
+  useEffect(() => {
+    if (order?.status === "paid" && !reportedRef.current) {
+      reportedRef.current = true;
+      trackPurchase({ orderId: order.id, value: order.totalPrice, currency: "CHF" });
+    }
+  }, [order]);
 
   useEffect(() => {
     // Stripe only redirects here after a successful payment — clear the
