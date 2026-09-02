@@ -55,9 +55,21 @@ const EXCLUDE_TERMS = [
   "draußen", "draussen", "outdoor", "lounger", "feuerschale", "feuerstelle",
   "balkon", "terrasse", "sonnenliege", "hollywoodschaukel",
 ];
+/**
+ * Spare parts and accessories, not furniture — these carry the real
+ * category tag (a "Sofafuß" replacement leg is genuinely category "sofa"
+ * in the feed) and often have no dimensionsCm, so neither the category
+ * filter nor the size floor catches them. Confirmed real failure: this
+ * exact term won the sofa slot outright at CHF 15 in a live run.
+ */
+const NOT_REAL_FURNITURE = [
+  "möbelfuß", "sofafuß", "sockelfuß", "stuhlfuß", "tischfuß", "ersatzteil",
+  "ersatz-", "zubehör", "zubehörteil", "schutzhülle", "abdeckung", "bezug für",
+  "ersatzbezug", "montagekit", "beschlag",
+];
 const NOT_A_SINGLE_PIECE = ["set", "2 stk", "3 stk", "4 stk", "2 pcs", "3 pcs", "4 pcs"];
 const NOT_A_MAIN_SOFA = ["sofa-sessel", "pallet", "palette", "hundesofa", "puppensofa", "kindersofa", "eckmodul", "mittelmodul", "armlehnmodul", ...NOT_A_SINGLE_PIECE];
-const NOT_A_LOUNGE_CHAIR = ["massage", "büro", "buro", "gaming", "schreibtischstuhl", "hocker"];
+const NOT_A_LOUNGE_CHAIR = ["massage", "büro", "buro", "gaming", "schreibtischstuhl", "hocker", "pouf", "fußhocker", ...NOT_A_SINGLE_PIECE];
 const NOT_A_COFFEE_TABLE = ["schreibtisch", "computertisch", "esstisch", "nachttisch", "konsolentisch", "schminktisch"];
 const NOT_A_ROOM_RUG = ["fußmatte", "fussmatte", "badematte", "türmatte", "turmatte", "läufer", "laufer", "teppichunterlage", "stufenmatte"];
 const NOT_A_FLOOR_LAMP = [
@@ -85,8 +97,8 @@ interface Slot {
 }
 
 const SLOTS: Slot[] = [
-  { label: "sofa", category: "sofa", keywords: ["sofa"], excludeTerms: NOT_A_MAIN_SOFA, minWidthCm: SOFA_MIN_WIDTH_CM },
-  { label: "chair", category: "chair", keywords: ["sessel"], excludeTerms: NOT_A_LOUNGE_CHAIR, minWidthCm: CHAIR_MIN_WIDTH_CM },
+  { label: "sofa", category: "sofa", keywords: ["sofa", "couch"], excludeTerms: NOT_A_MAIN_SOFA, minWidthCm: SOFA_MIN_WIDTH_CM },
+  { label: "chair", category: "chair", keywords: ["sessel", "loungesessel", "polstersessel"], excludeTerms: NOT_A_LOUNGE_CHAIR, minWidthCm: CHAIR_MIN_WIDTH_CM },
   { label: "table", category: "table", keywords: ["couchtisch"], excludeTerms: NOT_A_COFFEE_TABLE, minWidthCm: COFFEE_TABLE_MIN_WIDTH_CM },
   { label: "storage", category: "storage", keywords: ["sideboard", "kommode"], excludeTerms: NOT_A_SINGLE_PIECE, minWidthCm: STORAGE_MIN_WIDTH_CM },
   { label: "lighting", category: "lighting", keywords: ["stehlampe", "stehleuchte"], excludeTerms: NOT_A_FLOOR_LAMP, minLongestSideCm: FLOOR_LAMP_MIN_SIDE_CM },
@@ -96,7 +108,11 @@ const SLOTS: Slot[] = [
 
 function isExcluded(p: Product, extra: string[]): boolean {
   const text = p.name.toLowerCase();
-  return EXCLUDE_TERMS.some((t) => text.includes(t)) || extra.some((t) => text.includes(t));
+  return (
+    EXCLUDE_TERMS.some((t) => text.includes(t)) ||
+    NOT_REAL_FURNITURE.some((t) => text.includes(t)) ||
+    extra.some((t) => text.includes(t))
+  );
 }
 
 function extensionFor(url: string, contentType: string | null): string {
@@ -132,12 +148,17 @@ async function main() {
   const missed: string[] = [];
 
   for (const slot of SLOTS) {
+    // requireRelevance forces a real keyword hit ("sofa", "couchtisch", ...)
+    // rather than letting a style-tag-only match win — the confirmed cause
+    // of a 2-piece pouf set winning the "chair" slot on the Scandinavian
+    // tag alone, with zero keyword overlap.
     const candidates = searchProducts(catalog, {
       category: slot.category,
       keywords: slot.keywords,
       styleIds: [styleId],
       minWidthCm: slot.minWidthCm,
       minLongestSideCm: slot.minLongestSideCm,
+      requireRelevance: true,
       limit: 30,
     }).filter((p) => p.imageUrl && !alreadyUsed.has(p.id) && !isExcluded(p, slot.excludeTerms));
 
