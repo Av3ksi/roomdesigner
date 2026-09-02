@@ -29,7 +29,7 @@ export default function StyleShowcase() {
           {STYLES.map((style, i) => (
             <Reveal key={style.id} delay={(i % 4) * 70}>
               <Link
-                href="/studio"
+                href="/designer"
                 className="card group overflow-hidden transition hover:-translate-y-1 hover:border-brass/60"
               >
                 <div className="aspect-[3/2] overflow-hidden">

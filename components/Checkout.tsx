@@ -17,25 +17,11 @@ import {
   Truck,
   Zap,
 } from "lucide-react";
-import { useMemo, useState } from "react";
-import ProductGlyph from "@/components/room/ProductGlyph";
+import { useEffect, useState } from "react";
+import ProductThumb from "@/components/room/ProductThumb";
 import { formatPrice } from "@/lib/products";
-import { cartTotal, useMaisonStore } from "@/lib/store";
-
-const DELIVERY = [
-  { id: "standard", label: "Standard delivery", note: "5–7 business days, to your door", price: 0, min: 5, max: 7 },
-  { id: "express", label: "Express delivery", note: "2–3 business days", price: 49, min: 2, max: 3 },
-  { id: "whiteglove", label: "White-glove delivery", note: "Scheduled window, unboxed & placed in the room", price: 199, min: 6, max: 9 },
-] as const;
-
-const INSTALLATION = [
-  { id: "none", label: "No installation", note: "I'll set it up myself", price: 0 },
-  { id: "assembly", label: "Professional assembly", note: "Every piece assembled & packaging removed", price: 149 },
-  { id: "styling", label: "Assembly + designer styling visit", note: "A Maison designer stages the room to the concept", price: 399 },
-] as const;
-
-type DeliveryId = (typeof DELIVERY)[number]["id"];
-type InstallId = (typeof INSTALLATION)[number]["id"];
+import { cartTotal, useVistroomStore } from "@/lib/store";
+import { DELIVERY, INSTALLATION, type DeliveryId, type InstallId } from "@/lib/checkoutOptions";
 
 function addDays(offset: number): Date {
   return new Date(Date.now() + offset * 86_400_000);
@@ -78,12 +64,25 @@ function DatePicker({
 }
 
 export default function Checkout() {
-  const { cart, setQty, removeFromCart, clearCart } = useMaisonStore();
-  const checkoutDefaults = useMaisonStore((s) => s.checkoutDefaults);
-  const setCheckoutDefaults = useMaisonStore((s) => s.setCheckoutDefaults);
+  const { cart, setQty, removeFromCart, clearCart } = useVistroomStore();
+  const checkoutDefaults = useVistroomStore((s) => s.checkoutDefaults);
+  const setCheckoutDefaults = useVistroomStore((s) => s.setCheckoutDefaults);
   const [delivery, setDelivery] = useState<DeliveryId>((checkoutDefaults?.delivery as DeliveryId) ?? "whiteglove");
   const [installation, setInstallation] = useState<InstallId>((checkoutDefaults?.installation as InstallId) ?? "assembly");
   const [orderId, setOrderId] = useState<string | null>(null);
+  const [demoOrder, setDemoOrder] = useState(false);
+  const [email, setEmail] = useState("");
+  const [placing, setPlacing] = useState(false);
+  const [checkoutError, setCheckoutError] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch("/api/auth/me")
+      .then((res) => res.json())
+      .then((body) => {
+        if (body.user?.email) setEmail(body.user.email);
+      })
+      .catch(() => {});
+  }, []);
 
   const deliveryOpt = DELIVERY.find((d) => d.id === delivery)!;
   const installOpt = INSTALLATION.find((i) => i.id === installation)!;
@@ -101,21 +100,55 @@ export default function Checkout() {
     setInstallOffset(opt.min + 2);
   };
 
-  const placeOrder = () => {
-    setCheckoutDefaults({ delivery, installation });
-    setOrderId(`MA-${Math.floor(100000 + Math.random() * 900000)}`);
-    clearCart();
+  /** Creates a real Stripe Checkout Session and redirects to it; falls back to
+   *  an instant demo confirmation if this deployment has no Stripe/DB configured.
+   *  Takes explicit delivery/installation ids rather than reading state directly
+   *  so oneClickCheckout can pass its own selection without waiting a render
+   *  for setDelivery/setInstallation to land. */
+  const placeOrder = async (deliveryId: DeliveryId, installId: InstallId) => {
+    if (!email.trim()) {
+      setCheckoutError("Enter your email to receive the order confirmation.");
+      return;
+    }
+    setCheckoutError(null);
+    setPlacing(true);
+    setCheckoutDefaults({ delivery: deliveryId, installation: installId });
+    try {
+      const res = await fetch("/api/checkout/session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          items: cart.map((c) => ({ productId: c.product.id, qty: c.qty })),
+          delivery: deliveryId,
+          installation: installId,
+          email: email.trim(),
+        }),
+      });
+      if (res.status === 501) {
+        setDemoOrder(true);
+        setOrderId(`MA-${Math.floor(100000 + Math.random() * 900000)}`);
+        clearCart();
+        return;
+      }
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error ?? "Something went wrong.");
+      window.location.href = body.url;
+    } catch (err) {
+      setCheckoutError(err instanceof Error ? err.message : String(err));
+      setPlacing(false);
+    }
   };
 
   const oneClickCheckout = () => {
     if (!checkoutDefaults) return;
-    setDelivery(checkoutDefaults.delivery as DeliveryId);
-    setInstallation(checkoutDefaults.installation as InstallId);
-    setOrderId(`MA-${Math.floor(100000 + Math.random() * 900000)}`);
-    clearCart();
+    const deliveryId = checkoutDefaults.delivery as DeliveryId;
+    const installId = checkoutDefaults.installation as InstallId;
+    setDelivery(deliveryId);
+    setInstallation(installId);
+    void placeOrder(deliveryId, installId);
   };
 
-  /* ——— confirmation ——— */
+  /* ——— confirmation (demo fallback only — real payments land on /checkout/success) ——— */
   if (orderId) {
     return (
       <div className="container-page flex flex-col items-center py-24 text-center">
@@ -128,6 +161,11 @@ export default function Checkout() {
           confirmed. A summary with your full shopping list, delivery window
           and installation booking is in your inbox.
         </p>
+        {demoOrder && (
+          <p className="mt-2 max-w-md rounded-lg border border-brass/30 bg-brass/5 px-3 py-2 text-xs text-cream-faint">
+            Demo mode — real payment isn&apos;t configured on this deployment yet, so nothing was actually charged.
+          </p>
+        )}
         <div className="card mt-8 w-full max-w-lg divide-y divide-ink-line/60 text-left">
           {[
             { icon: ShoppingBag, t: "Order confirmed", s: "Just now", done: true },
@@ -153,7 +191,7 @@ export default function Checkout() {
             </div>
           ))}
         </div>
-        <Link href="/studio" className="btn-primary mt-8">
+        <Link href="/designer" className="btn-primary mt-8">
           Design another room
         </Link>
       </div>
@@ -167,11 +205,11 @@ export default function Checkout() {
         <ShoppingBag size={36} className="text-ink-line" />
         <h1 className="font-display mt-5 text-3xl">Your room list is empty.</h1>
         <p className="mt-2 max-w-sm text-sm text-cream-faint">
-          Generate a design in the Studio and add the whole look with one
+          Generate a design in the Designer and add the whole look with one
           click — every piece lands here.
         </p>
-        <Link href="/studio" className="btn-primary mt-7">
-          Open the Studio
+        <Link href="/designer" className="btn-primary mt-7">
+          Open the Designer
         </Link>
       </div>
     );
@@ -185,7 +223,7 @@ export default function Checkout() {
           <h1 className="font-display text-4xl">Almost home.</h1>
         </div>
         {checkoutDefaults && (
-          <button onClick={oneClickCheckout} className="btn-primary shrink-0">
+          <button onClick={oneClickCheckout} disabled={placing} className="btn-primary shrink-0 disabled:opacity-50">
             <Zap size={15} /> One-click checkout · {formatPrice(total)}
           </button>
         )}
@@ -208,7 +246,7 @@ export default function Checkout() {
               {cart.map(({ product, qty }) => (
                 <li key={product.id} className="flex items-center gap-4 px-5 py-4">
                   <div className="h-16 w-20 shrink-0 overflow-hidden rounded-lg">
-                    <ProductGlyph product={product} className="h-full w-full" />
+                    <ProductThumb product={product} className="h-full w-full" />
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-sm font-semibold">{product.name}</div>
@@ -353,12 +391,26 @@ export default function Checkout() {
                 </>
               )}
             </p>
-            <button onClick={placeOrder} className="btn-primary mt-4 w-full">
-              Place order · {formatPrice(total)}
+            <label className="mt-4 block text-xs text-cream-faint">
+              Email for your receipt
+              <input
+                type="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="you@example.com"
+                className="mt-1.5 w-full rounded-lg border border-ink-line bg-ink-panel px-3.5 py-2.5 text-sm text-cream outline-none placeholder:text-cream-faint focus:border-brass/50"
+              />
+            </label>
+            <button
+              onClick={() => void placeOrder(delivery, installation)}
+              disabled={placing}
+              className="btn-primary mt-3 w-full disabled:opacity-50"
+            >
+              {placing ? "Redirecting to payment…" : `Place order · ${formatPrice(total)}`}
             </button>
-            <p className="mt-2 text-center text-[11px] text-cream-faint">
-              Demo checkout — no payment is collected.
-            </p>
+            {checkoutError && <p className="mt-2 text-center text-xs text-rose-300">{checkoutError}</p>}
+            <p className="mt-2 text-center text-[11px] text-cream-faint">Secure checkout via Stripe.</p>
             <ul className="mt-5 space-y-2 border-t border-ink-line pt-4 text-xs text-cream-faint">
               <li className="flex items-center gap-2">
                 <RotateCcw size={12} className="text-brass" /> 30-day returns on every piece

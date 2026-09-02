@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { aiEnabled, generateNarratives } from "@/lib/ai/claude";
 import { buildConceptProducts, fitToBudget, formatPrice } from "@/lib/products";
+import { clientIp, enforceRateLimit } from "@/lib/rateLimit";
+import { getOrCreateSessionId } from "@/lib/session";
 import { makeVariantSpec, STYLE_MAP, VARIANT_NAMES, VARIANT_NOTES } from "@/lib/styles";
 import type {
   DesignBrief,
@@ -62,6 +64,15 @@ export async function POST(req: Request) {
   if (!style) {
     return NextResponse.json({ error: "Unknown style" }, { status: 400 });
   }
+
+  const limited = await enforceRateLimit({
+    name: "generate-concept",
+    sessionId: await getOrCreateSessionId(),
+    ip: clientIp(req),
+    sessionLimit: 20,
+    ipLimit: 60,
+  });
+  if (limited) return NextResponse.json({ error: limited.error }, { status: 429 });
 
   const analysis = body.analysis;
   const brief = body.brief ?? {};

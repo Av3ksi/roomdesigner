@@ -1,10 +1,10 @@
 import Hero from "@/components/landing/Hero";
 import HowItWorks from "@/components/landing/HowItWorks";
 import Intelligence from "@/components/landing/Intelligence";
-import ImmersiveTeaser from "@/components/landing/ImmersiveTeaser";
+import ConversationTeaser from "@/components/landing/ConversationTeaser";
 import BeyondTheRender from "@/components/landing/BeyondTheRender";
 import StyleShowcase from "@/components/landing/StyleShowcase";
-import Testimonials from "@/components/landing/Testimonials";
+import Principles from "@/components/landing/Principles";
 import PricingSection from "@/components/landing/PricingSection";
 import CTA from "@/components/landing/CTA";
 
@@ -14,10 +14,10 @@ export default function HomePage() {
       <Hero />
       <HowItWorks />
       <Intelligence />
-      <ImmersiveTeaser />
+      <ConversationTeaser />
       <StyleShowcase />
       <BeyondTheRender />
-      <Testimonials />
+      <Principles />
       <PricingSection />
       <CTA />
     </>

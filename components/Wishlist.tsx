@@ -4,15 +4,15 @@ import { Heart, ShoppingBag, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import ProductDetailPanel from "@/components/ProductDetailPanel";
-import ProductGlyph from "@/components/room/ProductGlyph";
+import ProductThumb from "@/components/room/ProductThumb";
 import { formatPrice } from "@/lib/products";
-import { useMaisonStore } from "@/lib/store";
+import { useVistroomStore } from "@/lib/store";
 import type { Product } from "@/lib/types";
 
 export default function Wishlist() {
-  const wishlist = useMaisonStore((s) => s.wishlist);
-  const toggleWishlist = useMaisonStore((s) => s.toggleWishlist);
-  const addManyToCart = useMaisonStore((s) => s.addManyToCart);
+  const wishlist = useVistroomStore((s) => s.wishlist);
+  const toggleWishlist = useVistroomStore((s) => s.toggleWishlist);
+  const addManyToCart = useVistroomStore((s) => s.addManyToCart);
   const [detailProduct, setDetailProduct] = useState<Product | null>(null);
 
   const total = wishlist.reduce((n, p) => n + p.price, 0);
@@ -26,7 +26,7 @@ export default function Wishlist() {
             Pieces you keep coming back to.
           </h1>
           <p className="mt-4 text-cream-dim">
-            Saved from the Studio, the 3D room and the Marketplace — ready
+            Saved from the Designer, the 3D room and the Marketplace — ready
             whenever you are.
           </p>
         </div>
@@ -47,7 +47,7 @@ export default function Wishlist() {
           </span>
           <div className="text-lg font-semibold">Your wishlist is empty</div>
           <p className="max-w-sm text-sm text-cream-dim">
-            Tap the heart on any product in the Studio, the immersive room, or
+            Tap the heart on any product in the Designer, the immersive room, or
             the Marketplace to save it here.
           </p>
           <Link href="/marketplace" className="btn-primary mt-2">
@@ -65,7 +65,7 @@ export default function Wishlist() {
                 onKeyDown={(e) => e.key === "Enter" && setDetailProduct(p)}
                 className="relative block aspect-[5/4] w-full cursor-pointer overflow-hidden"
               >
-                <ProductGlyph product={p} className="h-full w-full transition duration-500 group-hover:scale-105" />
+                <ProductThumb product={p} className="h-full w-full transition duration-500 group-hover:scale-105" />
                 <button
                   onClick={(e) => {
                     e.stopPropagation();

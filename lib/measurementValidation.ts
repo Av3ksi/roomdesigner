@@ -31,7 +31,7 @@ export function validateMeasurements(analysis: RoomAnalysis): MeasurementFlag[] 
   if (ratio > 4) {
     flags.push({
       message: "The room's width and depth are unusually mismatched — likely a wide-angle or corner-only view.",
-      suggestion: "Add a second photo from the opposite corner so Maison can cross-reference the shape.",
+      suggestion: "Add a second photo from the opposite corner so Vistroom can cross-reference the shape.",
     });
   }
   return flags;

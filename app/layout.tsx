@@ -3,14 +3,16 @@ import "./globals.css";
 import Nav from "@/components/Nav";
 import Footer from "@/components/Footer";
 import CartDrawer from "@/components/CartDrawer";
+import ConsentBanner from "@/components/ConsentBanner";
+import TrackingScripts from "@/components/TrackingScripts";
 
 export const metadata: Metadata = {
   title: {
-    default: "Maison — Your AI Interior Designer",
-    template: "%s · Maison",
+    default: "Vistroom — Your AI Interior Designer",
+    template: "%s · Vistroom",
   },
   description:
-    "Upload a photo of your room. Maison's AI reads the space — dimensions, light, materials, furniture — and designs it back to you in eight signature styles, fully shoppable.",
+    "Upload a photo of your room. Vistroom's AI reads the space — dimensions, light, materials, furniture — and designs it back to you in eight signature styles, fully shoppable.",
   keywords: [
     "AI interior design",
     "room redesign",
@@ -27,6 +29,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <main className="flex-1">{children}</main>
         <Footer />
         <CartDrawer />
+        <TrackingScripts />
+        <ConsentBanner />
       </body>
     </html>
   );
