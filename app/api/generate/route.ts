@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { aiEnabled, generateNarratives } from "@/lib/ai/claude";
+import { trackEvent } from "@/lib/events";
 import { buildConceptProducts, fitToBudget, formatPrice } from "@/lib/products";
 import { clientIp, enforceRateLimit } from "@/lib/rateLimit";
-import { getOrCreateSessionId } from "@/lib/session";
+import { getCurrentUserId, getOrCreateSessionId } from "@/lib/session";
 import { makeVariantSpec, STYLE_MAP, VARIANT_NAMES, VARIANT_NOTES } from "@/lib/styles";
 import type {
   DesignBrief,
@@ -65,9 +66,10 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Unknown style" }, { status: 400 });
   }
 
+  const sessionId = await getOrCreateSessionId();
   const limited = await enforceRateLimit({
     name: "generate-concept",
-    sessionId: await getOrCreateSessionId(),
+    sessionId,
     ip: clientIp(req),
     sessionLimit: 20,
     ipLimit: 60,
@@ -123,5 +125,18 @@ export async function POST(req: Request) {
     engine: narratives ? "claude" : "demo",
     concepts,
   };
+
+  // Phase 1 smoke test for lib/events.ts — the first real wiring of the
+  // events table into an existing route. Awaited (not fire-and-forget):
+  // this is a single fast INSERT, and serverless route handlers can be
+  // frozen the instant the response is returned, before an un-awaited
+  // promise gets to run.
+  await trackEvent({
+    eventName: "look_generated",
+    userId: await getCurrentUserId(),
+    anonymousId: sessionId,
+    properties: { styleId: style.id, engine: payload.engine },
+  });
+
   return NextResponse.json({ ...payload, aiEnabled: aiEnabled() });
 }

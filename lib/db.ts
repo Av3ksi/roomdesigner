@@ -303,4 +303,28 @@ async function runSchema(): Promise<void> {
   // these land via the webhook (markOrderPaid), not at session creation.
   await db`ALTER TABLE orders ADD COLUMN IF NOT EXISTS shipping_name TEXT`;
   await db`ALTER TABLE orders ADD COLUMN IF NOT EXISTS shipping_address JSONB`;
+
+  // First-party product analytics (lib/events.ts) — separate from
+  // lib/analytics.ts, which only fires consent-gated Meta Pixel/Google Ads
+  // conversion events and has no table of its own. This is the event log
+  // the creator/community-gallery funnel and /admin/stats are built on.
+  // user_id and look_id are deliberately not foreign keys: an event about a
+  // room or account that's since been deleted should stay in the log for
+  // historical stats rather than being cascade-deleted or blocking the
+  // event insert.
+  await db`
+    CREATE TABLE IF NOT EXISTS events (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      event_name TEXT NOT NULL,
+      user_id UUID,
+      anonymous_id TEXT,
+      look_id UUID,
+      product_id TEXT,
+      ref_code TEXT,
+      properties JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `;
+  await db`CREATE INDEX IF NOT EXISTS idx_events_name_created ON events(event_name, created_at)`;
+  await db`CREATE INDEX IF NOT EXISTS idx_events_ref_code ON events(ref_code)`;
 }
