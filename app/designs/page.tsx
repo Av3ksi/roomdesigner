@@ -1,11 +1,11 @@
-import type { Metadata } from "next";
-import SavedDesigns from "@/components/SavedDesigns";
+import { redirect } from "next/navigation";
 
-export const metadata: Metadata = {
-  title: "My Designs",
-  description: "Every room you've saved, re-opened, shared or compared side by side.",
-};
-
+/**
+ * Retired — the local-storage-only, procedural-Studio "My Designs" this
+ * used to serve has no equivalent in the current photo-based Designer flow
+ * (nothing writes to it anymore). My Collection replaces it: real saved
+ * rooms, tied to your session/account, not just this browser's storage.
+ */
 export default function DesignsPage() {
-  return <SavedDesigns />;
+  redirect("/my-rooms");
 }

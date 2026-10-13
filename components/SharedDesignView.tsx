@@ -6,13 +6,13 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
 import PricingPanel from "@/components/PricingPanel";
 import ProductDetailPanel from "@/components/ProductDetailPanel";
-import ProductGlyph from "@/components/room/ProductGlyph";
+import ProductThumb from "@/components/room/ProductThumb";
 import RoomScene from "@/components/room/RoomScene";
 import Immersive3D from "@/components/studio/Immersive3D";
 import { formatPrice } from "@/lib/products";
 import { SAMPLE_ROOMS } from "@/lib/rooms";
 import { decodeSnapshot, shareUrlFor } from "@/lib/share";
-import { useMaisonStore } from "@/lib/store";
+import { useVistroomStore } from "@/lib/store";
 import type { Product } from "@/lib/types";
 
 export default function SharedDesignView() {
@@ -21,11 +21,11 @@ export default function SharedDesignView() {
   const encoded = params.get("d");
   const snapshot = useMemo(() => (encoded ? decodeSnapshot(encoded) : null), [encoded]);
 
-  const addManyToCart = useMaisonStore((s) => s.addManyToCart);
-  const addToCart = useMaisonStore((s) => s.addToCart);
-  const toggleWishlist = useMaisonStore((s) => s.toggleWishlist);
-  const isWishlisted = useMaisonStore((s) => s.isWishlisted);
-  const saveDesign = useMaisonStore((s) => s.saveDesign);
+  const addManyToCart = useVistroomStore((s) => s.addManyToCart);
+  const addToCart = useVistroomStore((s) => s.addToCart);
+  const toggleWishlist = useVistroomStore((s) => s.toggleWishlist);
+  const isWishlisted = useVistroomStore((s) => s.isWishlisted);
+  const saveDesign = useVistroomStore((s) => s.saveDesign);
 
   const [products, setProducts] = useState<Product[]>(snapshot?.products ?? []);
   const [exploring, setExploring] = useState(false);
@@ -51,7 +51,7 @@ export default function SharedDesignView() {
         <p className="mt-3 text-cream-dim">
           The share link is missing or malformed — ask for a fresh one.
         </p>
-        <Link href="/studio" className="btn-primary mt-6 inline-flex">
+        <Link href="/designer" className="btn-primary mt-6 inline-flex">
           Design your own room
         </Link>
       </div>
@@ -130,7 +130,7 @@ export default function SharedDesignView() {
                     className="flex min-w-0 flex-1 items-center gap-3 text-left"
                   >
                     <div className="h-14 w-[70px] shrink-0 overflow-hidden rounded-md">
-                      <ProductGlyph product={p} className="h-full w-full" />
+                      <ProductThumb product={p} className="h-full w-full" />
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="truncate text-sm font-medium">{p.name}</div>

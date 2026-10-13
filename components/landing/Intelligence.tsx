@@ -15,7 +15,7 @@ import RoomScene from "@/components/room/RoomScene";
 import { SAMPLE_ROOMS } from "@/lib/rooms";
 
 const READS = [
-  { icon: Ruler, label: "Room dimensions", detail: "±8cm from visual cues" },
+  { icon: Ruler, label: "Room dimensions", detail: "Estimated from visual cues" },
   { icon: Layers, label: "Walls & architecture", detail: "Condition, finish, features" },
   { icon: AppWindow, label: "Windows & light paths", detail: "Orientation & exposure" },
   { icon: DoorOpen, label: "Doors & circulation", detail: "Traffic flow mapping" },
@@ -40,7 +40,7 @@ export default function Intelligence() {
             <em className="text-brass-bright">It understands it.</em>
           </h2>
           <p className="mt-5 max-w-lg leading-relaxed text-cream-dim">
-            Most tools paste furniture onto a photo. Maison builds a structured
+            Most tools paste furniture onto a photo. Vistroom builds a structured
             model of your space first — ten dimensions of understanding that
             every design decision is grounded in.
           </p>

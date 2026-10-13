@@ -4,7 +4,7 @@ import SharedDesignView from "@/components/SharedDesignView";
 
 export const metadata: Metadata = {
   title: "Shared design",
-  description: "A Maison room design, shared by link.",
+  description: "A Vistroom room design, shared by link.",
 };
 
 export default function SharedPage() {

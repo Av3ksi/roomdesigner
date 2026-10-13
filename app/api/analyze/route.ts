@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { aiEnabled, analyzeRoomImage, type VisionImage } from "@/lib/ai/claude";
 import { demoAnalysisForUpload } from "@/lib/analysis";
 import { SAMPLE_ROOM_MAP } from "@/lib/rooms";
+import { clientIp, enforceRateLimit } from "@/lib/rateLimit";
+import { getOrCreateSessionId } from "@/lib/session";
 import type { AnalyzeImagePayload } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -29,7 +31,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  // Sample rooms ship with a hand-built expert analysis.
+  // Sample rooms ship with a hand-built expert analysis — no AI call, no rate limit needed.
   if (body.sampleRoomId) {
     const room = SAMPLE_ROOM_MAP[body.sampleRoomId];
     if (!room) {
@@ -37,6 +39,15 @@ export async function POST(req: Request) {
     }
     return NextResponse.json({ analysis: room.analysis, aiEnabled: aiEnabled() });
   }
+
+  const limited = await enforceRateLimit({
+    name: "analyze",
+    sessionId: await getOrCreateSessionId(),
+    ip: clientIp(req),
+    sessionLimit: 15,
+    ipLimit: 45,
+  });
+  if (limited) return NextResponse.json({ error: limited.error }, { status: 429 });
 
   // Normalize legacy single-image bodies into the images[] shape.
   const rawImages: AnalyzeImagePayload[] = body.images?.length

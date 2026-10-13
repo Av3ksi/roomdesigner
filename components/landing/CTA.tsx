@@ -22,8 +22,8 @@ export default function CTA() {
           analysis, concepts and a shopping list included.
         </p>
         <div className="relative mt-9">
-          <Link href="/studio" className="btn-primary !px-10 !py-4 !text-base">
-            Open the Studio <ArrowRight size={17} />
+          <Link href="/designer" className="btn-primary !px-10 !py-4 !text-base">
+            Open the Designer <ArrowRight size={17} />
           </Link>
         </div>
       </Reveal>

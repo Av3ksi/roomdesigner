@@ -11,7 +11,7 @@ export const metadata: Metadata = {
 const FAQ = [
   {
     q: "Do I need to measure anything?",
-    a: "No. Maison estimates dimensions from visual cues in your photo — door heights, floorboard widths, furniture scale — the way a surveyor would eyeball a room, but faster and in metric.",
+    a: "No. Vistroom estimates dimensions from visual cues in your photo — door heights, floorboard widths, furniture scale — the way a surveyor would eyeball a room, but faster and in metric.",
   },
   {
     q: "Are the products in the renders real?",
@@ -23,7 +23,7 @@ const FAQ = [
   },
   {
     q: "Can I use my existing furniture?",
-    a: "Maison's analysis gives every detected piece a keep / replace verdict, and concepts respect the keepers. Full keep-item placement lands with the next release.",
+    a: "Vistroom's analysis gives every detected piece a keep / replace verdict, and concepts respect the keepers. Full keep-item placement lands with the next release.",
   },
 ];
 

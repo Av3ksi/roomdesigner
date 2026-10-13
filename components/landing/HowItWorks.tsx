@@ -7,7 +7,7 @@ const STEPS = [
     step: "01",
     title: "Upload",
     tagline: "your room",
-    body: "One phone photo from a corner. No measuring tape, no floor plans, no prep — Maison reads the space from what you already have.",
+    body: "One phone photo from a corner. No measuring tape, no floor plans, no prep — Vistroom reads the space from what you already have.",
   },
   {
     icon: Wand2,

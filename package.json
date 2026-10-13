@@ -1,21 +1,26 @@
 {
-  "name": "maison",
+  "name": "vistroom",
   "version": "0.1.0",
   "private": true,
-  "description": "Maison — the AI interior designer. Upload a photo of your room, get photoreal redesign concepts, shop the look.",
+  "description": "Vistroom — the AI interior designer. Upload a photo of your room, get photoreal redesign concepts, shop the look.",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "watch:pull": "bash scripts/auto-pull.sh"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.88.0",
+    "@neondatabase/serverless": "^1.1.0",
     "@types/three": "^0.185.1",
     "lucide-react": "^0.469.0",
     "next": "^15.1.6",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "resend": "^6.18.0",
+    "sharp": "^0.34.5",
+    "stripe": "^22.3.2",
     "three": "^0.185.1",
     "zustand": "^5.0.3"
   },

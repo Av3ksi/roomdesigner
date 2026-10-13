@@ -7,6 +7,7 @@ import BeforeAfterSlider from "@/components/BeforeAfterSlider";
 import RoomScene from "@/components/room/RoomScene";
 import { SAMPLE_ROOMS } from "@/lib/rooms";
 import { STYLES } from "@/lib/styles";
+import { FREE_CREDITS } from "@/lib/credits";
 
 const CYCLE_STYLES = ["japandi", "darkluxury", "scandinavian", "mediterranean"];
 
@@ -52,7 +53,7 @@ export default function Hero() {
             Buy everything.
           </h1>
           <p className="mt-6 max-w-lg text-lg leading-relaxed text-cream-dim">
-            One photo. Maison reads the architecture, the light and what you
+            One photo. Vistroom reads the architecture, the light and what you
             own — then hands you designer-grade concepts you can step inside,
             customize and buy down to the last cushion. A professional
             interior designer, available instantly.
@@ -76,18 +77,24 @@ export default function Hero() {
           </div>
 
           <div className="mt-8 flex flex-wrap items-center gap-4">
-            <Link href="/studio" className="btn-primary !px-8 !py-3.5 !text-base">
+            <Link href="/designer" className="btn-primary !px-8 !py-3.5 !text-base">
               Upload my room <ArrowRight size={17} />
             </Link>
             <Link href="/styles" className="btn-ghost !px-8 !py-3.5 !text-base">
               Browse the styles
             </Link>
           </div>
+          {/* Verifiable product facts, derived from the same constants the app
+              runs on, so they cannot drift out of date. These replaced three
+              invented metrics ("2.4M rooms transformed", "4.9★
+              designer-rated", "31s median analysis") — fabricated traction
+              figures on a pre-launch site are misleading advertising under
+              UWG Art. 3, and they contradicted our own /press page. */}
           <div className="mt-10 flex flex-wrap gap-x-10 gap-y-4">
             {[
-              ["31s", "median analysis time"],
-              ["2.4M", "rooms transformed"],
-              ["4.9★", "designer-rated output"],
+              [String(STYLES.length), "signature styles"],
+              [String(FREE_CREDITS), "free renders to start"],
+              ["100%", "shoppable — every item"],
             ].map(([v, l]) => (
               <div key={l}>
                 <div className="font-display text-2xl text-cream">{v}</div>
@@ -107,7 +114,7 @@ export default function Hero() {
               </div>
             }
             beforeLabel="Their photo"
-            afterLabel={`Maison · ${activeStyle.name}`}
+            afterLabel={`Vistroom · ${activeStyle.name}`}
             initial={46}
           />
           <div className="mt-3 flex items-center justify-center gap-3">

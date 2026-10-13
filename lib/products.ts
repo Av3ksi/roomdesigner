@@ -107,7 +107,7 @@ export const BRAND_RETAILER: Record<string, string> = {
   Mokuzai: "Mokuzai Studio",
   Ferndale: "Ferndale & Co.",
   "Iron & Hide": "Forge District",
-  "Élan Paris": "Maison Élan",
+  "Élan Paris": "Vistroom Élan",
   Saltair: "Saltair Home",
   "Alpina Haus": "Alpina Haus Direct",
   "Harlow House": "Harlow House Interiors",

@@ -504,7 +504,7 @@ export default function Immersive3D({
         onXRSession: setXrActive,
       });
     } catch (err) {
-      console.error("[maison] WebGL unavailable:", err);
+      console.error("[vistroom] WebGL unavailable:", err);
       setWebglFailed(true);
       return;
     }

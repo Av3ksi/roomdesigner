@@ -1,12 +1,10 @@
-import type { Metadata } from "next";
-import Studio from "@/components/studio/Studio";
+import { redirect } from "next/navigation";
 
-export const metadata: Metadata = {
-  title: "Design Studio",
-  description:
-    "Upload a photo of your room and let Maison's AI analyze the space and design it back to you.",
-};
-
+/**
+ * Retired — the procedural style-preview flow this used to serve is now
+ * folded into /designer, which edits your actual room photo instead of
+ * drawing a stylized stand-in. Old links/bookmarks land on the real thing.
+ */
 export default function StudioPage() {
-  return <Studio />;
+  redirect("/designer");
 }

@@ -7,7 +7,7 @@ import { makeVariantSpec, STYLES, VARIANT_NAMES } from "@/lib/styles";
 export const metadata: Metadata = {
   title: "Signature Styles",
   description:
-    "Eight complete design languages — from Japandi to Art Deco Revival — each applied to your real room.",
+    "Ten complete design languages — from Scandinavian to Dark Luxury — each applied to your real room.",
 };
 
 export default function StylesPage() {
@@ -19,7 +19,7 @@ export default function StylesPage() {
           Not filters. Design languages.
         </h1>
         <p className="mt-4 text-cream-dim">
-          Each Maison style is a complete system — palette, materials,
+          Each Vistroom style is a complete system — palette, materials,
           silhouettes, lighting logic and a curated product universe. Below,
           every style rendered in its three concept variants.
         </p>
@@ -59,7 +59,7 @@ export default function StylesPage() {
                   Typical room budget {style.budgetBand}
                 </span>
               </div>
-              <Link href="/studio" className="btn-ghost mt-7">
+              <Link href="/designer" className="btn-ghost mt-7">
                 Design my room in {style.name} <ArrowRight size={14} />
               </Link>
             </div>

@@ -2,45 +2,58 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Heart, Menu, ShoppingBag, Sparkles, X } from "lucide-react";
+import { ChevronDown, Heart, Menu, ShoppingBag, Sparkles, X } from "lucide-react";
 import { useState } from "react";
-import { cartCount, useMaisonStore } from "@/lib/store";
+import { cartCount, useVistroomStore } from "@/lib/store";
+import AccountWidget from "@/components/AccountWidget";
+import CreditBadge from "@/components/CreditBadge";
 
-const LINKS = [
-  { href: "/studio", label: "Studio" },
-  { href: "/styles", label: "Styles" },
+// Kept short on purpose — these are the links most visitors actually use.
+// Everything else lives behind "More" so the bar doesn't wrap or crowd out
+// the account/cart controls at real desktop widths.
+const PRIMARY_LINKS = [
+  { href: "/looks", label: "Complete Rooms" },
   { href: "/marketplace", label: "Marketplace" },
+  { href: "/my-rooms", label: "My Collection" },
+];
+
+const MORE_LINKS = [
+  { href: "/publish", label: "Publish" },
+  { href: "/styles", label: "Styles" },
   { href: "/pricing", label: "Pricing" },
-  { href: "/designs", label: "My Designs" },
   { href: "/boards", label: "Boards" },
 ];
+
+const ALL_LINKS = [{ href: "/designer", label: "Designer" }, ...PRIMARY_LINKS, ...MORE_LINKS];
 
 export default function Nav() {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
-  const cart = useMaisonStore((s) => s.cart);
-  const wishlist = useMaisonStore((s) => s.wishlist);
-  const setCartOpen = useMaisonStore((s) => s.setCartOpen);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const cart = useVistroomStore((s) => s.cart);
+  const wishlist = useVistroomStore((s) => s.wishlist);
+  const setCartOpen = useVistroomStore((s) => s.setCartOpen);
   const count = cartCount(cart);
+  const onMoreLink = MORE_LINKS.some((l) => l.href === pathname);
 
   return (
     <header className="sticky top-0 z-40 border-b border-ink-line/70 bg-ink/85 backdrop-blur-md">
-      <div className="container-page flex h-16 items-center justify-between">
-        <Link href="/" className="group flex items-baseline gap-2">
+      <div className="container-page flex h-16 items-center justify-between gap-4">
+        <Link href="/" className="group flex shrink-0 items-baseline gap-2">
           <span className="font-display text-2xl tracking-tight text-cream">
-            Maison
+            Vistroom
           </span>
           <span className="hidden text-[10px] font-semibold uppercase tracking-[0.3em] text-brass sm:block">
             AI Interior Design
           </span>
         </Link>
 
-        <nav className="hidden items-center gap-8 md:flex">
-          {LINKS.map((l) => (
+        <nav className="hidden items-center gap-6 md:flex">
+          {PRIMARY_LINKS.map((l) => (
             <Link
               key={l.href}
               href={l.href}
-              className={`text-sm transition ${
+              className={`whitespace-nowrap text-sm transition ${
                 pathname === l.href
                   ? "text-brass-bright"
                   : "text-cream-dim hover:text-cream"
@@ -49,9 +62,40 @@ export default function Nav() {
               {l.label}
             </Link>
           ))}
+          <div className="relative">
+            <button
+              onClick={() => setMoreOpen((v) => !v)}
+              onBlur={() => setTimeout(() => setMoreOpen(false), 100)}
+              className={`flex items-center gap-1 whitespace-nowrap text-sm transition ${
+                onMoreLink ? "text-brass-bright" : "text-cream-dim hover:text-cream"
+              }`}
+            >
+              More
+              <ChevronDown size={13} className={`transition-transform ${moreOpen ? "rotate-180" : ""}`} />
+            </button>
+            {moreOpen && (
+              <div className="absolute left-1/2 top-full mt-2 w-40 -translate-x-1/2 rounded-xl border border-ink-line bg-ink-panel p-1.5 shadow-lg">
+                {MORE_LINKS.map((l) => (
+                  <Link
+                    key={l.href}
+                    href={l.href}
+                    className={`block whitespace-nowrap rounded-lg px-3 py-2 text-sm transition ${
+                      pathname === l.href
+                        ? "bg-brass/10 text-brass-bright"
+                        : "text-cream-dim hover:bg-ink-soft hover:text-cream"
+                    }`}
+                  >
+                    {l.label}
+                  </Link>
+                ))}
+              </div>
+            )}
+          </div>
         </nav>
 
-        <div className="flex items-center gap-3">
+        <div className="flex shrink-0 items-center gap-3">
+          <CreditBadge />
+          <AccountWidget />
           <Link
             href="/wishlist"
             className="relative rounded-full border border-ink-line p-2.5 text-cream-dim transition hover:border-brass/50 hover:text-brass-bright"
@@ -76,7 +120,7 @@ export default function Nav() {
               </span>
             )}
           </button>
-          <Link href="/studio" className="btn-primary hidden !px-5 !py-2.5 md:inline-flex">
+          <Link href="/designer" className="btn-primary hidden !px-5 !py-2.5 md:inline-flex">
             <Sparkles size={15} />
             Design my room
           </Link>
@@ -93,7 +137,7 @@ export default function Nav() {
       {open && (
         <div className="border-t border-ink-line bg-ink-soft md:hidden">
           <div className="container-page flex flex-col gap-1 py-4">
-            {LINKS.map((l) => (
+            {ALL_LINKS.map((l) => (
               <Link
                 key={l.href}
                 href={l.href}
@@ -104,12 +148,19 @@ export default function Nav() {
               </Link>
             ))}
             <Link
-              href="/studio"
+              href="/designer"
               onClick={() => setOpen(false)}
               className="btn-primary mt-2 justify-center"
             >
               <Sparkles size={15} />
               Design my room
+            </Link>
+            <Link
+              href="/account"
+              onClick={() => setOpen(false)}
+              className="rounded-lg px-3 py-2.5 text-sm text-cream-dim hover:bg-ink-panel hover:text-cream"
+            >
+              Account
             </Link>
           </div>
         </div>

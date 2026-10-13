@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { aiEnabled, interpretAssistantMessage, type RawAssistantAction } from "@/lib/ai/claude";
 import { BRAND_COUNTRY, BRANDS, brandsFromCountry } from "@/lib/products";
+import { clientIp, enforceRateLimit } from "@/lib/rateLimit";
+import { getOrCreateSessionId } from "@/lib/session";
 import type {
   AssistantAction,
   AssistantContext,
@@ -155,6 +157,15 @@ export async function POST(req: Request) {
   if (!message || message.length > 500) {
     return NextResponse.json({ error: "Provide a message (max 500 chars)" }, { status: 400 });
   }
+
+  const limited = await enforceRateLimit({
+    name: "assistant",
+    sessionId: await getOrCreateSessionId(),
+    ip: clientIp(req),
+    sessionLimit: 30,
+    ipLimit: 90,
+  });
+  if (limited) return NextResponse.json({ error: limited.error }, { status: 429 });
 
   const ctx = body.context;
   const contextText = [

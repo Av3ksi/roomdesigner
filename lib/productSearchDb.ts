@@ -1,0 +1,214 @@
+import { dbEnabled, ensureSchema, sql } from "./db";
+import { fetchVidaxlCatalog } from "./suppliers";
+import type { Product, ProductCategory } from "./types";
+
+function rowToProduct(row: Record<string, unknown>): Product {
+  const dimensionsCm = row.dimensions_cm as Product["dimensionsCm"] | null;
+  return {
+    id: row.id as string,
+    name: row.name as string,
+    brand: row.brand as string,
+    category: row.category as ProductCategory,
+    price: Number(row.price),
+    rating: Number(row.rating),
+    reviews: Number(row.reviews),
+    styles: (row.styles as string[] | null) ?? [],
+    color: row.color as string,
+    blurb: row.blurb as string,
+    supplier: {
+      id: row.supplier_id as string,
+      label: row.supplier_label as string,
+      sku: row.sku as string,
+      costPrice: row.cost_price != null ? Number(row.cost_price) : 0,
+    },
+    imageUrl: (row.image_url as string | null) ?? undefined,
+    imageUrls: (row.image_urls as string[] | null) ?? undefined,
+    productUrl: (row.product_url as string | null) ?? undefined,
+    dimensionsCm: dimensionsCm ?? undefined,
+  };
+}
+
+// The finished-rooms matcher and the designer search both need the WHOLE
+// catalog in memory to score against (they rank every product by relevance),
+// so we can't push that work into SQL — but re-fetching every row from Neon
+// on each request is wasteful once the catalog is tens of thousands of rows.
+// Cache the loaded catalog per warm serverless instance for a short window;
+// the catalog only changes when the seed script re-runs, so a few minutes of
+// staleness is harmless and turns N row-fetches per request into ~zero.
+let catalogCache: { products: Product[]; loadedAt: number } | null = null;
+const CATALOG_CACHE_TTL_MS = 5 * 60 * 1000;
+
+/**
+ * Prefers the Postgres catalog (seeded via scripts/seed-products.ts) so
+ * search scales past an in-memory JSON scan against the live supplier
+ * fetch on every request. Falls back to fetchVidaxlCatalog() whenever the
+ * DB isn't configured, hasn't been seeded yet, or errors — the scoring
+ * logic in lib/productSearch.ts stays exactly as tested either way; only
+ * where the Product[] array comes from changes. Result is cached in-process
+ * for CATALOG_CACHE_TTL_MS (see above).
+ */
+export async function loadProductCatalog(): Promise<Product[]> {
+  if (catalogCache && Date.now() - catalogCache.loadedAt < CATALOG_CACHE_TTL_MS) {
+    return catalogCache.products;
+  }
+  const products = await loadProductCatalogUncached();
+  catalogCache = { products, loadedAt: Date.now() };
+  return products;
+}
+
+/**
+ * The `products` table has `id` as its primary key, so the DB path can't
+ * produce a duplicate — but the live VidaXL feed's offset-paginated scan
+ * (fetchVidaxlCatalog, lib/suppliers/vidaxl.ts) genuinely can: a product
+ * shifting position between page fetches can land on two different offset
+ * pages and get scanned twice. A duplicate id breaks anything that keys a
+ * list by product id (React's `key` prop, most visibly) — dedupe once here
+ * so every caller downstream gets a clean catalog regardless of source.
+ */
+function dedupeById(products: Product[]): Product[] {
+  const seen = new Set<string>();
+  return products.filter((p) => {
+    if (seen.has(p.id)) return false;
+    seen.add(p.id);
+    return true;
+  });
+}
+
+async function loadProductCatalogUncached(): Promise<Product[]> {
+  if (dbEnabled()) {
+    try {
+      await ensureSchema();
+      const db = sql();
+      const rows = await db`SELECT * FROM products`;
+      if (rows.length > 0) return dedupeById(rows.map(rowToProduct));
+    } catch {
+      // DB reachable but query failed (unseeded schema drift, etc.) — fall through.
+    }
+  }
+  const catalog = await fetchVidaxlCatalog();
+  return dedupeById(catalog.products);
+}
+
+/**
+ * Trusted, server-side price lookup for checkout — never trust a price the
+ * client sends. Queries the DB directly by id rather than going through the
+ * cached full-catalog load, since a checkout with a handful of ids doesn't
+ * need the whole-catalog scan. Falls back to filtering the supplier feed
+ * when the DB isn't configured, same fallback story as loadProductCatalog.
+ */
+export async function getProductsByIds(ids: string[]): Promise<Product[]> {
+  if (ids.length === 0) return [];
+  if (dbEnabled()) {
+    try {
+      await ensureSchema();
+      const db = sql();
+      const rows = await db`SELECT * FROM products WHERE id = ANY(${ids})`;
+      if (rows.length > 0) return rows.map(rowToProduct);
+    } catch {
+      // DB reachable but query failed — fall through to the feed fallback.
+    }
+  }
+  const catalog = await fetchVidaxlCatalog();
+  const idSet = new Set(ids);
+  return dedupeById(catalog.products.filter((p) => idSet.has(p.id)));
+}
+
+/**
+ * Inserts or updates a single product row directly — used by
+ * scripts/generate-showroom-rooms.ts to persist an on-the-fly generated
+ * poster (lib/ai/posterArt.ts) as a real catalog product, so it resolves
+ * normally through loadProductCatalog()/getProductsByIds() (clickable
+ * hotspot, real price in the total) instead of being a scene-only image
+ * with no catalog identity. Same INSERT ... ON CONFLICT shape
+ * scripts/seed-products.ts already uses for bulk seeding, factored out
+ * here for this single-row case. Clears the in-process catalog cache so
+ * a room built in the same run sees the product immediately rather than
+ * waiting out CATALOG_CACHE_TTL_MS.
+ */
+export async function upsertProduct(p: Product): Promise<void> {
+  await ensureSchema();
+  const db = sql();
+  await db`
+    INSERT INTO products (
+      id, supplier_id, supplier_label, sku, name, brand, category, price, rating, reviews,
+      styles, color, blurb, image_url, image_urls, product_url, cost_price, dimensions_cm, updated_at
+    ) VALUES (
+      ${p.id}, ${p.supplier?.id ?? ""}, ${p.supplier?.label ?? ""}, ${p.supplier?.sku ?? ""},
+      ${p.name}, ${p.brand}, ${p.category}, ${p.price}, ${p.rating}, ${p.reviews},
+      ${p.styles}, ${p.color}, ${p.blurb}, ${p.imageUrl ?? null}, ${p.imageUrls ?? null}, ${p.productUrl ?? null},
+      ${p.supplier?.costPrice ?? null}, ${p.dimensionsCm ? JSON.stringify(p.dimensionsCm) : null}, now()
+    )
+    ON CONFLICT (id) DO UPDATE SET
+      supplier_id = EXCLUDED.supplier_id,
+      supplier_label = EXCLUDED.supplier_label,
+      sku = EXCLUDED.sku,
+      name = EXCLUDED.name,
+      brand = EXCLUDED.brand,
+      category = EXCLUDED.category,
+      price = EXCLUDED.price,
+      rating = EXCLUDED.rating,
+      reviews = EXCLUDED.reviews,
+      styles = EXCLUDED.styles,
+      color = EXCLUDED.color,
+      blurb = EXCLUDED.blurb,
+      image_url = EXCLUDED.image_url,
+      image_urls = EXCLUDED.image_urls,
+      product_url = EXCLUDED.product_url,
+      cost_price = EXCLUDED.cost_price,
+      dimensions_cm = EXCLUDED.dimensions_cm,
+      updated_at = now()
+  `;
+  catalogCache = null;
+}
+
+export interface MarketplacePage {
+  products: Product[];
+  totalCount: number;
+}
+
+/**
+ * Paginated, filtered catalog page for the public Marketplace — unlike
+ * loadProductCatalog() above (which loads everything for the search/
+ * matching scorers to rank), a shop grid must never ship tens of thousands
+ * of products to the browser. Filters in SQL against the indexed category
+ * column and the styles array; falls back to slicing the in-memory catalog
+ * when the DB isn't configured or the query fails.
+ */
+export async function loadMarketplacePage(opts: {
+  category?: ProductCategory;
+  styleId?: string;
+  page: number;
+  pageSize: number;
+}): Promise<MarketplacePage> {
+  const { category, styleId, page, pageSize } = opts;
+  const offset = Math.max(0, page - 1) * pageSize;
+
+  if (dbEnabled()) {
+    try {
+      await ensureSchema();
+      const db = sql();
+      const rows = await db`
+        SELECT * FROM products
+        WHERE (${category ?? null}::text IS NULL OR category = ${category ?? null})
+          AND (${styleId ?? null}::text IS NULL OR ${styleId ?? null} = ANY(styles))
+        ORDER BY updated_at DESC, id
+        LIMIT ${pageSize} OFFSET ${offset}
+      `;
+      const countRows = await db`
+        SELECT COUNT(*)::int AS count FROM products
+        WHERE (${category ?? null}::text IS NULL OR category = ${category ?? null})
+          AND (${styleId ?? null}::text IS NULL OR ${styleId ?? null} = ANY(styles))
+      `;
+      const totalCount = Number(countRows[0]?.count ?? 0);
+      if (totalCount > 0) return { products: rows.map(rowToProduct), totalCount };
+    } catch {
+      // DB reachable but query failed — fall through to the in-memory fallback.
+    }
+  }
+
+  const all = await loadProductCatalog();
+  const filtered = all.filter(
+    (p) => (!category || p.category === category) && (!styleId || p.styles.includes(styleId)),
+  );
+  return { products: filtered.slice(offset, offset + pageSize), totalCount: filtered.length };
+}

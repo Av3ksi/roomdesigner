@@ -8,7 +8,14 @@ import { STYLES } from "@/lib/styles";
  * and the caller falls back to the deterministic demo engine.
  */
 
-const MODEL = "claude-opus-4-8";
+// Sonnet, not Opus — every AI call in this app (chat, vision analysis,
+// placement, web search) shares this one constant, so this single line is
+// the biggest lever on real API cost. Sonnet 5 supports everything this app
+// uses (tool calling, vision, extended thinking, the web_search/web_fetch
+// tools) at a meaningfully lower price than Opus. If a specific call later
+// turns out to need Opus-level reasoning, give that one call its own model
+// constant rather than raising this for everything.
+export const MODEL = "claude-sonnet-5";
 
 export function aiEnabled(): boolean {
   return Boolean(process.env.ANTHROPIC_API_KEY);
@@ -16,6 +23,32 @@ export function aiEnabled(): boolean {
 
 function client(): Anthropic {
   return new Anthropic();
+}
+
+/**
+ * Turns a raw Anthropic SDK error into one plain sentence a curator can act
+ * on. The graceful-degradation paths swallow errors into null on purpose,
+ * but the paid curator tools (e.g. Looks Studio) need to say WHAT went wrong
+ * instead of a blanket "try again" — retrying a zero-balance account or a
+ * rejected key just wastes another render. Falls through to the raw message
+ * for anything unrecognized.
+ */
+export function describeAiError(err: unknown): string {
+  const status = err instanceof Anthropic.APIError ? err.status : undefined;
+  const raw = err instanceof Error ? err.message : String(err);
+  if (/credit balance is too low/i.test(raw)) {
+    return "Your Anthropic API credit balance is too low. Add credits at console.anthropic.com → Plans & Billing, then try again — this is billed separately from any Claude subscription.";
+  }
+  if (status === 401 || /authentication|invalid x-api-key/i.test(raw)) {
+    return "The Anthropic API key was rejected. Check ANTHROPIC_API_KEY in your .env is current and correct.";
+  }
+  if (status === 429) {
+    return "Hit the Anthropic rate limit. Wait a moment, then try again.";
+  }
+  if (status === 529 || /overloaded/i.test(raw)) {
+    return "The Anthropic API is temporarily overloaded. Give it a minute and try again.";
+  }
+  return raw;
 }
 
 const STYLE_IDS = STYLES.map((s) => s.id);
@@ -171,7 +204,7 @@ const ANALYSIS_SCHEMA = {
   },
 } as const;
 
-const ANALYSIS_SYSTEM = `You are the spatial-analysis engine of Maison, a premium AI interior design platform. You analyze a single photograph of a real room the way a senior interior designer and a surveyor would, together.
+const ANALYSIS_SYSTEM = `You are the spatial-analysis engine of Vistroom, a premium AI interior design platform. You analyze a single photograph of a real room the way a senior interior designer and a surveyor would, together.
 
 Ground every claim in what is visible. Estimate dimensions from architectural cues (door heights ~2.03m, ceiling lines, floorboard widths, furniture scale) and mark low-confidence estimates as estimates in prose fields. Bounding boxes are relative coordinates (0–1) with origin at the top-left of the image; include only objects you can actually localize. styleAffinity scores (0–100) rank how well each design style would suit this specific room's light, proportions and architecture. The summary should read like a designer's first impression: specific, warm, honest about problems.`;
 
@@ -234,7 +267,7 @@ export async function analyzeRoomImage(
     const parsed = JSON.parse(text) as Omit<RoomAnalysis, "engine">;
     return { engine: "claude", ...parsed };
   } catch (err) {
-    console.error("[maison] Claude analysis failed, falling back to demo:", err);
+    console.error("[vistroom] Claude analysis failed, falling back to demo:", err);
     return null;
   }
 }
@@ -308,7 +341,7 @@ export async function interpretAssistantMessage(
       model: MODEL,
       max_tokens: 4096,
       thinking: { type: "adaptive" },
-      system: `You are Maison's AI interior designer, chatting with a client inside their generated room design. Interpret their request into (1) a warm, specific 1–2 sentence reply in the language they wrote in, and (2) structured actions the app applies instantly.
+      system: `You are Vistroom's AI interior designer, chatting with a client inside their generated room design. Interpret their request into (1) a warm, specific 1–2 sentence reply in the language they wrote in, and (2) structured actions the app applies instantly.
 
 Available actions:
 - adjust_warmth (delta -0.4..0.4): warmer/cozier lighting vs cooler/brighter
@@ -337,7 +370,7 @@ Prefer 1–2 precise actions over many. If the request is out of scope, reply he
     if (!text) return null;
     return JSON.parse(text) as { reply: string; actions: RawAssistantAction[] };
   } catch (err) {
-    console.error("[maison] Claude assistant failed, falling back to demo:", err);
+    console.error("[vistroom] Claude assistant failed, falling back to demo:", err);
     return null;
   }
 }
@@ -371,7 +404,7 @@ export async function generateNarratives(
       max_tokens: 4096,
       thinking: { type: "adaptive" },
       system:
-        "You are a senior interior designer at Maison writing concept notes for a client. Each note is 2–3 sentences, specific to the client's actual room, confident and warm — never generic marketing copy. Reference the room's real light, proportions or materials.",
+        "You are a senior interior designer at Vistroom writing concept notes for a client. Each note is 2–3 sentences, specific to the client's actual room, confident and warm — never generic marketing copy. Reference the room's real light, proportions or materials.",
       output_config: {
         format: {
           type: "json_schema",
@@ -393,7 +426,7 @@ export async function generateNarratives(
     if (!Array.isArray(parsed.narratives) || parsed.narratives.length < 3) return null;
     return parsed.narratives.slice(0, 3);
   } catch (err) {
-    console.error("[maison] Claude narrative generation failed:", err);
+    console.error("[vistroom] Claude narrative generation failed:", err);
     return null;
   }
 }

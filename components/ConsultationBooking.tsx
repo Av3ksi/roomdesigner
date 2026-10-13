@@ -3,10 +3,10 @@
 import { Calendar, CheckCircle2, Clock, MessageSquare, Sparkles, Users, Video } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
-import { useMaisonStore } from "@/lib/store";
+import { useVistroomStore } from "@/lib/store";
 
 const TYPES = [
-  { id: "virtual", label: "Virtual walkthrough", icon: Video, note: "30 min video call, screen-share your Maison room", price: "Free" },
+  { id: "virtual", label: "Virtual walkthrough", icon: Video, note: "30 min video call, screen-share your Vistroom room", price: "Free" },
   { id: "advice", label: "Style advice call", icon: MessageSquare, note: "15 min quick-fire Q&A on a specific room", price: "Free" },
   { id: "inhome", label: "In-home visit", icon: Users, note: "A designer visits in person (select cities)", price: "From CHF 220" },
 ];
@@ -24,7 +24,7 @@ function nextWeekdays(count: number): Date[] {
 const SLOTS = ["9:00", "11:30", "14:00", "16:30"];
 
 export default function ConsultationBooking() {
-  const requestConsultation = useMaisonStore((s) => s.requestConsultation);
+  const requestConsultation = useVistroomStore((s) => s.requestConsultation);
   const [type, setType] = useState(TYPES[0].id);
   const days = nextWeekdays(4);
   const [dayIdx, setDayIdx] = useState(0);
@@ -52,12 +52,12 @@ export default function ConsultationBooking() {
         </span>
         <h1 className="font-display mt-6 text-4xl">Request received.</h1>
         <p className="mt-3 max-w-md text-cream-dim">
-          A Maison designer will confirm your {selectedType.label.toLowerCase()} for{" "}
+          A Vistroom designer will confirm your {selectedType.label.toLowerCase()} for{" "}
           <span className="font-semibold text-brass-bright">{preferredSlot}</span> by email within 24
           hours — this is a request, not yet a confirmed booking.
         </p>
-        <Link href="/studio" className="btn-primary mt-8">
-          Back to the Studio
+        <Link href="/designer" className="btn-primary mt-8">
+          Back to the Designer
         </Link>
       </div>
     );
@@ -71,7 +71,7 @@ export default function ConsultationBooking() {
           Sometimes you want a human in the room.
         </h1>
         <p className="mt-4 text-cream-dim">
-          Bring in a Maison designer to sanity-check the AI&apos;s work, solve a
+          Bring in a Vistroom designer to sanity-check the AI&apos;s work, solve a
           tricky layout, or just talk it through. Submit a request and we&apos;ll
           confirm by email.
         </p>

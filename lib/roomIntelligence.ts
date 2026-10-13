@@ -84,7 +84,7 @@ export function energyEfficiency(analysis: RoomAnalysis, products: Product[]): E
   if (lightingPieces === 0) {
     tips.push("No dedicated lighting in this basket yet — a dim-to-warm LED floor or table lamp cuts overhead-only energy use significantly.");
   } else {
-    tips.push(`${lightingPieces} lighting piece${lightingPieces === 1 ? "" : "s"} selected — all Maison lighting defaults to dim-to-warm LED.`);
+    tips.push(`${lightingPieces} lighting piece${lightingPieces === 1 ? "" : "s"} selected — all Vistroom lighting defaults to dim-to-warm LED.`);
   }
   return { score, tips: tips.slice(0, 3) };
 }
@@ -104,11 +104,18 @@ export function furnitureCompatibility(products: Product[], styleId: string): Co
   if (sofa && table) {
     const sofaDim = getProductDetails(sofa).dimensions;
     const tableDim = getProductDetails(table).dimensions;
-    const ratio = tableDim.w / sofaDim.w;
-    if (ratio < 0.32) {
-      warnings.push(`${table.name} may read as small next to ${sofa.name} — sizing up keeps the seating group balanced.`);
-    } else if (ratio > 0.85) {
-      warnings.push(`${table.name} is close in width to ${sofa.name} — leave at least 40cm of clearance on each side for circulation.`);
+    // Only advise on proportion when BOTH real measurements exist. These
+    // used to be randomly generated per category, so the warning was really
+    // commenting on two random numbers; with real supplier data the check is
+    // meaningful, but many feed products have no dimensions at all and
+    // staying silent beats inventing a proportion complaint.
+    if (sofaDim && tableDim && sofaDim.w > 0) {
+      const ratio = tableDim.w / sofaDim.w;
+      if (ratio < 0.32) {
+        warnings.push(`${table.name} may read as small next to ${sofa.name} — sizing up keeps the seating group balanced.`);
+      } else if (ratio > 0.85) {
+        warnings.push(`${table.name} is close in width to ${sofa.name} — leave at least 40cm of clearance on each side for circulation.`);
+      }
     }
   }
 

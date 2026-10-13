@@ -1,0 +1,149 @@
+import { NextRequest, NextResponse } from "next/server";
+import { compositeProductIntoRoom, compositingEnabled } from "@/lib/ai/composite";
+import { compositeProductIntoRoomFlux, fluxFillEnabled } from "@/lib/ai/fluxFill";
+import { checkRenderedProductIdentity } from "@/lib/ai/identityCheck";
+import { isPremiumUser } from "@/lib/auth";
+import { hasCreditsRemaining, spendCredit } from "@/lib/credits";
+import { clientIp, enforceRateLimit } from "@/lib/rateLimit";
+import { getCurrentUserId, getOrCreateSessionId } from "@/lib/session";
+import type { ProductCategory } from "@/lib/types";
+
+// sharp (used by lib/ai/composite.ts) needs the Node runtime, not edge.
+export const runtime = "nodejs";
+
+/**
+ * Every call here is a real, billed OpenAI request — this route only ever
+ * fires from an explicit "Generate" button click in CompositePreview, never
+ * automatically. No caching, no retries-on-mount, no polling.
+ */
+export async function POST(req: NextRequest) {
+  // OpenAI is the primary path for adding a product: gpt-image-1.5 sees the
+  // ACTUAL product reference photo, while FLUX Fill (lib/ai/fluxFill.ts) can
+  // only work from a text description of it — a real, confirmed failure had
+  // that description carry over an incidental detail from the product photo
+  // (a child staged on a kids' sofa for scale) straight into the render.
+  // Both paths now carry the same "pixels outside the mask stay untouched"
+  // guarantee (lib/ai/imageMasking.ts), so that's no longer a reason to
+  // prefer FLUX here. FLUX Fill is used automatically only when
+  // OPENAI_API_KEY isn't configured — unlike removal (/api/remove-object),
+  // where FLUX + Grounded-SAM segmentation stays primary since erasing
+  // something has no text-description fidelity gap to begin with.
+  const openAiAvailable = compositingEnabled();
+  const useFlux = !openAiAvailable && fluxFillEnabled();
+  if (!useFlux && !openAiAvailable) {
+    return NextResponse.json(
+      { error: "Compositing isn't configured on this server yet (needs REPLICATE_API_TOKEN or OPENAI_API_KEY)." },
+      { status: 501 },
+    );
+  }
+
+  const sessionId = await getOrCreateSessionId();
+  const limited = await enforceRateLimit({
+    name: "composite",
+    sessionId,
+    ip: clientIp(req),
+    sessionLimit: 10,
+    ipLimit: 30,
+  });
+  if (limited) return NextResponse.json({ error: limited.error }, { status: 429 });
+
+  // Premium accounts (lib/auth.ts) bypass the credit gate entirely — a
+  // real Stripe subscription (app/api/checkout/premium), unlimited
+  // regardless of balance. Checked before the gate below so a premium
+  // user never even touches credit_accounts.
+  const userId = await getCurrentUserId();
+  const premium = await isPremiumUser(userId);
+
+  // Credit gate — checked BEFORE the billed OpenAI call fires, so a
+  // session at zero never spends money.
+  if (!premium && !(await hasCreditsRemaining(sessionId))) {
+    return NextResponse.json(
+      { error: "You're out of credits. Buy more or upgrade to Premium for unlimited access.", code: "OUT_OF_CREDITS" },
+      { status: 402 },
+    );
+  }
+
+  // formData() itself throws on a missing/non-multipart body — that's a
+  // caller mistake (400), not a server failure (500).
+  const form = await req.formData().catch(() => null);
+  const roomFile = form?.get("room");
+  const productImageUrl = form?.get("productImageUrl");
+  const category = form?.get("category");
+
+  if (!form || !(roomFile instanceof File) || typeof productImageUrl !== "string" || typeof category !== "string") {
+    return NextResponse.json({ error: "Missing room photo, productImageUrl, or category." }, { status: 400 });
+  }
+
+  // Optional explicit placement box (the Option B path) — all four
+  // normalized coordinates must parse or the box is ignored entirely.
+  const coords = ["boxX", "boxY", "boxW", "boxH"].map((k) => Number.parseFloat(String(form.get(k) ?? "")));
+  const explicitBox = coords.every((n) => Number.isFinite(n))
+    ? { x: coords[0], y: coords[1], w: coords[2], h: coords[3] }
+    : undefined;
+
+  // Optional real-world grounding. The client sends these when the catalog
+  // row actually carries them; absent, the prompt simply omits the
+  // dimensions block rather than inventing a size (see ./prompts).
+  const dimsRaw = ["widthCm", "depthCm", "heightCm"].map((k) => Number.parseFloat(String(form.get(k) ?? "")));
+  const dimensionsCm = dimsRaw.every((n) => Number.isFinite(n) && n > 0)
+    ? { l: dimsRaw[0], w: dimsRaw[1], h: dimsRaw[2] }
+    : null;
+  const roomDimsRaw = ["roomWidthM", "roomDepthM", "roomHeightM"].map((k) => Number.parseFloat(String(form.get(k) ?? "")));
+  const roomDimensions = roomDimsRaw.every((n) => Number.isFinite(n) && n > 0)
+    ? { widthM: roomDimsRaw[0], depthM: roomDimsRaw[1], heightM: roomDimsRaw[2] }
+    : null;
+
+  const wallAngleRaw = Number.parseFloat(String(form.get("wallAngleDeg") ?? ""));
+  const wallAngleDeg = Number.isFinite(wallAngleRaw) ? wallAngleRaw : undefined;
+
+  // Diagnostic: the box a render actually used is otherwise invisible once
+  // it's in front of a customer — useful for root-causing a mismatch
+  // between where the mask was and what the model actually painted.
+  console.log("[vistroom] /api/composite", { provider: useFlux ? "flux" : "openai", category, productImageUrl, explicitBox, wallAngleDeg });
+
+  const productRes = await fetch(productImageUrl);
+  if (!productRes.ok) {
+    return NextResponse.json({ error: `Failed to fetch the product photo: ${productRes.status}` }, { status: 502 });
+  }
+
+  const roomBuffer = Buffer.from(await roomFile.arrayBuffer());
+  const productBuffer = Buffer.from(await productRes.arrayBuffer());
+
+  try {
+    // Quality history, from real testing: "low" produced structurally weak
+    // geometry (a small armchair shape instead of a real 3-seater); "medium"
+    // fixed the geometry once the mask aspect ratio and reference photo were
+    // also fixed, but still under-rendered product detail (arms, cushion
+    // count) even with a correctly-shaped mask and a clean reference photo —
+    // the app's own identityCheck QA step (below) caught this automatically.
+    // "high" is the next real test of whether quality tier is still the
+    // ceiling; it costs meaningfully more per render than medium.
+    const result = useFlux
+      ? await compositeProductIntoRoomFlux(roomBuffer, productBuffer, category as ProductCategory, [], explicitBox, wallAngleDeg, dimensionsCm, roomDimensions)
+      : await compositeProductIntoRoom(roomBuffer, productBuffer, category as ProductCategory, [], "high", explicitBox, wallAngleDeg, dimensionsCm, roomDimensions);
+
+    // The render succeeded — this is the actual credit spend, counted here
+    // (not in the separate /api/rooms/[id]/versions persistence call)
+    // since that route is fire-and-forget from the client and could
+    // silently fail to record it. Skipped for premium accounts — nothing
+    // to spend, they're unlimited regardless.
+    if (!premium) await spendCredit(sessionId, userId, "generation:composite");
+
+    // Best-effort QA pass (Phase 2): compares the rendered region against the
+    // real product photo since compositing models occasionally substitute a
+    // different object. Never blocks the render the user already paid for —
+    // a failed/skipped check just means no identityCheck in the response.
+    const identityCheck = await checkRenderedProductIdentity(
+      productBuffer,
+      Buffer.from(result.imageBase64, "base64"),
+      result.maskBox,
+      // The pre-edit room, so the same review call can also report any
+      // object the model invented — see strayObjects in lib/ai/identityCheck.ts.
+      roomBuffer,
+    ).catch(() => null);
+
+    return NextResponse.json({ ...result, identityCheck });
+  } catch (err) {
+    return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 500 });
+  }
+}

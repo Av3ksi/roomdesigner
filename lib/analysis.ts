@@ -53,7 +53,7 @@ export function demoAnalysisForUpload(seedKey: string): RoomAnalysis {
     roomType: "Living space",
     confidence: 0.9,
     summary:
-      "Simulated analysis (demo engine): a livable space with workable proportions and decent light. Connect an Anthropic API key and Maison's vision model will read your actual walls, windows, furniture and materials from the photo.",
+      "Simulated analysis (demo engine): a livable space with workable proportions and decent light. Connect an Anthropic API key and Vistroom's vision model will read your actual walls, windows, furniture and materials from the photo.",
     dimensions: {
       widthM: +width.toFixed(1),
       depthM: +depth.toFixed(1),

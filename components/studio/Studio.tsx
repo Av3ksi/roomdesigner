@@ -58,7 +58,7 @@ import { SAMPLE_ROOMS } from "@/lib/rooms";
 import type { RoomHistoryEntry } from "@/lib/roomHistory";
 import { shareUrlFor } from "@/lib/share";
 import { STYLE_MAP, STYLES } from "@/lib/styles";
-import { useMaisonStore } from "@/lib/store";
+import { useVistroomStore } from "@/lib/store";
 import type {
   Adjustments,
   AssistantAction,
@@ -127,7 +127,7 @@ const ACCENTS = [
 
 const BUDGETS: { id: BudgetTier; label: string; note: string }[] = [
   { id: "essential", label: "Essential", note: "Smart value, same design" },
-  { id: "signature", label: "Signature", note: "The Maison standard" },
+  { id: "signature", label: "Signature", note: "The Vistroom standard" },
   { id: "luxe", label: "Luxe", note: "Heirloom-grade pieces" },
 ];
 
@@ -569,7 +569,7 @@ export default function Studio() {
           </h1>
           <p className="mt-3 max-w-2xl text-cream-dim">
             One photo is enough — more angles and a floor plan make the
-            dimensions sharper. Maison reads the architecture, light,
+            dimensions sharper. Vistroom reads the architecture, light,
             materials and furniture, then designs the room back to you.
           </p>
 
@@ -748,7 +748,7 @@ export default function Studio() {
               <span className="eyebrow !text-brass">Analyzing your space</span>
             </div>
             <p className="mb-5 text-sm text-cream-faint">
-              Maison&apos;s vision engine is building a structured model of the
+              Vistroom&apos;s vision engine is building a structured model of the
               room — the way a surveyor and a designer would, together.
             </p>
             <ScanProgress done={busyDone} />
@@ -793,7 +793,7 @@ export default function Studio() {
               </div>
               <p className="mt-1 text-sm text-cream-dim">
                 &ldquo;A calm morning retreat&rdquo;, &ldquo;moody dinner-party energy&rdquo;, &ldquo;sunny coastal
-                weekend&rdquo; — Maison maps the feeling to a style and palette instantly.
+                weekend&rdquo; — Vistroom maps the feeling to a style and palette instantly.
               </p>
             </div>
             <form
@@ -1120,7 +1120,7 @@ function AnalysisView({
             <p className="mt-3 text-xs text-cream-faint">
               Demo engine: this analysis is simulated. Set{" "}
               <code className="rounded bg-ink-panel px-1.5 py-0.5">ANTHROPIC_API_KEY</code>{" "}
-              on the server and Maison reads your actual photos with Claude vision.
+              on the server and Vistroom reads your actual photos with Claude vision.
             </p>
           )}
         </div>
@@ -1235,7 +1235,7 @@ function DesignerChat({
   const [messages, setMessages] = useState<{ role: "user" | "ai"; text: string }[]>([
     {
       role: "ai",
-      text: "I'm your Maison designer — tell me what to change and I'll update the room instantly.",
+      text: "I'm your Vistroom designer — tell me what to change and I'll update the room instantly.",
     },
   ]);
   const [input, setInput] = useState("");
@@ -1371,11 +1371,11 @@ function ResultView({
   const [season, setSeason] = useState<string | null>(null);
   const pendingLabelRef = useRef("Original concept");
   const shopListRef = useRef<HTMLDivElement>(null);
-  const addManyToCart = useMaisonStore((s) => s.addManyToCart);
-  const addToCart = useMaisonStore((s) => s.addToCart);
-  const toggleWishlist = useMaisonStore((s) => s.toggleWishlist);
-  const isWishlisted = useMaisonStore((s) => s.isWishlisted);
-  const saveDesign = useMaisonStore((s) => s.saveDesign);
+  const addManyToCart = useVistroomStore((s) => s.addManyToCart);
+  const addToCart = useVistroomStore((s) => s.addToCart);
+  const toggleWishlist = useVistroomStore((s) => s.toggleWishlist);
+  const isWishlisted = useVistroomStore((s) => s.isWishlisted);
+  const saveDesign = useVistroomStore((s) => s.saveDesign);
 
   const concept = concepts[active];
 
@@ -1611,7 +1611,7 @@ function ResultView({
     });
     try {
       if (navigator.share) {
-        await navigator.share({ title: `Maison — ${style.name} redesign`, url });
+        await navigator.share({ title: `Vistroom — ${style.name} redesign`, url });
         return;
       }
     } catch {
