@@ -25,6 +25,9 @@ export default function PublishForm() {
   const [description, setDescription] = useState("");
   const [styleTags, setStyleTags] = useState<string[]>([]);
 
+  const [submitToContest, setSubmitToContest] = useState(false);
+  const [termsAccepted, setTermsAccepted] = useState(false);
+
   const [query, setQuery] = useState("");
   const [searching, setSearching] = useState(false);
   const [results, setResults] = useState<PickedProduct[]>([]);
@@ -82,6 +85,7 @@ export default function PublishForm() {
     if (!photoBase64) return setError("Upload a photo of your room.");
     if (!title.trim()) return setError("Give your room a title.");
     if (picked.length === 0) return setError("Tag at least one product used in this room.");
+    if (submitToContest && !termsAccepted) return setError("Accept the Creator Program terms to submit to the contest.");
 
     setError(null);
     setSubmitting(true);
@@ -95,6 +99,8 @@ export default function PublishForm() {
           styleTags,
           photoBase64,
           productIds: picked.map((p) => p.id),
+          submitToContest,
+          termsAccepted,
         }),
       });
       const responseBody = await res.json();
@@ -252,12 +258,57 @@ export default function PublishForm() {
           )}
         </div>
 
+        <div className="rounded-xl border border-ink-line bg-ink-panel p-4">
+          <label className="flex items-start gap-2.5 text-sm">
+            <input
+              type="checkbox"
+              checked={submitToContest}
+              onChange={(e) => setSubmitToContest(e.target.checked)}
+              className="mt-0.5 h-4 w-4 shrink-0 accent-brass"
+            />
+            <span>
+              Also submit this look to the <strong>Creator Program</strong> — eligible for a reward and
+              this month's contest, after review.
+            </span>
+          </label>
+
+          {submitToContest && (
+            <div className="mt-3 space-y-3 border-t border-ink-line pt-3">
+              <p className="text-xs text-cream-faint">
+                Before you upload: make sure your photo shows no people, faces, IDs or documents, or
+                anything revealing your address.
+              </p>
+              <label className="flex items-start gap-2.5 text-xs">
+                <input
+                  type="checkbox"
+                  checked={termsAccepted}
+                  onChange={(e) => setTermsAccepted(e.target.checked)}
+                  className="mt-0.5 h-4 w-4 shrink-0 accent-brass"
+                />
+                <span>
+                  I accept the{" "}
+                  <a href="/legal/terms-contest" target="_blank" rel="noreferrer" className="text-brass-bright underline">
+                    Creator Program terms and image rights
+                  </a>
+                  .
+                </span>
+              </label>
+            </div>
+          )}
+        </div>
+
         {error && <p className="text-sm text-rose-300">{error}</p>}
-        <button onClick={submit} disabled={submitting} className="btn-primary w-full justify-center disabled:opacity-50">
-          {submitting ? "Publishing…" : "Publish for inspiration"}
+        <button
+          onClick={submit}
+          disabled={submitting || (submitToContest && !termsAccepted)}
+          className="btn-primary w-full justify-center disabled:opacity-50"
+        >
+          {submitting ? "Publishing…" : submitToContest ? "Submit for review" : "Publish for inspiration"}
         </button>
         <p className="text-center text-[11px] text-cream-faint">
-          Your room joins Complete Rooms publicly, tagged with your name hidden — just the room and products.
+          {submitToContest
+            ? "Your look is reviewed before it appears anywhere public — you'll be notified by email either way."
+            : "Your room joins Complete Rooms publicly, tagged with your name hidden — just the room and products."}
         </p>
       </div>
     </div>

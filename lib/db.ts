@@ -186,6 +186,21 @@ async function runSchema(): Promise<void> {
   await db`ALTER TABLE finished_rooms ADD COLUMN IF NOT EXISTS session_id TEXT`;
   await db`CREATE INDEX IF NOT EXISTS idx_finished_rooms_session ON finished_rooms(session_id)`;
 
+  // Community/creator program (source='community', see app/api/publish and
+  // app/admin/moderation): a submission sits pending until an admin
+  // approves or rejects it. DEFAULT 'approved' is deliberate — it means
+  // every curated room and every existing customer publish (source
+  // 'curated'/'user') stays visible exactly as before with no backfill
+  // needed; only a NEW community submission is ever explicitly inserted as
+  // 'pending'. terms_accepted_at/terms_version record consent to
+  // /legal/terms-contest at submission time — null for every row that
+  // predates the Creator Program or never went through that path.
+  await db`ALTER TABLE finished_rooms ADD COLUMN IF NOT EXISTS moderation_status TEXT NOT NULL DEFAULT 'approved'`;
+  await db`ALTER TABLE finished_rooms ADD COLUMN IF NOT EXISTS moderation_reason TEXT`;
+  await db`ALTER TABLE finished_rooms ADD COLUMN IF NOT EXISTS terms_accepted_at TIMESTAMPTZ`;
+  await db`ALTER TABLE finished_rooms ADD COLUMN IF NOT EXISTS terms_version TEXT`;
+  await db`CREATE INDEX IF NOT EXISTS idx_finished_rooms_moderation ON finished_rooms(moderation_status)`;
+
   // Abuse/cost protection for the paid AI endpoints — see lib/rateLimit.ts.
   // One row per limiter key (e.g. "generate:session-id"); a single UPSERT
   // atomically resets-if-expired or increments, so concurrent requests from

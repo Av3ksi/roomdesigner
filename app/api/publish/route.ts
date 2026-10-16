@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
+import { CONTEST_TERMS_VERSION } from "@/lib/contestConfig";
 import { createFinishedRoom } from "@/lib/finishedRooms";
+import { trackEvent } from "@/lib/events";
 import { getProductsByIds } from "@/lib/productSearchDb";
 import { dbEnabled } from "@/lib/db";
 import { clientIp, enforceRateLimit } from "@/lib/rateLimit";
@@ -24,6 +26,12 @@ function stripDataUrlPrefix(value: string): string {
  * the photo and product tags are exactly what the customer submits, so
  * there's no per-submission API cost to rate-limit against, just the usual
  * spam/abuse concern for a public write endpoint.
+ *
+ * `submitToContest: true` is the opt-in Creator Program path (Phase 2):
+ * source becomes 'community' and the row starts 'pending' instead of
+ * immediately public, gated on accepting /legal/terms-contest. Omitting it
+ * (or false) is exactly today's behavior, unchanged — source 'user',
+ * immediately approved/public.
  */
 export async function POST(req: NextRequest) {
   if (!dbEnabled()) {
@@ -52,10 +60,15 @@ export async function POST(req: NextRequest) {
   const productIds: string[] = Array.isArray(body?.productIds)
     ? body.productIds.filter((id: unknown): id is string => typeof id === "string").slice(0, MAX_PRODUCTS)
     : [];
+  const submitToContest = body?.submitToContest === true;
+  const termsAccepted = body?.termsAccepted === true;
 
   if (!title) return NextResponse.json({ error: "Give your room a title." }, { status: 400 });
   if (!photo) return NextResponse.json({ error: "Upload a photo of your room." }, { status: 400 });
   if (productIds.length === 0) return NextResponse.json({ error: "Tag at least one product used in this room." }, { status: 400 });
+  if (submitToContest && !termsAccepted) {
+    return NextResponse.json({ error: "Accept the Creator Program terms to submit to the contest." }, { status: 400 });
+  }
 
   const products = await getProductsByIds(productIds);
   if (products.length === 0) {
@@ -71,9 +84,19 @@ export async function POST(req: NextRequest) {
     heroImageBase64: stripDataUrlPrefix(photo),
     productIds: products.map((p) => p.id),
     totalPrice,
-    source: "user",
+    source: submitToContest ? "community" : "user",
     userId,
+    ...(submitToContest
+      ? { moderationStatus: "pending", termsAcceptedAt: new Date(), termsVersion: CONTEST_TERMS_VERSION }
+      : {}),
   });
 
-  return NextResponse.json({ id });
+  await trackEvent({
+    eventName: "look_submitted",
+    userId,
+    lookId: id,
+    properties: { submitToContest },
+  });
+
+  return NextResponse.json({ id, pendingReview: submitToContest });
 }

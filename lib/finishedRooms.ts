@@ -52,6 +52,14 @@ export interface FinishedRoom {
   sessionId: string | null;
   /** Public (joins Complete Rooms) or private (only visible to its owner via "my collection"). */
   published: boolean;
+  /** 'approved' (default — every pre-existing and non-community room) | 'pending' | 'rejected'. Only source='community' rows are ever inserted as 'pending'. */
+  moderationStatus: string;
+  /** Set by an admin on rejection (see app/admin/moderation, Phase 3) — null otherwise. */
+  moderationReason: string | null;
+  /** When this room's owner accepted /legal/terms-contest — null unless submitted via the Creator Program. */
+  termsAcceptedAt: string | null;
+  /** Which version of /legal/terms-contest was accepted — null unless submitted via the Creator Program. */
+  termsVersion: string | null;
   createdAt: string;
 }
 
@@ -93,6 +101,10 @@ function resolveRow(row: Record<string, unknown>, catalog: Product[]): FinishedR
     userId: (row.user_id as string | null) ?? null,
     sessionId: (row.session_id as string | null) ?? null,
     published: (row.published as boolean | null) ?? true,
+    moderationStatus: (row.moderation_status as string | null) ?? "approved",
+    moderationReason: (row.moderation_reason as string | null) ?? null,
+    termsAcceptedAt: (row.terms_accepted_at as string | null) ?? null,
+    termsVersion: (row.terms_version as string | null) ?? null,
     createdAt: row.created_at as string,
   };
 }
@@ -117,15 +129,25 @@ export async function createFinishedRoom(input: {
   sessionId?: string | null;
   /** Public immediately (default, existing curated/publish behavior) or private until explicitly published. */
   published?: boolean;
+  /** 'approved' (default — matches every existing curated/publish row) or 'pending' for a new Creator Program submission. Never set 'rejected' here — that only happens via app/admin/moderation. */
+  moderationStatus?: string;
+  /** When the submitter accepted /legal/terms-contest — required alongside moderationStatus: 'pending'. */
+  termsAcceptedAt?: Date | null;
+  /** Which version of /legal/terms-contest was accepted. */
+  termsVersion?: string | null;
 }): Promise<string> {
   await ensureSchema();
   const db = sql();
   const rows = await db`
-    INSERT INTO finished_rooms (title, description, style_tags, hero_image_base64, product_ids, item_boxes, auto_matched_ids, external_items, total_price, source, user_id, session_id, published)
+    INSERT INTO finished_rooms (
+      title, description, style_tags, hero_image_base64, product_ids, item_boxes, auto_matched_ids, external_items, total_price,
+      source, user_id, session_id, published, moderation_status, terms_accepted_at, terms_version
+    )
     VALUES (
       ${input.title}, ${input.description}, ${input.styleTags}, ${input.heroImageBase64}, ${input.productIds},
       ${JSON.stringify(input.itemBoxes ?? {})}, ${input.autoMatchedIds ?? []}, ${JSON.stringify(input.externals ?? [])}, ${input.totalPrice},
-      ${input.source ?? "curated"}, ${input.userId ?? null}, ${input.sessionId ?? null}, ${input.published ?? true}
+      ${input.source ?? "curated"}, ${input.userId ?? null}, ${input.sessionId ?? null}, ${input.published ?? true},
+      ${input.moderationStatus ?? "approved"}, ${input.termsAcceptedAt ?? null}, ${input.termsVersion ?? null}
     )
     RETURNING id
   `;
@@ -138,7 +160,11 @@ export async function listFinishedRooms(): Promise<FinishedRoom[]> {
     await ensureSchema();
     const db = sql();
     const [rows, catalog] = await Promise.all([
-      db`SELECT * FROM finished_rooms WHERE published = true ORDER BY created_at DESC`,
+      // moderation_status = 'approved' is a no-op filter for every row that
+      // predates the Creator Program (the column defaults to 'approved'),
+      // and is what keeps a pending/rejected community submission off
+      // Complete Rooms until an admin acts on it (app/admin/moderation).
+      db`SELECT * FROM finished_rooms WHERE published = true AND moderation_status = 'approved' ORDER BY created_at DESC`,
       loadProductCatalog(),
     ]);
     return rows.map((r) => resolveRow(r, catalog));
